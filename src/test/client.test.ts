@@ -237,6 +237,50 @@ suite("ACPClient with Mock Server", () => {
         await client.sendMessage("Hello");
       }, /No active session/);
     });
+
+    test("should format images correctly in prompt", async () => {
+      await client.connect();
+      await client.newSession("/test/dir");
+
+      // We need to access the private connection to verify the prompt
+      // or we can rely on the fact that sendMessage calls connection.prompt
+      // Since connection is private, we'll use a hack to intercept it if possible,
+      // or we can just trust the logic if we've manually verified it.
+      // Alternatively, we can mock the connection differently.
+
+      const images = [
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      ];
+
+      // We'll use a dynamic property access to get the private connection
+      const clientAny = client as any;
+      const originalPrompt = clientAny.connection.prompt;
+
+      let capturedPrompt: any = null;
+      clientAny.connection.prompt = async (params: any) => {
+        capturedPrompt = params.prompt;
+        return { stopReason: "end_turn" };
+      };
+
+      try {
+        await client.sendMessage("Check this image", images);
+
+        assert.strictEqual(capturedPrompt.length, 2);
+        assert.strictEqual(capturedPrompt[0].type, "text");
+        assert.strictEqual(capturedPrompt[0].text, "Check this image");
+
+        assert.strictEqual(capturedPrompt[1].type, "image");
+        assert.strictEqual(capturedPrompt[1].mimeType, "image/png");
+        assert.strictEqual(
+          capturedPrompt[1].data,
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        );
+        // Verify it's NOT nested in an 'image' property
+        assert.strictEqual(capturedPrompt[1].image, undefined);
+      } finally {
+        clientAny.connection.prompt = originalPrompt;
+      }
+    });
   });
 
   suite("setMode", () => {

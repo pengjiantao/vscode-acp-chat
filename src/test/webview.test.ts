@@ -696,8 +696,22 @@ suite("Webview", () => {
           type: "availableCommands",
           commands: testCommands,
         });
-        elements.inputEl.textContent = "/";
-        elements.commandAutocomplete.classList.add("visible");
+
+        // Mock range and selection for input event
+        const range = {
+          startContainer: {
+            textContent: "/h",
+          },
+          startOffset: 2,
+        };
+        window.getSelection = () =>
+          ({
+            rangeCount: 1,
+            getRangeAt: () => range,
+          }) as any;
+
+        elements.inputEl.textContent = "/h";
+        elements.inputEl.dispatchEvent(new window.Event("input"));
 
         const downEvent = new window.KeyboardEvent("keydown", {
           key: "ArrowDown",

@@ -433,13 +433,11 @@ export class ACPClient {
       // Add images as image prompt items
       for (const base64 of images) {
         const [meta, data] = base64.split(",");
-        const mediaType = meta.split(":")[1].split(";")[0];
+        const mimeType = meta.split(":")[1].split(";")[0];
         prompt.push({
           type: "image",
-          image: {
-            mediaType,
-            data,
-          },
+          data,
+          mimeType,
         });
       }
 
