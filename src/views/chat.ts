@@ -157,6 +157,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.html = this.getHtmlContent(webviewView.webview);
 
+    this.handleConnect().catch((err) => {
+      console.error("[Chat] Auto-connect failed:", err);
+    });
+
     webviewView.webview.onDidReceiveMessage(async (message: WebviewMessage) => {
       switch (message.type) {
         case "sendMessage":
@@ -770,13 +774,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const webviewScriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, "dist", "webview.js")
     );
+    const logoUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "assets", "icon.svg")
+    );
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource}; img-src ${webview.cspSource} data:;">
   <link href="${styleResetUri}" rel="stylesheet">
   <link href="${styleVSCodeUri}" rel="stylesheet">
   <link href="${styleMainUri}" rel="stylesheet">
@@ -786,9 +793,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   <div id="top-bar" role="toolbar" aria-label="Chat controls">
     <span class="status-indicator" role="status" aria-live="polite">
       <span class="status-dot" id="status-dot" aria-hidden="true"></span>
-      <span id="status-text">Disconnected</span>
     </span>
-    <button id="connect-btn" aria-label="Connect to agent">Connect</button>
     <div class="custom-dropdown inline-dropdown" id="agent-dropdown" aria-label="Select AI agent">
       <div class="dropdown-trigger">
         <span class="selected-label">Select Agent</span>
@@ -801,14 +806,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div id="welcome-view" class="welcome-view" role="main" aria-label="Welcome">
+    <img src="${logoUri}" alt="VSCode ACP Logo" class="welcome-logo">
     <h3>Welcome to VSCode ACP</h3>
     <p>Chat with AI coding agents directly in VS Code.</p>
-    <button class="welcome-btn" id="welcome-connect-btn">Connect to Agent</button>
-    <p class="help-links">
-      <a href="https://github.com/sst/opencode" target="_blank" rel="noopener">Install OpenCode</a>
-      <span aria-hidden="true">·</span>
-      <a href="https://claude.ai/code" target="_blank" rel="noopener">Install Claude Code</a>
-    </p>
   </div>
 
   <div id="agent-plan-container"></div>

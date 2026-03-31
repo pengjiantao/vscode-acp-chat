@@ -552,10 +552,7 @@ export interface WebviewElements {
   inputEl: HTMLTextAreaElement;
   sendBtn: HTMLButtonElement;
   statusDot: HTMLElement;
-  statusText: HTMLElement;
   agentDropdown: HTMLElement;
-  connectBtn: HTMLButtonElement;
-  welcomeConnectBtn: HTMLButtonElement;
   modeDropdown: HTMLElement;
   modelDropdown: HTMLElement;
   welcomeView: HTMLElement;
@@ -569,12 +566,7 @@ export function getElements(doc: Document): WebviewElements {
     inputEl: doc.getElementById("input") as HTMLTextAreaElement,
     sendBtn: doc.getElementById("send") as HTMLButtonElement,
     statusDot: doc.getElementById("status-dot")!,
-    statusText: doc.getElementById("status-text")!,
     agentDropdown: doc.getElementById("agent-dropdown")!,
-    connectBtn: doc.getElementById("connect-btn") as HTMLButtonElement,
-    welcomeConnectBtn: doc.getElementById(
-      "welcome-connect-btn"
-    ) as HTMLButtonElement,
     modeDropdown: doc.getElementById("mode-dropdown")!,
     modelDropdown: doc.getElementById("model-dropdown")!,
     welcomeView: doc.getElementById("welcome-view")!,
@@ -663,8 +655,7 @@ export class WebviewController {
   }
 
   private setupEventListeners(): void {
-    const { sendBtn, inputEl, messagesEl, connectBtn, welcomeConnectBtn } =
-      this.elements;
+    const { sendBtn, inputEl, messagesEl } = this.elements;
 
     const { commandAutocomplete } = this.elements;
 
@@ -760,14 +751,6 @@ export class WebviewController {
       }
     });
 
-    connectBtn.addEventListener("click", () => {
-      this.vscode.postMessage({ type: "connect" });
-    });
-
-    welcomeConnectBtn.addEventListener("click", () => {
-      this.vscode.postMessage({ type: "connect" });
-    });
-
     this.win.addEventListener("message", (e: MessageEvent<ExtensionMessage>) =>
       this.handleMessage(e.data)
     );
@@ -842,13 +825,6 @@ export class WebviewController {
 
   updateStatus(state: string): void {
     this.elements.statusDot.className = "status-dot " + state;
-    const labels: Record<string, string> = {
-      disconnected: "Disconnected",
-      connecting: "Connecting...",
-      connected: "Connected",
-      error: "Error",
-    };
-    this.elements.statusText.textContent = labels[state] || state;
     this.isConnected = state === "connected";
     this.updateViewState();
     this.saveState();
@@ -1020,8 +996,6 @@ export class WebviewController {
   }
 
   handleMessage(msg: ExtensionMessage): void {
-    const { connectBtn } = this.elements;
-
     switch (msg.type) {
       case "userMessage":
         if (msg.text) {
@@ -1155,8 +1129,6 @@ export class WebviewController {
       case "connectionState":
         if (msg.state) {
           this.updateStatus(msg.state);
-          connectBtn.style.display =
-            msg.state === "connected" ? "none" : "inline-block";
         }
         break;
       case "agents":

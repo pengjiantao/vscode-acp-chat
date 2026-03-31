@@ -49,9 +49,7 @@ function createWebviewHTML(): string {
   <div id="top-bar">
     <span class="status-indicator">
       <span class="status-dot" id="status-dot"></span>
-      <span id="status-text">Disconnected</span>
     </span>
-    <button id="connect-btn">Connect</button>
     <div class="custom-dropdown" id="agent-dropdown">
       <div class="dropdown-trigger">
         <span class="selected-label"></span>
@@ -61,8 +59,8 @@ function createWebviewHTML(): string {
   </div>
 
   <div id="welcome-view" class="welcome-view">
+    <img src="logo.svg" class="welcome-logo">
     <h3>Welcome to VSCode ACP</h3>
-    <button class="welcome-btn" id="welcome-connect-btn">Connect to Agent</button>
   </div>
 
   <div id="agent-plan-container"></div>
@@ -253,10 +251,7 @@ suite("Webview", () => {
       assert.ok(elements.inputEl);
       assert.ok(elements.sendBtn);
       assert.ok(elements.statusDot);
-      assert.ok(elements.statusText);
       assert.ok(elements.agentDropdown);
-      assert.ok(elements.connectBtn);
-      assert.ok(elements.welcomeConnectBtn);
       assert.ok(elements.modeDropdown);
       assert.ok(elements.modelDropdown);
       assert.ok(elements.welcomeView);
@@ -343,21 +338,6 @@ suite("Webview", () => {
     });
 
     suite("updateStatus", () => {
-      test("updates status text for connected", () => {
-        controller.updateStatus("connected");
-        assert.strictEqual(elements.statusText.textContent, "Connected");
-      });
-
-      test("updates status text for disconnected", () => {
-        controller.updateStatus("disconnected");
-        assert.strictEqual(elements.statusText.textContent, "Disconnected");
-      });
-
-      test("updates status text for connecting", () => {
-        controller.updateStatus("connecting");
-        assert.strictEqual(elements.statusText.textContent, "Connecting...");
-      });
-
       test("updates status dot class", () => {
         controller.updateStatus("connected");
         assert.ok(elements.statusDot.className.includes("connected"));
@@ -397,8 +377,7 @@ suite("Webview", () => {
           type: "connectionState",
           state: "connected",
         });
-        assert.strictEqual(elements.statusText.textContent, "Connected");
-        assert.strictEqual(elements.connectBtn.style.display, "none");
+        assert.ok(elements.statusDot.className.includes("connected"));
       });
 
       test("handles error", () => {
@@ -495,30 +474,6 @@ suite("Webview", () => {
 
         const msgs = elements.messagesEl.querySelectorAll(".message.assistant");
         assert.ok(msgs[0].innerHTML.includes("<strong>"));
-      });
-    });
-
-    suite("button interactions", () => {
-      test("connect button posts connect message", () => {
-        mockVsCode._clearMessages();
-        elements.connectBtn.click();
-        const messages = mockVsCode._getMessages();
-        assert.ok(
-          messages.some(
-            (m: unknown) => (m as { type: string }).type === "connect"
-          )
-        );
-      });
-
-      test("welcome connect button posts connect message", () => {
-        mockVsCode._clearMessages();
-        elements.welcomeConnectBtn.click();
-        const messages = mockVsCode._getMessages();
-        assert.ok(
-          messages.some(
-            (m: unknown) => (m as { type: string }).type === "connect"
-          )
-        );
       });
     });
 

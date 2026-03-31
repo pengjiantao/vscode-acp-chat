@@ -65,12 +65,6 @@ body {
   text-overflow: ellipsis;
 }
 
-/* Connect Button */
-#connect-btn {
-  padding: 2px 10px;
-  font-size: 11px;
-}
-
 .spacer {
   flex: 1;
 }
@@ -87,30 +81,18 @@ body {
   color: var(--vscode-descriptionForeground);
 }
 
+.welcome-logo {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 20px;
+  opacity: 0.8;
+}
+
 .welcome-view h3 {
   font-size: 16px;
   font-weight: 600;
   color: var(--vscode-foreground);
   margin-bottom: 8px;
-}
-
-.welcome-view p {
-  margin-bottom: 16px;
-  line-height: 1.5;
-}
-
-.welcome-view .welcome-btn {
-  padding: 8px 20px;
-  font-size: 13px;
-  margin-bottom: 16px;
-}
-
-.welcome-view .help-links {
-  font-size: 12px;
-}
-
-.welcome-view .help-links a {
-  margin: 0 8px;
 }
 
 /* Messages Container */
