@@ -67,7 +67,6 @@ export interface ExtensionMessage {
     currentModelId: string;
   } | null;
   commands?: AvailableCommand[] | null;
-  plan?: { entries: PlanEntry[] };
   toolCallId?: string;
   name?: string;
   title?: string;
@@ -77,6 +76,13 @@ export interface ExtensionMessage {
   rawOutput?: { output?: string };
   status?: string;
   terminalOutput?: string;
+  results?: Array<{ name: string; path: string }>;
+  plan?: { entries: PlanEntry[] };
+}
+
+export interface Mention {
+  name: string;
+  path: string;
 }
 
 export function escapeHtml(str: string): string {
@@ -549,7 +555,10 @@ export class Dropdown {
 
 export interface WebviewElements {
   messagesEl: HTMLElement;
-  inputEl: HTMLTextAreaElement;
+  inputEl: HTMLElement;
+  imageAttachmentsEl: HTMLElement;
+  attachImageBtn: HTMLButtonElement;
+  imagePreviewPopover: HTMLElement;
   sendBtn: HTMLButtonElement;
   statusDot: HTMLElement;
   agentDropdown: HTMLElement;
@@ -563,7 +572,10 @@ export interface WebviewElements {
 export function getElements(doc: Document): WebviewElements {
   return {
     messagesEl: doc.getElementById("messages")!,
-    inputEl: doc.getElementById("input") as HTMLTextAreaElement,
+    inputEl: doc.getElementById("input")!,
+    imageAttachmentsEl: doc.getElementById("image-attachments")!,
+    attachImageBtn: doc.getElementById("attach-image") as HTMLButtonElement,
+    imagePreviewPopover: doc.getElementById("image-preview-popover")!,
     sendBtn: doc.getElementById("send") as HTMLButtonElement,
     statusDot: doc.getElementById("status-dot")!,
     agentDropdown: doc.getElementById("agent-dropdown")!,
@@ -591,7 +603,11 @@ export class WebviewController {
   private isConnected = false;
   private messageTexts = new Map<HTMLElement, string>();
   private availableCommands: AvailableCommand[] = [];
-  private selectedCommandIndex = -1;
+  private fileResults: Array<{ name: string; path: string }> = [];
+  private selectedIndex = -1;
+  private autocompleteMode: "none" | "command" | "file" = "none";
+  private autocompleteTriggerPos = -1;
+
   private hasActiveTool = false;
   private expandedToolId: string | null = null;
 
@@ -634,7 +650,7 @@ export class WebviewController {
     inputEl.style.height = "auto";
     const maxHeight = this.win.innerHeight / 3;
     const scrollHeight = inputEl.scrollHeight;
-    const newHeight = Math.min(scrollHeight, maxHeight);
+    const newHeight = Math.max(36, Math.min(scrollHeight, maxHeight));
     inputEl.style.height = newHeight + "px";
     inputEl.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
   }
@@ -643,19 +659,19 @@ export class WebviewController {
     const previousState = this.vscode.getState<WebviewState>();
     if (previousState) {
       this.isConnected = previousState.isConnected;
-      this.elements.inputEl.value = previousState.inputValue || "";
+      this.elements.inputEl.textContent = previousState.inputValue || "";
     }
   }
 
   private saveState(): void {
     this.vscode.setState<WebviewState>({
       isConnected: this.isConnected,
-      inputValue: this.elements.inputEl.value,
+      inputValue: this.elements.inputEl.textContent || "",
     });
   }
 
   private setupEventListeners(): void {
-    const { sendBtn, inputEl, messagesEl } = this.elements;
+    const { sendBtn, inputEl, messagesEl, attachImageBtn } = this.elements;
 
     const { commandAutocomplete } = this.elements;
 
@@ -664,35 +680,35 @@ export class WebviewController {
     inputEl.addEventListener("keydown", (e) => {
       const isAutocompleteVisible =
         commandAutocomplete.classList.contains("visible");
-      const commands = this.getFilteredCommands(inputEl.value.split(/\s/)[0]);
 
-      if (isAutocompleteVisible && commands.length > 0) {
+      if (isAutocompleteVisible) {
+        const count =
+          this.autocompleteMode === "command"
+            ? this.getFilteredCommands(
+                inputEl.textContent?.split(/\s/)[0] || ""
+              ).length
+            : this.fileResults.length;
+
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          this.selectedCommandIndex = Math.min(
-            this.selectedCommandIndex + 1,
-            commands.length - 1
-          );
-          this.showCommandAutocomplete(commands);
+          this.selectedIndex = Math.min(this.selectedIndex + 1, count - 1);
+          this.renderAutocomplete();
           return;
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
-          this.selectedCommandIndex = Math.max(
-            this.selectedCommandIndex - 1,
-            0
-          );
-          this.showCommandAutocomplete(commands);
+          this.selectedIndex = Math.max(this.selectedIndex - 1, 0);
+          this.renderAutocomplete();
           return;
         } else if (
           e.key === "Tab" ||
-          (e.key === "Enter" && this.selectedCommandIndex >= 0)
+          (e.key === "Enter" && this.selectedIndex >= 0)
         ) {
           e.preventDefault();
-          this.selectCommand(this.selectedCommandIndex);
+          this.selectAutocomplete(this.selectedIndex);
           return;
         } else if (e.key === "Escape") {
           e.preventDefault();
-          this.hideCommandAutocomplete();
+          this.hideAutocomplete();
           return;
         }
       }
@@ -712,23 +728,50 @@ export class WebviewController {
       this.saveState();
     });
 
+    inputEl.addEventListener("paste", (e) => {
+      const items = e.clipboardData?.items;
+      if (items) {
+        for (const item of items) {
+          if (item.type.startsWith("image/")) {
+            e.preventDefault();
+            const blob = item.getAsFile();
+            if (blob) this.handleImageAttachment(blob);
+          }
+        }
+      }
+    });
+
+    attachImageBtn.addEventListener("click", () => {
+      const input = this.doc.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.multiple = true;
+      input.onchange = () => {
+        if (input.files) {
+          Array.from(input.files).forEach((file) =>
+            this.handleImageAttachment(file)
+          );
+        }
+      };
+      input.click();
+    });
+
     commandAutocomplete.addEventListener("click", (e) => {
       const item = (e.target as HTMLElement).closest(".command-item");
       if (item) {
         const index = parseInt(item.getAttribute("data-index") || "0", 10);
-        this.selectCommand(index);
+        this.selectAutocomplete(index);
       }
     });
 
     commandAutocomplete.addEventListener("mouseover", (e) => {
       const item = (e.target as HTMLElement).closest(".command-item");
       if (item) {
-        this.selectedCommandIndex = parseInt(
+        this.selectedIndex = parseInt(
           item.getAttribute("data-index") || "0",
           10
         );
-        const commands = this.getFilteredCommands(inputEl.value.split(/\s/)[0]);
-        this.showCommandAutocomplete(commands);
+        this.renderAutocomplete();
       }
     });
 
@@ -754,6 +797,58 @@ export class WebviewController {
     this.win.addEventListener("message", (e: MessageEvent<ExtensionMessage>) =>
       this.handleMessage(e.data)
     );
+  }
+
+  private handleImageAttachment(file: File): void {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      this.addImageThumbnail(base64, file.name);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  private addImageThumbnail(base64: string, name: string): void {
+    const { imageAttachmentsEl } = this.elements;
+    const item = this.doc.createElement("div");
+    item.className = "image-item";
+    item.innerHTML = `
+      <img src="${base64}" alt="${escapeHtml(name)}">
+      <div class="image-delete" title="Remove image">×</div>
+    `;
+
+    item.querySelector(".image-delete")?.addEventListener("click", () => {
+      item.remove();
+    });
+
+    item.addEventListener("mouseenter", (e) =>
+      this.showImagePreview(base64, e)
+    );
+    item.addEventListener("mouseleave", () => this.hideImagePreview());
+
+    imageAttachmentsEl.appendChild(item);
+  }
+
+  private showImagePreview(base64: string, event: MouseEvent): void {
+    const { imagePreviewPopover } = this.elements;
+    const img = imagePreviewPopover.querySelector("img")!;
+    img.src = base64;
+    imagePreviewPopover.style.display = "block";
+
+    const x = Math.min(
+      event.clientX + 10,
+      this.win.innerWidth - imagePreviewPopover.offsetWidth - 20
+    );
+    const y = Math.max(
+      20,
+      event.clientY - imagePreviewPopover.offsetHeight - 10
+    );
+    imagePreviewPopover.style.left = x + "px";
+    imagePreviewPopover.style.top = y + "px";
+  }
+
+  private hideImagePreview(): void {
+    this.elements.imagePreviewPopover.style.display = "none";
   }
 
   addMessage(
@@ -838,90 +933,6 @@ export class WebviewController {
       this.isConnected || hasMessages ? "flex" : "none";
   }
 
-  private send(): void {
-    const text = this.elements.inputEl.value.trim();
-    if (!text) return;
-    this.vscode.postMessage({ type: "sendMessage", text });
-    this.elements.inputEl.value = "";
-    this.adjustHeight();
-    this.elements.sendBtn.disabled = true;
-    this.saveState();
-  }
-
-  private clearInput(): void {
-    this.elements.inputEl.value = "";
-    this.adjustHeight();
-    this.elements.inputEl.focus();
-    this.hideCommandAutocomplete();
-    this.saveState();
-  }
-
-  getFilteredCommands(query: string): AvailableCommand[] {
-    if (!query.startsWith("/")) return [];
-    const search = query.slice(1).toLowerCase();
-    return this.availableCommands.filter(
-      (cmd) =>
-        cmd.name.toLowerCase().startsWith(search) ||
-        cmd.description?.toLowerCase().includes(search)
-    );
-  }
-
-  showCommandAutocomplete(commands: AvailableCommand[]): void {
-    const { commandAutocomplete, inputEl } = this.elements;
-    if (commands.length === 0) {
-      this.hideCommandAutocomplete();
-      return;
-    }
-
-    commandAutocomplete.innerHTML = commands
-      .map((cmd, i) => {
-        const hint = cmd.input?.hint
-          ? '<div class="command-hint">' + escapeHtml(cmd.input.hint) + "</div>"
-          : "";
-        return (
-          '<div class="command-item' +
-          (i === this.selectedCommandIndex ? " selected" : "") +
-          '" data-index="' +
-          i +
-          '" role="option" aria-selected="' +
-          (i === this.selectedCommandIndex) +
-          '">' +
-          '<div class="command-name">' +
-          escapeHtml(cmd.name) +
-          "</div>" +
-          '<div class="command-description">' +
-          escapeHtml(cmd.description || "") +
-          "</div>" +
-          hint +
-          "</div>"
-        );
-      })
-      .join("");
-
-    commandAutocomplete.classList.add("visible");
-    inputEl.setAttribute("aria-expanded", "true");
-  }
-
-  hideCommandAutocomplete(): void {
-    const { commandAutocomplete, inputEl } = this.elements;
-    commandAutocomplete.classList.remove("visible");
-    commandAutocomplete.innerHTML = "";
-    this.selectedCommandIndex = -1;
-    inputEl.setAttribute("aria-expanded", "false");
-  }
-
-  selectCommand(index: number): void {
-    const firstWord = this.elements.inputEl.value.split(/\s/)[0];
-    const commands = this.getFilteredCommands(firstWord);
-    if (index >= 0 && index < commands.length) {
-      const cmd = commands[index];
-      this.elements.inputEl.value = "/" + cmd.name + " ";
-      this.adjustHeight();
-      this.elements.inputEl.focus();
-      this.hideCommandAutocomplete();
-    }
-  }
-
   showPlan(entries: PlanEntry[]): void {
     if (entries.length === 0) {
       this.hidePlan();
@@ -982,21 +993,235 @@ export class WebviewController {
     }
   }
 
-  private updateAutocomplete(): void {
-    const text = this.elements.inputEl.value;
-    const firstWord = text.split(/\s/)[0];
+  private send(): void {
+    const text = this.elements.inputEl.textContent?.trim() || "";
+    const images = Array.from(
+      this.elements.imageAttachmentsEl.querySelectorAll("img")
+    ).map((img) => img.src);
+    const mentions: Mention[] = Array.from(
+      this.elements.inputEl.querySelectorAll(".mention-chip")
+    ).map((chip) => ({
+      name: (chip as HTMLElement).dataset.name || "",
+      path: (chip as HTMLElement).dataset.path || "",
+    }));
 
-    if (firstWord.startsWith("/") && !text.includes(" ")) {
-      const filtered = this.getFilteredCommands(firstWord);
-      this.selectedCommandIndex = filtered.length > 0 ? 0 : -1;
-      this.showCommandAutocomplete(filtered);
+    if (!text && images.length === 0) return;
+
+    this.vscode.postMessage({
+      type: "sendMessage",
+      text,
+      images,
+      mentions,
+    });
+
+    this.clearInput();
+    this.elements.sendBtn.disabled = true;
+    this.saveState();
+  }
+
+  private clearInput(): void {
+    this.elements.inputEl.textContent = "";
+    this.elements.imageAttachmentsEl.innerHTML = "";
+    this.adjustHeight();
+    this.elements.inputEl.focus();
+    this.hideAutocomplete();
+    this.saveState();
+  }
+
+  getFilteredCommands(query: string): AvailableCommand[] {
+    if (!query.startsWith("/")) return [];
+    const search = query.slice(1).toLowerCase();
+    return this.availableCommands.filter(
+      (cmd) =>
+        cmd.name.toLowerCase().startsWith(search) ||
+        cmd.description?.toLowerCase().includes(search)
+    );
+  }
+
+  private updateAutocomplete(): void {
+    const selection = this.win.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    const range = selection.getRangeAt(0);
+    const textBefore =
+      range.startContainer.textContent?.slice(0, range.startOffset) || "";
+
+    const lastSlashIdx = textBefore.lastIndexOf("/");
+    const lastAtIdx = textBefore.lastIndexOf("@");
+
+    if (
+      lastSlashIdx >= 0 &&
+      lastSlashIdx >= lastAtIdx &&
+      !textBefore.slice(lastSlashIdx).includes(" ")
+    ) {
+      this.autocompleteMode = "command";
+      this.autocompleteTriggerPos = lastSlashIdx;
+      const query = textBefore.slice(lastSlashIdx);
+      const filtered = this.getFilteredCommands(query);
+      this.selectedIndex = filtered.length > 0 ? 0 : -1;
+      this.renderAutocomplete();
+    } else if (
+      lastAtIdx >= 0 &&
+      lastAtIdx >= lastSlashIdx &&
+      !textBefore.slice(lastAtIdx).includes(" ")
+    ) {
+      this.autocompleteMode = "file";
+      this.autocompleteTriggerPos = lastAtIdx;
+      const query = textBefore.slice(lastAtIdx + 1);
+      this.selectedIndex = 0;
+      this.vscode.postMessage({ type: "searchFiles", text: query });
     } else {
-      this.hideCommandAutocomplete();
+      this.hideAutocomplete();
     }
+  }
+
+  private renderAutocomplete(): void {
+    const { commandAutocomplete } = this.elements;
+
+    let itemsHtml = "";
+    if (this.autocompleteMode === "command") {
+      const text = this.elements.inputEl.textContent || "";
+      const query = text.slice(this.autocompleteTriggerPos).split(/\s/)[0];
+      const commands = this.getFilteredCommands(query);
+      if (commands.length === 0) {
+        this.hideAutocomplete();
+        return;
+      }
+      itemsHtml = commands
+        .map((cmd, i) => this.renderCommandItem(cmd, i))
+        .join("");
+    } else if (this.autocompleteMode === "file") {
+      if (this.fileResults.length === 0) {
+        this.hideAutocomplete();
+        return;
+      }
+      itemsHtml = this.fileResults
+        .map((file, i) => this.renderFileItem(file, i))
+        .join("");
+    }
+
+    if (itemsHtml) {
+      commandAutocomplete.innerHTML = itemsHtml;
+      commandAutocomplete.classList.add("visible");
+      this.elements.inputEl.setAttribute("aria-expanded", "true");
+    } else {
+      this.hideAutocomplete();
+    }
+  }
+
+  private renderCommandItem(cmd: AvailableCommand, i: number): string {
+    const hint = cmd.input?.hint
+      ? '<div class="command-hint">' + escapeHtml(cmd.input.hint) + "</div>"
+      : "";
+    return `
+      <div class="command-item ${i === this.selectedIndex ? "selected" : ""}" data-index="${i}" role="option" aria-selected="${i === this.selectedIndex}">
+        <div class="command-name">${escapeHtml(cmd.name)}</div>
+        <div class="command-description">${escapeHtml(cmd.description || "")}</div>
+        ${hint}
+      </div>
+    `;
+  }
+
+  private renderFileItem(
+    file: { name: string; path: string },
+    i: number
+  ): string {
+    return `
+      <div class="command-item ${i === this.selectedIndex ? "selected" : ""}" data-index="${i}" role="option" aria-selected="${i === this.selectedIndex}">
+        <div class="command-name">${escapeHtml(file.name)}</div>
+        <div class="command-description">${escapeHtml(file.path)}</div>
+      </div>
+    `;
+  }
+
+  hideAutocomplete(): void {
+    const { commandAutocomplete, inputEl } = this.elements;
+    commandAutocomplete.classList.remove("visible");
+    commandAutocomplete.innerHTML = "";
+    this.selectedIndex = -1;
+    this.autocompleteMode = "none";
+    inputEl.setAttribute("aria-expanded", "false");
+  }
+
+  private selectAutocomplete(index: number): void {
+    if (this.autocompleteMode === "command") {
+      const text = this.elements.inputEl.textContent || "";
+      const query = text.slice(this.autocompleteTriggerPos).split(/\s/)[0];
+      const commands = this.getFilteredCommands(query);
+      if (index >= 0 && index < commands.length) {
+        const cmd = commands[index];
+        this.replaceTriggerWithText("/" + cmd.name + " ");
+      }
+    } else if (this.autocompleteMode === "file") {
+      if (index >= 0 && index < this.fileResults.length) {
+        const file = this.fileResults[index];
+        this.insertMentionChip(file);
+      }
+    }
+    this.hideAutocomplete();
+  }
+
+  private replaceTriggerWithText(newText: string): void {
+    const selection = this.win.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    const range = selection.getRangeAt(0);
+    range.setStart(range.startContainer, this.autocompleteTriggerPos);
+    range.deleteContents();
+    range.insertNode(this.doc.createTextNode(newText));
+
+    selection.collapseToEnd();
+    this.elements.inputEl.focus();
+  }
+
+  private insertMentionChip(file: { name: string; path: string }): void {
+    const selection = this.win.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    const range = selection.getRangeAt(0);
+    range.setStart(range.startContainer, this.autocompleteTriggerPos);
+    range.deleteContents();
+
+    const chip = this.doc.createElement("span");
+    chip.className = "mention-chip";
+    chip.contentEditable = "false";
+    chip.dataset.name = file.name;
+    chip.dataset.path = file.path;
+    chip.innerHTML = `
+      <span class="chip-icon">📄</span>
+      <span class="chip-label">${escapeHtml(file.name)}</span>
+      <span class="chip-delete">×</span>
+    `;
+
+    chip.querySelector(".chip-delete")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      chip.remove();
+      this.saveState();
+    });
+
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.vscode.postMessage({ type: "openFile", path: file.path });
+    });
+
+    range.insertNode(chip);
+    const space = this.doc.createTextNode(" ");
+    range.collapse(false);
+    range.insertNode(space);
+    selection.collapse(space, 1);
+    this.elements.inputEl.focus();
+    this.saveState();
   }
 
   handleMessage(msg: ExtensionMessage): void {
     switch (msg.type) {
+      case "fileSearchResults":
+        if (msg.results) {
+          this.fileResults = msg.results;
+          this.selectedIndex = this.fileResults.length > 0 ? 0 : -1;
+          this.renderAutocomplete();
+        }
+        break;
       case "userMessage":
         if (msg.text) {
           this.addMessage(msg.text, "user");
@@ -1150,7 +1375,7 @@ export class WebviewController {
         this.elements.modeDropdown.style.display = "none";
         this.elements.modelDropdown.style.display = "none";
         this.availableCommands = [];
-        this.hideCommandAutocomplete();
+        this.hideAutocomplete();
         this.hidePlan();
         this.hideThought();
         this.updateViewState();

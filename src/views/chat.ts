@@ -44,11 +44,16 @@ interface WebviewMessage {
     | "connect"
     | "newChat"
     | "clearChat"
-    | "copyMessage";
+    | "copyMessage"
+    | "searchFiles"
+    | "openFile";
   text?: string;
   agentId?: string;
   modeId?: string;
   modelId?: string;
+  images?: string[];
+  mentions?: Array<{ name: string; path: string }>;
+  path?: string;
 }
 
 interface ManagedTerminal {
@@ -164,8 +169,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage(async (message: WebviewMessage) => {
       switch (message.type) {
         case "sendMessage":
-          if (message.text) {
-            await this.handleUserMessage(message.text);
+          if (
+            message.text !== undefined ||
+            (message.images && message.images.length > 0)
+          ) {
+            await this.handleUserMessage(
+              message.text || "",
+              message.images,
+              message.mentions
+            );
           }
           break;
         case "selectAgent":
@@ -196,6 +208,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           if (message.text) {
             await vscode.env.clipboard.writeText(message.text);
             vscode.window.showInformationMessage("Message copied to clipboard");
+          }
+          break;
+        case "searchFiles":
+          if (message.text !== undefined) {
+            const files = await vscode.workspace.findFiles(
+              `**/*${message.text}*`,
+              "**/node_modules/**",
+              10
+            );
+            this.postMessage({
+              type: "fileSearchResults",
+              results: files.map((f) => ({
+                name: vscode.workspace.asRelativePath(f),
+                path: f.fsPath,
+              })),
+            });
+          }
+          break;
+        case "openFile":
+          if (message.path) {
+            const uri = vscode.Uri.file(message.path);
+            await vscode.window.showTextDocument(uri);
           }
           break;
         case "ready":
@@ -567,7 +601,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async handleUserMessage(text: string): Promise<void> {
+  private async handleUserMessage(
+    text: string,
+    images: string[] = [],
+    mentions: Array<{ name: string; path: string }> = []
+  ): Promise<void> {
     this.postMessage({ type: "userMessage", text });
 
     try {
@@ -587,7 +625,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.stderrBuffer = "";
       this.postMessage({ type: "streamStart" });
       console.log("[Chat] Sending message to ACP...");
-      const response = await this.acpClient.sendMessage(text);
+      const response = await this.acpClient.sendMessage(text, images, mentions);
       console.log(
         "[Chat] Prompt response received:",
         JSON.stringify(response, null, 2)
@@ -825,21 +863,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   <div id="messages" role="log" aria-label="Chat messages" aria-live="polite" tabindex="0"></div>
 
   <div id="chat-input-area">
+    <div id="image-attachments" class="image-attachment-container"></div>
     <div id="input-container">
       <div id="command-autocomplete" role="listbox" aria-label="Slash commands"></div>
-      <textarea
+      <div
         id="input"
-        rows="1"
-        placeholder="Ask your agent... (type / for commands)"
+        class="input-rich"
+        contenteditable="true"
+        role="textbox"
+        aria-multiline="true"
+        data-placeholder="Ask your agent... (type / for commands, @ for files)"
         aria-label="Message input"
         aria-describedby="input-hint"
         aria-autocomplete="list"
         aria-controls="command-autocomplete"
-      ></textarea>
+      ></div>
     </div>
 
     <div id="options-bar" role="toolbar" aria-label="Session options">
       <div id="left-options">
+        <button id="attach-image" class="icon-button" aria-label="Attach image" title="Attach image" style="background: transparent; border: none; color: var(--vscode-descriptionForeground); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; border-radius: 6px;">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.5 2h-11l-.5.5v11l.5.5h11l.5-.5v-11l-.5-.5zM13 13H3V3h10v10zM5.335 5.868l1.732 2.597 1.488-1.24 3.11 4.256H4l1.335-5.613zM10.5 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
+        </button>
         <div class="custom-dropdown" id="mode-dropdown" style="display: none;">
           <div class="dropdown-trigger">
             <span class="dropdown-icon">
@@ -876,6 +921,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   </div>
   <span id="input-hint" class="sr-only">Press Enter to send, Shift+Enter for new line, Escape to clear. Type / for slash commands.</span>
 
+  <div id="image-preview-popover" class="image-preview-popover">
+    <img src="" alt="Preview">
+  </div>
 <script src="${webviewScriptUri}"></script>
 </body>
 </html>`;

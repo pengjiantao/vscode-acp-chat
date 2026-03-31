@@ -418,15 +418,45 @@ export class ACPClient {
     }
   }
 
-  async sendMessage(message: string): Promise<PromptResponse> {
+  async sendMessage(
+    message: string,
+    images: string[] = [],
+    mentions: Array<{ name: string; path: string }> = []
+  ): Promise<PromptResponse> {
     if (!this.connection || !this.currentSessionId) {
       throw new Error("No active session");
     }
 
     try {
+      const prompt: any[] = [{ type: "text", text: message }];
+
+      // Add images as image prompt items
+      for (const base64 of images) {
+        const [meta, data] = base64.split(",");
+        const mediaType = meta.split(":")[1].split(";")[0];
+        prompt.push({
+          type: "image",
+          image: {
+            mediaType,
+            data,
+          },
+        });
+      }
+
+      // Add mentions as part of the context or a special text block
+      if (mentions.length > 0) {
+        const mentionsText = mentions
+          .map((m) => `[Referenced File: ${m.name} at ${m.path}]`)
+          .join("\n");
+        prompt.push({
+          type: "text",
+          text: `\n\nContext - Referenced Files:\n${mentionsText}`,
+        });
+      }
+
       const response = await this.connection.prompt({
         sessionId: this.currentSessionId,
-        prompt: [{ type: "text", text: message }],
+        prompt,
       });
       console.log("[ACP] Prompt completed:", JSON.stringify(response, null, 2));
       return response;
