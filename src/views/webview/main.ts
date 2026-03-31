@@ -814,7 +814,7 @@ export class WebviewController {
     item.className = "image-item";
     item.innerHTML = `
       <img src="${base64}" alt="${escapeHtml(name)}">
-      <div class="image-delete" title="Remove image">×</div>
+      <div class="image-delete icon-dismiss" title="Remove image"></div>
     `;
 
     item.querySelector(".image-delete")?.addEventListener("click", () => {
@@ -955,7 +955,7 @@ export class WebviewController {
 
     this.planEl.innerHTML = `
       <div class="plan-header">
-        <span class="plan-icon">📋</span>
+        <span class="plan-icon icon-clipboard"></span>
         <span class="plan-title">Agent Plan</span>
         <span class="plan-progress">${completedCount}/${totalCount}</span>
       </div>
@@ -964,7 +964,7 @@ export class WebviewController {
           .map(
             (entry) => `
           <div class="plan-entry plan-entry-${entry.status} plan-priority-${entry.priority}">
-            <span class="plan-status-icon">${this.getPlanStatusIcon(entry.status)}</span>
+            <span class="plan-status-icon ${this.getPlanStatusIcon(entry.status)}"></span>
             <span class="plan-content">${escapeHtml(entry.content)}</span>
           </div>
         `
@@ -977,12 +977,12 @@ export class WebviewController {
   private getPlanStatusIcon(status: string): string {
     switch (status) {
       case "completed":
-        return "✓";
+        return "icon-checkmark";
       case "in_progress":
-        return "⋯";
+        return "icon-more";
       case "pending":
       default:
-        return "○";
+        return "icon-circle";
     }
   }
 
@@ -1188,9 +1188,9 @@ export class WebviewController {
     chip.dataset.name = file.name;
     chip.dataset.path = file.path;
     chip.innerHTML = `
-      <span class="chip-icon">📄</span>
+      <span class="chip-icon icon-document"></span>
       <span class="chip-label">${escapeHtml(file.name)}</span>
-      <span class="chip-delete">×</span>
+      <span class="chip-delete icon-dismiss"></span>
     `;
 
     chip.querySelector(".chip-delete")?.addEventListener("click", (e) => {

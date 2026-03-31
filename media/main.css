@@ -505,36 +505,139 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
-  padding: 1px 6px;
-  border-radius: 4px;
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.12));
+  color: var(--vscode-foreground);
+  padding: 2px 6px;
+  border-radius: 6px;
   font-size: 12px;
   margin: 0 2px;
   vertical-align: middle;
   cursor: pointer;
   user-select: none;
   border: 1px solid transparent;
+  transition:
+    background 0.1s,
+    border-color 0.1s;
 }
 
 .mention-chip:hover {
-  filter: brightness(1.1);
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.18));
   border-color: var(--vscode-focusBorder);
 }
 
 .mention-chip .chip-icon {
-  font-size: 10px;
-  opacity: 0.8;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.9;
 }
 
 .mention-chip .chip-delete {
   margin-left: 2px;
-  opacity: 0.5;
+  opacity: 0.6;
   cursor: pointer;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
 }
 
 .mention-chip .chip-delete:hover {
   opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.16));
+}
+
+.icon-button {
+  background: transparent;
+  border: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+
+.icon-button:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.12));
+  color: var(--vscode-foreground);
+}
+
+#send.icon-button:hover {
+  color: var(--vscode-button-background);
+}
+
+/* Icon classes using masks for better coloring */
+.icon-document {
+  mask: url(./icons/document.svg) no-repeat center;
+  -webkit-mask: url(./icons/document.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-robot {
+  mask: url(./icons/robot.svg) no-repeat center;
+  -webkit-mask: url(./icons/robot.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-sparkle {
+  mask: url(./icons/sparkle.svg) no-repeat center;
+  -webkit-mask: url(./icons/sparkle.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-image {
+  mask: url(./icons/image.svg) no-repeat center;
+  -webkit-mask: url(./icons/image.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-dismiss {
+  mask: url(./icons/dismiss.svg) no-repeat center;
+  -webkit-mask: url(./icons/dismiss.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-send {
+  mask: url(./icons/send.svg) no-repeat center;
+  -webkit-mask: url(./icons/send.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-checkmark {
+  mask: url(./icons/checkmark.svg) no-repeat center;
+  -webkit-mask: url(./icons/checkmark.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-more {
+  mask: url(./icons/more.svg) no-repeat center;
+  -webkit-mask: url(./icons/more.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-circle {
+  mask: url(./icons/circle.svg) no-repeat center;
+  -webkit-mask: url(./icons/circle.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-clipboard {
+  mask: url(./icons/clipboard.svg) no-repeat center;
+  -webkit-mask: url(./icons/clipboard.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-chevron-down {
+  mask: url(./icons/chevron-down.svg) no-repeat center;
+  -webkit-mask: url(./icons/chevron-down.svg) no-repeat center;
+  background-color: currentColor;
 }
 
 /* Image Attachment Styles */

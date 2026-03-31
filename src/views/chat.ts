@@ -845,7 +845,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       <div class="dropdown-trigger">
         <span class="selected-label">Select Agent</span>
         <span class="dropdown-chevron">
-          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M13.078 5.672L8 10.75 2.922 5.672l.703-.703L8 9.344l4.375-4.375.703.703z"/></svg>
+          <span class="icon-chevron-down" style="width: 10px; height: 10px; display: block;"></span>
         </span>
       </div>
       <div class="dropdown-popover"></div>
@@ -882,39 +882,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     <div id="options-bar" role="toolbar" aria-label="Session options">
       <div id="left-options">
-        <button id="attach-image" class="icon-button" aria-label="Attach image" title="Attach image" style="background: transparent; border: none; color: var(--vscode-descriptionForeground); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; border-radius: 6px;">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.5 2h-11l-.5.5v11l.5.5h11l.5-.5v-11l-.5-.5zM13 13H3V3h10v10zM5.335 5.868l1.732 2.597 1.488-1.24 3.11 4.256H4l1.335-5.613zM10.5 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
+        <button id="attach-image" class="icon-button" aria-label="Attach image" title="Attach image">
+          <span class="dropdown-icon icon-image"></span>
         </button>
         <div class="custom-dropdown" id="mode-dropdown" style="display: none;">
           <div class="dropdown-trigger">
-            <span class="dropdown-icon">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M9.1 4.4L8.6 2H7.4l-.5 2.4-.7.3-2-1.3-.9.8 1.3 2-.3.7-2.4.5V8.6l2.4.5.3.7-1.3 2 .9.8 2-1.3.7.3.5 2.4h1.2l.5-2.4.7-.3 2 1.3.9-.8-1.3-2 .3-.7 2.4-.5V7.4l-2.4-.5-.3-.7 1.3-2-.9-.8-2 1.3-.7-.3zM8 10c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
-            </span>
+            <span class="dropdown-icon icon-sparkle"></span>
             <span class="selected-label">Mode</span>
             <span class="dropdown-chevron">
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M13.078 5.672L8 10.75 2.922 5.672l.703-.703L8 9.344l4.375-4.375.703.703z"/></svg>
+              <span class="icon-chevron-down" style="width: 10px; height: 10px; display: block;"></span>
             </span>
           </div>
           <div class="dropdown-popover"></div>
         </div>
         <div class="custom-dropdown" id="model-dropdown" style="display: none;">
           <div class="dropdown-trigger">
-            <span class="dropdown-icon">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M12 4.5v-1a.5.5 0 0 0-.5-.5h-2v-.5a.5.5 0 0 0-.5-.5h-2a.5.5 0 0 0-.5.5v.5h-2a.5.5 0 0 0-.5.5v1A2.5 2.5 0 0 0 2 7v5a2.5 2.5 0 0 0 2.5 2.5h7a2.5 2.5 0 0 0 2.5-2.5V7a2.5 2.5 0 0 0-2.146-2.5zm-5-1h2v.5h-2v-.5zM13 12a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 12V7a1.5 1.5 0 0 1 1.5-1.5h7A1.5 1.5 0 0 1 13 7v5zm-7-4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm6 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM5 10.5h6v1H5v-1z"/></svg>
-            </span>
+            <span class="dropdown-icon icon-robot"></span>
             <span class="selected-label">Model</span>
             <span class="dropdown-chevron">
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M13.078 5.672L8 10.75 2.922 5.672l.703-.703L8 9.344l4.375-4.375.703.703z"/></svg>
+              <span class="icon-chevron-down" style="width: 10px; height: 10px; display: block;"></span>
             </span>
           </div>
           <div class="dropdown-popover"></div>
         </div>
       </div>
       <div id="right-options">
-        <button id="send" aria-label="Send message" title="Send (Enter)">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-            <path d="M15.854.146a.5.5 0 0 0-.525-.104l-15 6a.5.5 0 0 0 .011.934l5.968.852.852 5.968a.5.5 0 0 0 .934.011l6-15a.5.5 0 0 0-.24-.661zM7.5 13.56 6.75 8.25 1.44 7.5l11.06-4.424-5 5.001a.5.5 0 0 0 .707.707l5-5-4.424 11.06-.283.707z"/>
-          </svg>
+        <button id="send" class="icon-button" aria-label="Send message" title="Send (Enter)">
+          <span class="dropdown-icon icon-send"></span>
         </button>
       </div>
     </div>
