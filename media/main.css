@@ -1282,24 +1282,25 @@ kbd {
 
 /* Agent Thought Display */
 .agent-thought {
-  margin: 8px 0;
+  margin: 4px 0;
   padding: 0;
   border-radius: 6px;
   border: 1px solid var(--vscode-panel-border);
   background: var(--vscode-textBlockQuote-background);
   font-size: 12px;
   overflow: hidden;
+  opacity: 0.9;
 }
 
 .agent-thought summary {
   cursor: pointer;
-  padding: 8px 12px;
+  padding: 6px 12px;
   background: var(--vscode-editor-inactiveSelectionBackground);
   user-select: none;
   list-style: none;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .agent-thought summary::-webkit-details-marker {
@@ -1310,7 +1311,7 @@ kbd {
   content: "▼";
   font-size: 8px;
   margin-left: auto;
-  opacity: 0.6;
+  opacity: 0.4;
   transition: transform 0.15s ease;
 }
 
@@ -1320,16 +1321,104 @@ kbd {
 
 .thought-icon {
   font-size: 14px;
+  opacity: 0.8;
 }
 
 .thought-title {
   font-weight: 500;
   color: var(--vscode-descriptionForeground);
-  font-style: italic;
+  font-size: 11px;
 }
 
 .thought-content {
-  padding: 10px 12px;
+  padding: 8px 12px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.4;
+}
+
+.thought-content p {
+  margin: 4px 0;
+}
+
+/* Tool Calls */
+.tool-item {
+  margin: 4px 0;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tool-item summary {
+  cursor: pointer;
+  padding: 6px 12px;
+  background: var(--vscode-editor-background);
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--vscode-editor-font-family), monospace;
+  font-size: 11px;
+}
+
+.tool-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-item summary::after {
+  content: "▼";
+  font-size: 8px;
+  margin-left: auto;
+  opacity: 0.4;
+  transition: transform 0.15s ease;
+}
+
+.tool-item:not([open]) summary::after {
+  transform: rotate(-90deg);
+}
+
+.tool-status {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
+
+.tool-status.running {
+  color: var(--vscode-editorWarning-foreground);
+  animation: spin 1.5s linear infinite;
+}
+
+.tool-status.completed {
+  color: var(--vscode-testing-iconPassed);
+}
+
+.tool-status.failed {
+  color: var(--vscode-errorForeground);
+}
+
+.tool-name {
+  font-weight: 500;
+}
+
+.tool-kind-icon {
+  opacity: 0.8;
+}
+
+.tool-details-content {
+  padding: 8px;
+  background: var(--vscode-textBlockQuote-background);
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.block {
+  margin-bottom: 8px;
+}
+
+.block-text {
+  line-height: 1.6;
 }
 
 /* Diff Display Styles */

@@ -1,8 +1,16 @@
+import { marked } from "marked";
+
 export interface VsCodeApi {
   postMessage(message: unknown): void;
   getState<T>(): T | undefined;
   setState<T>(state: T): T;
 }
+
+// Configure marked for streaming (GFM and line breaks)
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
 
 declare function acquireVsCodeApi(): VsCodeApi;
 
@@ -19,11 +27,23 @@ export type ToolKind =
   | "other";
 
 export interface Tool {
+  id: string;
   name: string;
   input: string | null;
   output: string | null;
   status: "running" | "completed" | "failed";
   kind?: ToolKind;
+  element?: HTMLElement;
+}
+
+export type BlockType = "text" | "thought" | "tool";
+
+export interface Block {
+  type: BlockType;
+  element: HTMLElement;
+  contentEl: HTMLElement;
+  content: string;
+  toolId?: string;
 }
 
 export interface WebviewState {
@@ -594,12 +614,9 @@ export class WebviewController {
   private win: Window;
 
   private currentAssistantMessage: HTMLElement | null = null;
-  private currentAssistantText = "";
-  private thinkingEl: HTMLElement | null = null;
+  private activeBlock: Block | null = null;
+  private blocks: Block[] = [];
   private planEl: HTMLElement | null = null;
-  private thoughtEl: HTMLElement | null = null;
-  private thoughtText = "";
-  private tools: Record<string, Tool> = {};
   private isConnected = false;
   private messageTexts = new Map<HTMLElement, string>();
   private availableCommands: AvailableCommand[] = [];
@@ -607,9 +624,6 @@ export class WebviewController {
   private selectedIndex = -1;
   private autocompleteMode: "none" | "command" | "file" = "none";
   private autocompleteTriggerPos = -1;
-
-  private hasActiveTool = false;
-  private expandedToolId: string | null = null;
 
   private agentDropdown: Dropdown;
   private modeDropdown: Dropdown;
@@ -853,7 +867,7 @@ export class WebviewController {
     this.elements.imagePreviewPopover.style.display = "none";
   }
 
-  addMessage(
+  public addMessage(
     text: string,
     type: "user" | "assistant" | "error" | "system"
   ): HTMLElement {
@@ -880,12 +894,17 @@ export class WebviewController {
       });
     }
 
-    div.textContent = text;
-    this.messageTexts.set(div, text);
+    if (text) {
+      div.textContent = text;
+      this.messageTexts.set(div, text);
+    }
+
     this.elements.messagesEl.appendChild(div);
     this.elements.messagesEl.scrollTop = this.elements.messagesEl.scrollHeight;
 
-    this.announceToScreenReader(label + ": " + text.substring(0, 100));
+    if (text) {
+      this.announceToScreenReader(label + ": " + text.substring(0, 100));
+    }
     return div;
   }
 
@@ -899,28 +918,137 @@ export class WebviewController {
     setTimeout(() => announcement.remove(), 1000);
   }
 
-  showThinking(): void {
-    if (!this.thinkingEl) {
-      this.thinkingEl = this.doc.createElement("div");
-      this.thinkingEl.className = "message assistant";
-      this.thinkingEl.setAttribute("role", "status");
-      this.thinkingEl.setAttribute("aria-label", "Agent is thinking");
-      this.elements.messagesEl.appendChild(this.thinkingEl);
+  private ensureBlock(type: BlockType, toolId?: string): Block {
+    if (this.activeBlock && this.activeBlock.type === type) {
+      if (type !== "tool" || this.activeBlock.toolId === toolId) {
+        return this.activeBlock;
+      }
     }
-    let html = '<span class="thinking" aria-label="Processing">Thinking</span>';
-    html += getToolsHtml(this.tools, this.expandedToolId);
-    this.thinkingEl.innerHTML = html;
+
+    // Create new block
+    if (!this.currentAssistantMessage) {
+      this.currentAssistantMessage = this.addMessage("", "assistant");
+    }
+
+    const blockEl = this.doc.createElement("div");
+    blockEl.className = `block block-${type}`;
+
+    let contentEl: HTMLElement;
+
+    if (type === "thought") {
+      const details = this.doc.createElement("details");
+      details.className = "agent-thought";
+      details.setAttribute("open", "");
+      details.setAttribute("role", "status");
+      details.setAttribute("aria-live", "polite");
+      details.setAttribute("aria-label", "Assistant is thinking");
+      details.innerHTML = `
+        <summary class="thought-header">
+          <span class="thought-icon">🧠</span>
+          <span class="thought-title">Thinking...</span>
+        </summary>
+        <div class="thought-content"></div>
+      `;
+      blockEl.appendChild(details);
+      contentEl = details.querySelector(".thought-content")!;
+    } else if (type === "tool") {
+      const details = this.doc.createElement("details");
+      details.className = "tool-item";
+      details.setAttribute("open", "");
+      details.innerHTML = `
+        <summary>
+          <span class="tool-status running">⋯</span>
+          <span class="tool-name">Initializing...</span>
+        </summary>
+        <div class="tool-details-content"></div>
+      `;
+      blockEl.appendChild(details);
+      contentEl = details.querySelector(".tool-details-content")!;
+    } else {
+      contentEl = blockEl;
+    }
+
+    this.currentAssistantMessage.appendChild(blockEl);
+
+    const block: Block = {
+      type,
+      element: blockEl,
+      contentEl,
+      content: "",
+      toolId,
+    };
+
+    this.activeBlock = block;
+    this.blocks.push(block);
+    return block;
+  }
+
+  private finalizeBlocks(): void {
+    this.blocks.forEach((block) => {
+      if (block.type === "thought") {
+        const details = block.element.querySelector("details");
+        if (details) {
+          details.removeAttribute("open");
+          const title = details.querySelector(".thought-title");
+          if (title) title.textContent = "Thought Process";
+        }
+      } else if (block.type === "tool") {
+        const details = block.element.querySelector("details");
+        if (details) {
+          details.removeAttribute("open");
+        }
+      }
+    });
+    this.activeBlock = null;
+  }
+
+  public showThinking(): void {
+    this.ensureBlock("thought");
+  }
+
+  public hideThinking(): void {
+    if (this.activeBlock && this.activeBlock.type === "thought") {
+      this.finalizeBlocks();
+    }
+  }
+
+  public appendThought(text: string): void {
+    const block = this.ensureBlock("thought");
+    block.content += text;
+    block.contentEl.innerHTML = marked.parse(block.content) as string;
     this.elements.messagesEl.scrollTop = this.elements.messagesEl.scrollHeight;
   }
 
-  hideThinking(): void {
-    if (this.thinkingEl) {
-      this.thinkingEl.remove();
-      this.thinkingEl = null;
-    }
+  public hideThought(): void {
+    this.hideThinking();
   }
 
-  updateStatus(state: string): void {
+  public getTools(): Record<string, Tool> {
+    const tools: Record<string, Tool> = {};
+    this.blocks
+      .filter((b) => b.type === "tool" && b.toolId)
+      .forEach((b) => {
+        const isRunning =
+          b.element.querySelector(".tool-status.running") !== null;
+        const inputText =
+          b.element.querySelector(".tool-input")?.textContent || "";
+        const input = inputText.startsWith("$ ")
+          ? inputText.substring(2)
+          : inputText.startsWith("$")
+            ? inputText.substring(1).trim()
+            : inputText;
+        tools[b.toolId!] = {
+          id: b.toolId!,
+          name: b.element.querySelector(".tool-name")?.textContent || "Tool",
+          input: input || null,
+          output: b.element.querySelector(".tool-output")?.textContent || null,
+          status: isRunning ? "running" : "completed",
+        };
+      });
+    return tools;
+  }
+
+  public updateStatus(state: string): void {
     this.elements.statusDot.className = "status-dot " + state;
     this.isConnected = state === "connected";
     this.updateViewState();
@@ -1229,125 +1357,120 @@ export class WebviewController {
       case "userMessage":
         if (msg.text) {
           this.addMessage(msg.text, "user");
-          this.showThinking();
           this.updateViewState();
         }
         break;
       case "streamStart":
-        this.currentAssistantText = "";
-        this.hasActiveTool = false;
-        this.hideThought();
+        this.currentAssistantMessage = null;
+        this.activeBlock = null;
+        this.blocks = [];
         break;
       case "streamChunk":
-        if (this.hasActiveTool && msg.text) {
-          this.hideThinking();
-          if (Object.keys(this.tools).length > 0) {
-            const toolMessage = this.addMessage("", "assistant");
-            toolMessage.innerHTML = getToolsHtml(
-              this.tools,
-              this.expandedToolId
-            );
-          }
-          this.currentAssistantMessage = null;
-          this.currentAssistantText = "";
-          this.tools = {};
-          this.expandedToolId = null;
-          this.hasActiveTool = false;
-        }
-
-        if (!this.currentAssistantMessage) {
-          this.hideThinking();
-          this.currentAssistantMessage = this.addMessage("", "assistant");
-        }
         if (msg.text) {
-          this.currentAssistantText += msg.text;
-          this.currentAssistantMessage.textContent = this.currentAssistantText;
+          const block = this.ensureBlock("text");
+          block.content += msg.text;
+          block.contentEl.innerHTML = marked.parse(block.content) as string;
+          this.elements.messagesEl.scrollTop =
+            this.elements.messagesEl.scrollHeight;
+        }
+        break;
+      case "thoughtChunk":
+        if (msg.text) {
+          const block = this.ensureBlock("thought");
+          block.content += msg.text;
+          block.contentEl.innerHTML = marked.parse(block.content) as string;
           this.elements.messagesEl.scrollTop =
             this.elements.messagesEl.scrollHeight;
         }
         break;
       case "streamEnd":
-        this.hideThinking();
-
-        if (this.currentAssistantMessage) {
-          let html = msg.html || "";
-          if (this.currentAssistantText.trim()) {
-            html = this.currentAssistantText + html;
-          }
-          html += getToolsHtml(this.tools, this.expandedToolId);
-          this.currentAssistantMessage.innerHTML = html;
-          this.messageTexts.set(
-            this.currentAssistantMessage,
-            this.currentAssistantText
-          );
-        }
-
-        this.currentAssistantMessage = null;
-        this.currentAssistantText = "";
-        this.tools = {};
-        this.hasActiveTool = false;
-        this.expandedToolId = null;
-        this.hideThought();
+        this.finalizeBlocks();
         this.elements.sendBtn.disabled = false;
         this.elements.inputEl.focus();
         break;
       case "toolCallStart":
         if (msg.toolCallId && msg.name) {
-          // Finalize current text message before showing tools
-          if (this.currentAssistantText.trim()) {
-            this.finalizeCurrentMessage();
-            this.currentAssistantMessage = null;
-            this.currentAssistantText = "";
+          const block = this.ensureBlock("tool", msg.toolCallId);
+          const summary = block.element.querySelector("summary");
+          if (summary) {
+            const kindIcon = getToolKindIcon(msg.kind);
+            summary.innerHTML = `
+              <span class="tool-status running">⋯</span>
+              ${kindIcon ? `<span class="tool-kind-icon">${kindIcon}</span> ` : ""}
+              <span class="tool-name">${escapeHtml(msg.name)}</span>
+            `;
           }
-
-          this.tools[msg.toolCallId] = {
-            name: msg.name,
-            input: null,
-            output: null,
-            status: "running",
-            kind: msg.kind,
-          };
-          this.hasActiveTool = true;
-          this.showThinking();
+          this.elements.messagesEl.scrollTop =
+            this.elements.messagesEl.scrollHeight;
         }
         break;
       case "toolCallComplete":
-        if (msg.toolCallId && this.tools[msg.toolCallId]) {
-          const tool = this.tools[msg.toolCallId];
+        if (msg.toolCallId) {
+          const block = this.blocks.find((b) => b.toolId === msg.toolCallId);
+          if (block) {
+            const summary = block.element.querySelector("summary");
+            if (summary) {
+              const statusIcon = msg.status === "failed" ? "✗" : "✓";
+              const statusClass =
+                msg.status === "failed" ? "failed" : "completed";
+              const kindIcon = getToolKindIcon(msg.kind);
+              const name = msg.title || block.toolId || "Tool";
+              summary.innerHTML = `
+                <span class="tool-status ${statusClass}">${statusIcon}</span>
+                ${kindIcon ? `<span class="tool-kind-icon">${kindIcon}</span> ` : ""}
+                <span class="tool-name">${escapeHtml(name)}</span>
+              `;
+            }
 
-          let output = "";
-          if (msg.content && msg.content.length > 0) {
-            const firstContent = msg.content[0];
-            if (firstContent.type === "content" && firstContent.content?.text) {
-              output = firstContent.content.text;
-            } else if (firstContent.type === "terminal") {
-              output = msg.terminalOutput || "";
-            } else if (firstContent.type === "diff") {
-              output = renderDiff(
-                firstContent.path,
-                firstContent.oldText,
-                firstContent.newText
-              );
+            let output = "";
+            if (msg.content && msg.content.length > 0) {
+              const firstContent = msg.content[0];
+              if (
+                firstContent.type === "content" &&
+                firstContent.content?.text
+              ) {
+                output = firstContent.content.text;
+              } else if (firstContent.type === "terminal") {
+                output = msg.terminalOutput || "";
+              } else if (firstContent.type === "diff") {
+                output = renderDiff(
+                  firstContent.path,
+                  firstContent.oldText,
+                  firstContent.newText
+                );
+              }
+            }
+
+            if (!output) {
+              output = msg.rawOutput?.output || "";
+            }
+
+            const input =
+              msg.rawInput?.command || msg.rawInput?.description || "";
+
+            let detailsHtml = "";
+            if (input) {
+              detailsHtml += `<div class="tool-input"><strong>$</strong> ${escapeHtml(input)}</div>`;
+            }
+            if (output) {
+              const hasAnsi = hasAnsiCodes(output);
+              const outputHtml = hasAnsi
+                ? ansiToHtml(output)
+                : escapeHtml(output);
+              const terminalClass = hasAnsi ? " terminal" : "";
+              detailsHtml += `<pre class="tool-output${terminalClass}">${outputHtml}</pre>`;
+            }
+            block.contentEl.innerHTML = detailsHtml;
+
+            // Auto-collapse after completion
+            const details = block.element.querySelector("details");
+            if (details) {
+              details.removeAttribute("open");
             }
           }
-
-          if (!output) {
-            output = msg.rawOutput?.output || "";
-          }
-
-          const input =
-            msg.rawInput?.command || msg.rawInput?.description || "";
-          if (msg.title) tool.name = msg.title;
-          if (msg.kind) tool.kind = msg.kind;
-          tool.input = input;
-          tool.output = output;
-          tool.status = (msg.status as Tool["status"]) || "completed";
-          this.expandedToolId = msg.toolCallId;
-          this.showThinking();
         }
         break;
       case "error":
-        this.hideThinking();
         if (msg.text) this.addMessage(msg.text, "error");
         this.elements.sendBtn.disabled = false;
         this.elements.inputEl.focus();
@@ -1375,13 +1498,14 @@ export class WebviewController {
       case "chatCleared":
         this.elements.messagesEl.innerHTML = "";
         this.currentAssistantMessage = null;
+        this.activeBlock = null;
+        this.blocks = [];
         this.messageTexts.clear();
         this.elements.modeDropdown.style.display = "none";
         this.elements.modelDropdown.style.display = "none";
         this.availableCommands = [];
         this.hideAutocomplete();
         this.hidePlan();
-        this.hideThought();
         this.updateViewState();
         break;
       case "triggerNewChat":
@@ -1449,64 +1573,7 @@ export class WebviewController {
       case "planComplete":
         this.hidePlan();
         break;
-      case "thoughtChunk":
-        if (msg.text) {
-          this.appendThought(msg.text);
-        }
-        break;
     }
-  }
-
-  appendThought(text: string): void {
-    this.thoughtText += text;
-
-    if (!this.thoughtEl) {
-      this.thoughtEl = this.doc.createElement("details");
-      this.thoughtEl.className = "agent-thought";
-      this.thoughtEl.setAttribute("open", "");
-      this.thoughtEl.setAttribute("role", "status");
-      this.thoughtEl.setAttribute("aria-live", "polite");
-      this.thoughtEl.setAttribute("aria-label", "Assistant is thinking");
-      this.thoughtEl.innerHTML = `
-        <summary class="thought-header">
-          <span class="thought-icon">💭</span>
-          <span class="thought-title">Thinking...</span>
-        </summary>
-        <div class="thought-content"></div>
-      `;
-      this.elements.messagesEl.appendChild(this.thoughtEl);
-    }
-
-    const contentEl = this.thoughtEl.querySelector(".thought-content");
-    if (contentEl) {
-      contentEl.textContent = this.thoughtText;
-    }
-    this.elements.messagesEl.scrollTop = this.elements.messagesEl.scrollHeight;
-  }
-
-  hideThought(): void {
-    if (this.thoughtEl) {
-      this.thoughtEl.remove();
-      this.thoughtEl = null;
-      this.thoughtText = "";
-    }
-  }
-
-  private finalizeCurrentMessage(): void {
-    if (this.currentAssistantMessage && this.currentAssistantText.trim()) {
-      const html =
-        this.currentAssistantText +
-        getToolsHtml(this.tools, this.expandedToolId);
-      this.currentAssistantMessage.innerHTML = html;
-      this.messageTexts.set(
-        this.currentAssistantMessage,
-        this.currentAssistantText
-      );
-    }
-  }
-
-  getTools(): Record<string, Tool> {
-    return this.tools;
   }
 
   getIsConnected(): boolean {

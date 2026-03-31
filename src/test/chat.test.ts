@@ -9,24 +9,24 @@ interface MockMemento {
 }
 
 interface MockACPClient {
-  setAgent: (config: any) => void;
+  setAgent: (config: unknown) => void;
   getAgentId: () => string;
-  setOnStateChange: (callback: any) => () => void;
-  setOnSessionUpdate: (callback: any) => () => void;
-  setOnStderr: (callback: any) => () => void;
-  setOnReadTextFile: (callback: any) => void;
-  setOnWriteTextFile: (callback: any) => void;
-  setOnCreateTerminal: (callback: any) => void;
-  setOnTerminalOutput: (callback: any) => void;
-  setOnWaitForTerminalExit: (callback: any) => void;
-  setOnKillTerminalCommand: (callback: any) => void;
-  setOnReleaseTerminal: (callback: any) => void;
+  setOnStateChange: (callback: (state: string) => void) => () => void;
+  setOnSessionUpdate: (callback: (update: unknown) => void) => () => void;
+  setOnStderr: (callback: (data: string) => void) => () => void;
+  setOnReadTextFile: (callback: unknown) => void;
+  setOnWriteTextFile: (callback: unknown) => void;
+  setOnCreateTerminal: (callback: unknown) => void;
+  setOnTerminalOutput: (callback: unknown) => void;
+  setOnWaitForTerminalExit: (callback: unknown) => void;
+  setOnKillTerminalCommand: (callback: unknown) => void;
+  setOnReleaseTerminal: (callback: unknown) => void;
   isConnected: () => boolean;
   connect: () => Promise<void>;
   newSession: (dir: string) => Promise<void>;
   setMode: (modeId: string) => Promise<void>;
   setModel: (modelId: string) => Promise<void>;
-  getSessionMetadata: () => any;
+  getSessionMetadata: () => unknown;
   dispose: () => void;
 }
 
@@ -93,7 +93,7 @@ class TestACPClient implements MockACPClient {
     this.lastSetModelId = modelId;
   }
 
-  getSessionMetadata(): any {
+  getSessionMetadata(): unknown {
     return {
       modes: null,
       models: null,

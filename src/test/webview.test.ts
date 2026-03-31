@@ -150,6 +150,7 @@ suite("Webview", () => {
     test("renders running tool with spinner icon", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "bash",
           input: null,
           output: null,
@@ -165,6 +166,7 @@ suite("Webview", () => {
     test("renders completed tool with checkmark", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "read_file",
           input: "path/to/file",
           output: "file contents",
@@ -179,6 +181,7 @@ suite("Webview", () => {
     test("renders failed tool with X", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "write_file",
           input: null,
           output: "Permission denied",
@@ -192,6 +195,7 @@ suite("Webview", () => {
     test("escapes tool name to prevent XSS", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "<script>alert(1)</script>",
           input: null,
           output: null,
@@ -207,6 +211,7 @@ suite("Webview", () => {
       const longOutput = "x".repeat(600);
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "test",
           input: null,
           output: longOutput,
@@ -220,9 +225,27 @@ suite("Webview", () => {
 
     test("shows tool count in summary", () => {
       const tools: Record<string, Tool> = {
-        "tool-1": { name: "a", input: null, output: null, status: "completed" },
-        "tool-2": { name: "b", input: null, output: null, status: "completed" },
-        "tool-3": { name: "c", input: null, output: null, status: "completed" },
+        "tool-1": {
+          id: "tool-1",
+          name: "a",
+          input: null,
+          output: null,
+          status: "completed",
+        },
+        "tool-2": {
+          id: "tool-2",
+          name: "b",
+          input: null,
+          output: null,
+          status: "completed",
+        },
+        "tool-3": {
+          id: "tool-3",
+          name: "c",
+          input: null,
+          output: null,
+          status: "completed",
+        },
       };
       const html = getToolsHtml(tools);
       assert.ok(html.includes("3 tools"));
@@ -230,7 +253,13 @@ suite("Webview", () => {
 
     test("shows singular tool for single tool", () => {
       const tools: Record<string, Tool> = {
-        "tool-1": { name: "a", input: null, output: null, status: "completed" },
+        "tool-1": {
+          id: "tool-1",
+          name: "a",
+          input: null,
+          output: null,
+          status: "completed",
+        },
       };
       const html = getToolsHtml(tools);
       assert.ok(html.includes(">1 tool<"));
@@ -358,15 +387,16 @@ suite("Webview", () => {
     suite("showThinking/hideThinking", () => {
       test("showThinking adds thinking element", () => {
         controller.showThinking();
-        const thinking = elements.messagesEl.querySelector(".thinking");
+        const thinking = elements.messagesEl.querySelector(".agent-thought");
         assert.ok(thinking);
+        assert.strictEqual(thinking?.getAttribute("open"), "");
       });
 
-      test("hideThinking removes thinking element", () => {
+      test("hideThinking closes thinking element", () => {
         controller.showThinking();
         controller.hideThinking();
-        const thinking = elements.messagesEl.querySelector(".thinking");
-        assert.strictEqual(thinking, null);
+        const thinking = elements.messagesEl.querySelector(".agent-thought");
+        assert.strictEqual(thinking?.getAttribute("open"), null);
       });
     });
 
@@ -466,7 +496,7 @@ suite("Webview", () => {
 
         const msgs = elements.messagesEl.querySelectorAll(".message.assistant");
         assert.strictEqual(msgs.length, 1);
-        assert.strictEqual(msgs[0].textContent, "Hello World");
+        assert.strictEqual(msgs[0].textContent.trim(), "Hello World");
       });
 
       test("handles streamEnd with HTML", () => {
@@ -474,7 +504,6 @@ suite("Webview", () => {
         controller.handleMessage({ type: "streamChunk", text: "**bold**" });
         controller.handleMessage({
           type: "streamEnd",
-          html: "<strong>bold</strong>",
         });
 
         const msgs = elements.messagesEl.querySelectorAll(".message.assistant");
@@ -886,25 +915,28 @@ suite("Webview", () => {
         );
       });
 
-      test("hideThought removes thought element", () => {
+      test("hideThought closes thought element", () => {
         controller.appendThought("Some thought");
         controller.hideThought();
         const thoughtEl = elements.messagesEl.querySelector(".agent-thought");
-        assert.strictEqual(thoughtEl, null);
+        assert.ok(thoughtEl);
+        assert.strictEqual(thoughtEl?.getAttribute("open"), null);
       });
 
-      test("streamStart clears thought", () => {
+      test("streamStart starts new assistant message", () => {
         controller.appendThought("Old thought");
         controller.handleMessage({ type: "streamStart" });
+        // Old thought stays in previous message
         const thoughtEl = elements.messagesEl.querySelector(".agent-thought");
-        assert.strictEqual(thoughtEl, null);
+        assert.ok(thoughtEl);
       });
 
-      test("streamEnd clears thought", () => {
+      test("streamEnd finalizes thought", () => {
         controller.appendThought("Thinking...");
         controller.handleMessage({ type: "streamEnd" });
         const thoughtEl = elements.messagesEl.querySelector(".agent-thought");
-        assert.strictEqual(thoughtEl, null);
+        assert.ok(thoughtEl);
+        assert.strictEqual(thoughtEl?.getAttribute("open"), null);
       });
 
       test("chatCleared removes thought", () => {
@@ -1096,6 +1128,7 @@ suite("Webview", () => {
     test("renders tool output with ANSI colors", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "terminal",
           input: "npm test",
           output: "\x1b[32m✓ All tests passed\x1b[0m",
@@ -1111,6 +1144,7 @@ suite("Webview", () => {
     test("renders plain output without terminal class", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "read_file",
           input: "file.txt",
           output: "plain text output",
@@ -1126,6 +1160,7 @@ suite("Webview", () => {
     test("escapes HTML in plain output", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "cat",
           input: null,
           output: "<script>alert('xss')</script>",
@@ -1140,6 +1175,7 @@ suite("Webview", () => {
     test("handles ANSI output with HTML characters", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "grep",
           input: null,
           output: "\x1b[31m<error>\x1b[0m",
@@ -1202,6 +1238,7 @@ suite("Webview", () => {
     test("renders tool kind icon when kind is provided", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "read_file",
           input: "file.txt",
           output: "content",
@@ -1217,6 +1254,7 @@ suite("Webview", () => {
     test("renders execute kind icon for command tools", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "bash",
           input: "npm test",
           output: "success",
@@ -1231,6 +1269,7 @@ suite("Webview", () => {
     test("does not render kind icon when kind is undefined", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "unknown_tool",
           input: null,
           output: null,
@@ -1244,6 +1283,7 @@ suite("Webview", () => {
     test("includes kind in title attribute for accessibility", () => {
       const tools: Record<string, Tool> = {
         "tool-1": {
+          id: "tool-1",
           name: "write_file",
           input: "file.txt",
           output: "done",

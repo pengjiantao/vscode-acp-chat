@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import { spawn } from "child_process";
-import { marked } from "marked";
 import { ACPClient } from "../acp/client";
 import {
   getAgent,
@@ -24,11 +23,6 @@ import type {
   ReleaseTerminalRequest,
   ReleaseTerminalResponse,
 } from "@agentclientprotocol/sdk";
-
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-});
 
 const SELECTED_AGENT_KEY = "vscode-acp.selectedAgent";
 const SELECTED_MODE_KEY = "vscode-acp.selectedMode";
@@ -75,7 +69,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private hasSession = false;
   private globalState: vscode.Memento;
-  private streamingText = "";
   private hasRestoredModeModel = false;
   private terminals: Map<string, ManagedTerminal> = new Map();
   private terminalCounter = 0;
@@ -542,7 +535,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (update.sessionUpdate === "agent_message_chunk") {
       console.log("[Chat] Chunk content:", JSON.stringify(update.content));
       if (update.content.type === "text") {
-        this.streamingText += update.content.text;
         this.postMessage({ type: "streamChunk", text: update.content.text });
       } else {
         console.log("[Chat] Non-text chunk type:", update.content.type);
@@ -621,7 +613,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.sendSessionMetadata();
       }
 
-      this.streamingText = "";
       this.stderrBuffer = "";
       this.postMessage({ type: "streamStart" });
       console.log("[Chat] Sending message to ACP...");
@@ -631,24 +622,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         JSON.stringify(response, null, 2)
       );
 
-      if (this.streamingText.length === 0) {
-        console.warn("[Chat] No streaming text received from agent");
-        console.warn("[Chat] stderr buffer:", this.stderrBuffer);
-        console.warn("[Chat] Response:", JSON.stringify(response, null, 2));
-        this.postMessage({
-          type: "error",
-          text: "Agent returned no response. Check the ACP output channel for details.",
-        });
-        this.postMessage({ type: "streamEnd", stopReason: "error", html: "" });
-      } else {
-        const renderedHtml = marked.parse(this.streamingText) as string;
-        this.postMessage({
-          type: "streamEnd",
-          stopReason: response.stopReason,
-          html: renderedHtml,
-        });
-      }
-      this.streamingText = "";
+      this.postMessage({
+        type: "streamEnd",
+        stopReason: response.stopReason,
+      });
     } catch (error) {
       console.error("[Chat] Error in handleUserMessage:", error);
       const errorMessage =
@@ -657,8 +634,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         type: "error",
         text: `Error: ${errorMessage}`,
       });
-      this.postMessage({ type: "streamEnd", stopReason: "error", html: "" });
-      this.streamingText = "";
+      this.postMessage({ type: "streamEnd", stopReason: "error" });
       this.stderrBuffer = "";
     }
   }
@@ -726,7 +702,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async handleNewChat(): Promise<void> {
     this.hasSession = false;
     this.hasRestoredModeModel = false;
-    this.streamingText = "";
     this.postMessage({ type: "chatCleared" });
     this.postMessage({ type: "sessionMetadata", modes: null, models: null });
 
@@ -781,7 +756,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     if (
       savedModeId &&
-      availableModes.some((mode: any) => mode && mode.id === savedModeId)
+      availableModes.some(
+        (mode: { id: string }) => mode && mode.id === savedModeId
+      )
     ) {
       await this.acpClient.setMode(savedModeId);
       console.log(`[Chat] Restored mode: ${savedModeId}`);
@@ -791,7 +768,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (
       savedModelId &&
       availableModels.some(
-        (model: any) => model && model.modelId === savedModelId
+        (model: { modelId: string }) => model && model.modelId === savedModelId
       )
     ) {
       await this.acpClient.setModel(savedModelId);

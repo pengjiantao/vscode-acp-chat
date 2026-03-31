@@ -428,7 +428,10 @@ export class ACPClient {
     }
 
     try {
-      const prompt: any[] = [{ type: "text", text: message }];
+      const prompt: Array<
+        | { type: "text"; text: string }
+        | { type: "image"; data: string; mimeType: string }
+      > = [{ type: "text", text: message }];
 
       // Add images as image prompt items
       for (const base64 of images) {
