@@ -538,21 +538,30 @@ body {
   margin-left: 2px;
   opacity: 0.6;
   cursor: pointer;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
+  transition: background 0.1s;
 }
 
 .mention-chip .chip-delete:hover {
   opacity: 1;
-  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.16));
+  background: var(
+    --vscode-toolbar-activeBackground,
+    rgba(255, 255, 255, 0.2)
+  ) !important;
+}
+
+.mention-chip .chip-delete .icon-dismiss {
+  width: 14px;
+  height: 14px;
 }
 
 .icon-button {
-  background: transparent;
+  background: transparent !important;
   border: none;
   color: var(--vscode-descriptionForeground);
   cursor: pointer;
@@ -562,15 +571,25 @@ body {
   justify-content: center;
   border-radius: 6px;
   transition: background 0.1s;
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
 }
 
-.icon-button:hover {
-  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.12));
+.icon-button:hover:not(:disabled) {
+  background: var(
+    --vscode-toolbar-hoverBackground,
+    rgba(255, 255, 255, 0.12)
+  ) !important;
   color: var(--vscode-foreground);
 }
 
-#send.icon-button:hover {
+#send.icon-button:hover:not(:disabled) {
   color: var(--vscode-button-background);
+  background: var(
+    --vscode-toolbar-hoverBackground,
+    rgba(255, 255, 255, 0.12)
+  ) !important;
 }
 
 /* Icon classes using masks for better coloring */
@@ -673,16 +692,25 @@ body {
   position: absolute;
   top: 2px;
   right: 2px;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
   color: white;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
   cursor: pointer;
+  transition: background 0.1s;
+}
+
+.image-item .image-delete:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.image-item .image-delete .icon-dismiss {
+  width: 12px;
+  height: 12px;
 }
 
 .image-item:hover .image-preview-trigger {
@@ -1011,17 +1039,10 @@ body {
   background: transparent;
   color: var(--vscode-descriptionForeground);
   border: none;
-  padding: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   cursor: pointer;
-  border-radius: 6px;
   transition:
     color 0.1s,
     background 0.1s;
-  width: 24px;
-  height: 24px;
 }
 
 #send:hover:not(:disabled) {

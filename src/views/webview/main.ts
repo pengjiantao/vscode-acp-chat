@@ -814,7 +814,9 @@ export class WebviewController {
     item.className = "image-item";
     item.innerHTML = `
       <img src="${base64}" alt="${escapeHtml(name)}">
-      <div class="image-delete icon-dismiss" title="Remove image"></div>
+      <div class="image-delete" title="Remove image">
+        <span class="icon-dismiss"></span>
+      </div>
     `;
 
     item.querySelector(".image-delete")?.addEventListener("click", () => {
@@ -1190,7 +1192,9 @@ export class WebviewController {
     chip.innerHTML = `
       <span class="chip-icon icon-document"></span>
       <span class="chip-label">${escapeHtml(file.name)}</span>
-      <span class="chip-delete icon-dismiss"></span>
+      <div class="chip-delete" title="Remove attachment">
+        <span class="icon-dismiss"></span>
+      </div>
     `;
 
     chip.querySelector(".chip-delete")?.addEventListener("click", (e) => {
