@@ -594,23 +594,18 @@ body {
 }
 
 #input {
-  flex: 1;
+  width: 100%;
   resize: none;
   min-height: 36px;
-  max-height: 33vh;
   border: none !important;
   background: transparent !important;
-  padding: 2px 4px;
+  padding: 4px;
   outline: none !important;
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   color: var(--vscode-input-foreground);
   line-height: 1.5;
-  scrollbar-width: none;
-}
-
-#input::-webkit-scrollbar {
-  display: none;
+  box-sizing: border-box;
 }
 
 #input::placeholder {

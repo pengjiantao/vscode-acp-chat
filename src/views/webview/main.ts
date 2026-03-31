@@ -497,7 +497,18 @@ export class WebviewController {
     this.restoreState();
     this.setupEventListeners();
     this.updateViewState();
+    this.adjustHeight();
     this.vscode.postMessage({ type: "ready" });
+  }
+
+  private adjustHeight(): void {
+    const { inputEl } = this.elements;
+    inputEl.style.height = "auto";
+    const maxHeight = this.win.innerHeight / 3;
+    const scrollHeight = inputEl.scrollHeight;
+    const newHeight = Math.min(scrollHeight, maxHeight);
+    inputEl.style.height = newHeight + "px";
+    inputEl.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
   }
 
   private restoreState(): void {
@@ -570,9 +581,7 @@ export class WebviewController {
     });
 
     inputEl.addEventListener("input", () => {
-      inputEl.style.height = "auto";
-      const maxHeight = window.innerHeight / 3;
-      inputEl.style.height = Math.min(inputEl.scrollHeight, maxHeight) + "px";
+      this.adjustHeight();
       this.updateAutocomplete();
       this.saveState();
     });
@@ -746,14 +755,14 @@ export class WebviewController {
     if (!text) return;
     this.vscode.postMessage({ type: "sendMessage", text });
     this.elements.inputEl.value = "";
-    this.elements.inputEl.style.height = "auto";
+    this.adjustHeight();
     this.elements.sendBtn.disabled = true;
     this.saveState();
   }
 
   private clearInput(): void {
     this.elements.inputEl.value = "";
-    this.elements.inputEl.style.height = "auto";
+    this.adjustHeight();
     this.elements.inputEl.focus();
     this.hideCommandAutocomplete();
     this.saveState();
@@ -819,6 +828,7 @@ export class WebviewController {
     if (index >= 0 && index < commands.length) {
       const cmd = commands[index];
       this.elements.inputEl.value = "/" + cmd.name + " ";
+      this.adjustHeight();
       this.elements.inputEl.focus();
       this.hideCommandAutocomplete();
     }
