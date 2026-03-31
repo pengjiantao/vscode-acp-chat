@@ -417,17 +417,10 @@ export function getToolsHtml(
   );
 }
 
-export function updateSelectLabel(
-  select: HTMLSelectElement,
-  prefix: string
-): void {
+export function updateSelectLabel(select: HTMLSelectElement): void {
   Array.from(select.options).forEach((opt) => {
     opt.textContent = opt.dataset.label || opt.textContent;
   });
-  const selected = select.options[select.selectedIndex];
-  if (selected && selected.dataset.label) {
-    selected.textContent = prefix + ": " + selected.dataset.label;
-  }
 }
 
 export interface WebviewElements {
@@ -441,6 +434,8 @@ export interface WebviewElements {
   welcomeConnectBtn: HTMLButtonElement;
   modeSelector: HTMLSelectElement;
   modelSelector: HTMLSelectElement;
+  modeDropdownWrapper: HTMLElement;
+  modelDropdownWrapper: HTMLElement;
   welcomeView: HTMLElement;
   commandAutocomplete: HTMLElement;
   planContainer: HTMLElement;
@@ -460,6 +455,8 @@ export function getElements(doc: Document): WebviewElements {
     ) as HTMLButtonElement,
     modeSelector: doc.getElementById("mode-selector") as HTMLSelectElement,
     modelSelector: doc.getElementById("model-selector") as HTMLSelectElement,
+    modeDropdownWrapper: doc.getElementById("mode-dropdown-wrapper")!,
+    modelDropdownWrapper: doc.getElementById("model-dropdown-wrapper")!,
     welcomeView: doc.getElementById("welcome-view")!,
     commandAutocomplete: doc.getElementById("command-autocomplete")!,
     planContainer: doc.getElementById("agent-plan-container")!,
@@ -634,7 +631,7 @@ export class WebviewController {
     });
 
     modeSelector.addEventListener("change", () => {
-      updateSelectLabel(modeSelector, "Mode");
+      updateSelectLabel(modeSelector);
       this.vscode.postMessage({
         type: "selectMode",
         modeId: modeSelector.value,
@@ -642,7 +639,7 @@ export class WebviewController {
     });
 
     modelSelector.addEventListener("change", () => {
-      updateSelectLabel(modelSelector, "Model");
+      updateSelectLabel(modelSelector);
       this.vscode.postMessage({
         type: "selectModel",
         modelId: modelSelector.value,
@@ -1059,8 +1056,8 @@ export class WebviewController {
         this.elements.messagesEl.innerHTML = "";
         this.currentAssistantMessage = null;
         this.messageTexts.clear();
-        modeSelector.style.display = "none";
-        modelSelector.style.display = "none";
+        this.elements.modeDropdownWrapper.style.display = "none";
+        this.elements.modelDropdownWrapper.style.display = "none";
         this.availableCommands = [];
         this.hideCommandAutocomplete();
         this.hidePlan();
@@ -1084,7 +1081,7 @@ export class WebviewController {
           msg.models.availableModels.length > 0;
 
         if (hasModes && msg.modes) {
-          modeSelector.style.display = "inline-block";
+          this.elements.modeDropdownWrapper.style.display = "flex";
           modeSelector.innerHTML = "";
           msg.modes.availableModes.forEach((m) => {
             const opt = this.doc.createElement("option");
@@ -1094,13 +1091,13 @@ export class WebviewController {
             if (m.id === msg.modes?.currentModeId) opt.selected = true;
             modeSelector.appendChild(opt);
           });
-          updateSelectLabel(modeSelector, "Mode");
+          updateSelectLabel(modeSelector);
         } else {
-          modeSelector.style.display = "none";
+          this.elements.modeDropdownWrapper.style.display = "none";
         }
 
         if (hasModels && msg.models) {
-          modelSelector.style.display = "inline-block";
+          this.elements.modelDropdownWrapper.style.display = "flex";
           modelSelector.innerHTML = "";
           msg.models.availableModels.forEach((m) => {
             const opt = this.doc.createElement("option");
@@ -1110,9 +1107,9 @@ export class WebviewController {
             if (m.modelId === msg.models?.currentModelId) opt.selected = true;
             modelSelector.appendChild(opt);
           });
-          updateSelectLabel(modelSelector, "Model");
+          updateSelectLabel(modelSelector);
         } else {
-          modelSelector.style.display = "none";
+          this.elements.modelDropdownWrapper.style.display = "none";
         }
 
         if (msg.commands && Array.isArray(msg.commands)) {
@@ -1123,7 +1120,7 @@ export class WebviewController {
       case "modeUpdate":
         if (msg.modeId) {
           modeSelector.value = msg.modeId;
-          updateSelectLabel(modeSelector, "Mode");
+          updateSelectLabel(modeSelector);
         }
         break;
       case "availableCommands":

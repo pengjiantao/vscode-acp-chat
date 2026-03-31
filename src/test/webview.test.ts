@@ -55,25 +55,34 @@ function createWebviewHTML(): string {
     <button id="connect-btn">Connect</button>
     <select id="agent-selector"></select>
   </div>
-  
+
   <div id="welcome-view" class="welcome-view">
     <h3>Welcome to VSCode ACP</h3>
     <button class="welcome-btn" id="welcome-connect-btn">Connect to Agent</button>
   </div>
-  
+
   <div id="agent-plan-container"></div>
-  
+
   <div id="messages"></div>
-  
-  <div id="input-container">
-    <div id="command-autocomplete" role="listbox"></div>
-    <textarea id="input" rows="1" placeholder="Ask your agent..."></textarea>
-    <button id="send">Send</button>
-  </div>
-  
-  <div id="options-bar">
-    <select id="mode-selector" style="display: none;"></select>
-    <select id="model-selector" style="display: none;"></select>
+
+  <div id="chat-input-area">
+    <div id="input-container">
+      <div id="command-autocomplete" role="listbox"></div>
+      <textarea id="input" rows="1" placeholder="Ask your agent..."></textarea>
+    </div>
+    <div id="options-bar">
+      <div id="left-options">
+        <div class="dropdown-wrapper" id="mode-dropdown-wrapper">
+          <select id="mode-selector"></select>
+        </div>
+        <div class="dropdown-wrapper" id="model-dropdown-wrapper">
+          <select id="model-selector"></select>
+        </div>
+      </div>
+      <div id="right-options">
+        <button id="send">Send</button>
+      </div>
+    </div>
   </div>
 </body>
 </html>`;
@@ -230,19 +239,11 @@ suite("Webview", () => {
       dom.window.close();
     });
 
-    test("prepends prefix to selected option", () => {
+    test("updates option text to data-label", () => {
       const select = document.getElementById("test") as HTMLSelectElement;
-      select.selectedIndex = 0;
-      updateSelectLabel(select, "Mode");
-      assert.strictEqual(select.options[0].textContent, "Mode: First");
-    });
-
-    test("resets other options to their data-label", () => {
-      const select = document.getElementById("test") as HTMLSelectElement;
-      select.options[1].textContent = "Modified";
-      select.selectedIndex = 0;
-      updateSelectLabel(select, "Mode");
-      assert.strictEqual(select.options[1].textContent, "Second");
+      select.options[0].textContent = "Modified";
+      updateSelectLabel(select);
+      assert.strictEqual(select.options[0].textContent, "First");
     });
   });
 
@@ -271,6 +272,8 @@ suite("Webview", () => {
       assert.ok(elements.welcomeConnectBtn);
       assert.ok(elements.modeSelector);
       assert.ok(elements.modelSelector);
+      assert.ok(elements.modeDropdownWrapper);
+      assert.ok(elements.modelDropdownWrapper);
       assert.ok(elements.welcomeView);
       assert.ok(elements.commandAutocomplete);
     });
@@ -447,7 +450,7 @@ suite("Webview", () => {
           },
           models: null,
         });
-        assert.strictEqual(elements.modeSelector.style.display, "inline-block");
+        assert.strictEqual(elements.modeDropdownWrapper.style.display, "flex");
         assert.strictEqual(elements.modeSelector.options.length, 2);
       });
 

@@ -791,7 +791,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <button id="connect-btn" aria-label="Connect to agent">Connect</button>
     <select id="agent-selector" class="inline-select" aria-label="Select AI agent"></select>
   </div>
-  
+
   <div id="welcome-view" class="welcome-view" role="main" aria-label="Welcome">
     <h3>Welcome to VSCode ACP</h3>
     <p>Chat with AI coding agents directly in VS Code.</p>
@@ -802,31 +802,49 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       <a href="https://claude.ai/code" target="_blank" rel="noopener">Install Claude Code</a>
     </p>
   </div>
-  
+
   <div id="agent-plan-container"></div>
-  
+
   <div id="messages" role="log" aria-label="Chat messages" aria-live="polite" tabindex="0"></div>
-  
-  <div id="input-container">
-    <div id="command-autocomplete" role="listbox" aria-label="Slash commands"></div>
-    <textarea 
-      id="input" 
-      rows="1" 
-      placeholder="Ask your agent... (type / for commands)" 
-      aria-label="Message input"
-      aria-describedby="input-hint"
-      aria-autocomplete="list"
-      aria-controls="command-autocomplete"
-    ></textarea>
-    <button id="send" aria-label="Send message" title="Send (Enter)">Send</button>
+
+  <div id="chat-input-area">
+    <div id="input-container">
+      <div id="command-autocomplete" role="listbox" aria-label="Slash commands"></div>
+      <textarea
+        id="input"
+        rows="1"
+        placeholder="Ask your agent... (type / for commands)"
+        aria-label="Message input"
+        aria-describedby="input-hint"
+        aria-autocomplete="list"
+        aria-controls="command-autocomplete"
+      ></textarea>
+    </div>
+
+    <div id="options-bar" role="toolbar" aria-label="Session options">
+      <div id="left-options">
+        <div class="dropdown-wrapper" id="mode-dropdown-wrapper" style="display: none;">
+          <span class="dropdown-icon">⚙️</span>
+          <select id="mode-selector" class="plain-select" aria-label="Select mode"></select>
+          <span class="dropdown-chevron">▼</span>
+        </div>
+        <div class="dropdown-wrapper" id="model-dropdown-wrapper" style="display: none;">
+          <span class="dropdown-icon">🤖</span>
+          <select id="model-selector" class="plain-select" aria-label="Select model"></select>
+          <span class="dropdown-chevron">▼</span>
+        </div>
+      </div>
+      <div id="right-options">
+        <button id="send" aria-label="Send message" title="Send (Enter)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15.854 0.146c-0.118-0.118-0.297-0.155-0.453-0.092l-15 6c-0.165 0.066-0.264 0.235-0.24 0.412 0.024 0.177 0.16 0.315 0.334 0.339l6.046 0.864 0.864 6.046c0.024 0.174 0.162 0.31 0.339 0.334 0.011 0.001 0.022 0.001 0.033 0.001 0.165 0.0 0.312-0.1 0.378-0.252l6-15c0.063-0.156 0.026-0.335-0.092-0.453zM13.714 2.286l-4.469 11.171-0.662-4.636 5.51-5.51c0.195-0.195 0.195-0.512 0-0.707s-0.512-0.195-0.707 0l-5.51 5.51-4.636-0.662 11.171-4.469l-0.697 0.303z" />
+          </svg>
+        </button>
+      </div>
+    </div>
   </div>
   <span id="input-hint" class="sr-only">Press Enter to send, Shift+Enter for new line, Escape to clear. Type / for slash commands.</span>
-  
-  <div id="options-bar" role="toolbar" aria-label="Session options">
-    <select id="mode-selector" class="inline-select" style="display: none;" aria-label="Select mode"></select>
-    <select id="model-selector" class="inline-select" style="display: none;" aria-label="Select model"></select>
-  </div>
-  
+
 <script src="${webviewScriptUri}"></script>
 </body>
 </html>`;
