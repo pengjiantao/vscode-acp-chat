@@ -776,7 +776,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource};">
   <link href="${styleResetUri}" rel="stylesheet">
   <link href="${styleVSCodeUri}" rel="stylesheet">
   <link href="${styleMainUri}" rel="stylesheet">
@@ -789,7 +789,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       <span id="status-text">Disconnected</span>
     </span>
     <button id="connect-btn" aria-label="Connect to agent">Connect</button>
-    <select id="agent-selector" class="inline-select" aria-label="Select AI agent"></select>
+    <div class="custom-dropdown inline-dropdown" id="agent-dropdown" aria-label="Select AI agent">
+      <div class="dropdown-trigger">
+        <span class="selected-label">Select Agent</span>
+        <span class="dropdown-chevron">
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M13.078 5.672L8 10.75 2.922 5.672l.703-.703L8 9.344l4.375-4.375.703.703z"/></svg>
+        </span>
+      </div>
+      <div class="dropdown-popover"></div>
+    </div>
   </div>
 
   <div id="welcome-view" class="welcome-view" role="main" aria-label="Welcome">
@@ -823,31 +831,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     <div id="options-bar" role="toolbar" aria-label="Session options">
       <div id="left-options">
-        <div class="dropdown-wrapper" id="mode-dropdown-wrapper" style="display: none;">
-          <span class="dropdown-icon">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-              <path d="M9.1 4.4L8.6 2H7.4l-.5 2.4-.7.3-2-1.3-.9.8 1.3 2-.3.7-2.4.5V8.6l2.4.5.3.7-1.3 2 .9.8 2-1.3.7.3.5 2.4h1.2l.5-2.4.7-.3 2 1.3.9-.8-1.3-2 .3-.7 2.4-.5V7.4l-2.4-.5-.3-.7 1.3-2-.9-.8-2 1.3-.7-.3zM8 10c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>
-            </svg>
-          </span>
-          <select id="mode-selector" class="plain-select" aria-label="Select mode"></select>
-          <span class="dropdown-chevron">
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-              <path d="M13.078 5.672L8 10.75 2.922 5.672l.703-.703L8 9.344l4.375-4.375.703.703z"/>
-            </svg>
-          </span>
+        <div class="custom-dropdown" id="mode-dropdown" style="display: none;">
+          <div class="dropdown-trigger">
+            <span class="dropdown-icon">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M9.1 4.4L8.6 2H7.4l-.5 2.4-.7.3-2-1.3-.9.8 1.3 2-.3.7-2.4.5V8.6l2.4.5.3.7-1.3 2 .9.8 2-1.3.7.3.5 2.4h1.2l.5-2.4.7-.3 2 1.3.9-.8-1.3-2 .3-.7 2.4-.5V7.4l-2.4-.5-.3-.7 1.3-2-.9-.8-2 1.3-.7-.3zM8 10c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+            </span>
+            <span class="selected-label">Mode</span>
+            <span class="dropdown-chevron">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M13.078 5.672L8 10.75 2.922 5.672l.703-.703L8 9.344l4.375-4.375.703.703z"/></svg>
+            </span>
+          </div>
+          <div class="dropdown-popover"></div>
         </div>
-        <div class="dropdown-wrapper" id="model-dropdown-wrapper" style="display: none;">
-          <span class="dropdown-icon">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 4.5v-1a.5.5 0 0 0-.5-.5h-2v-.5a.5.5 0 0 0-.5-.5h-2a.5.5 0 0 0-.5.5v.5h-2a.5.5 0 0 0-.5.5v1A2.5 2.5 0 0 0 2 7v5a2.5 2.5 0 0 0 2.5 2.5h7a2.5 2.5 0 0 0 2.5-2.5V7a2.5 2.5 0 0 0-2.146-2.5zm-5-1h2v.5h-2v-.5zM13 12a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 12V7a1.5 1.5 0 0 1 1.5-1.5h7A1.5 1.5 0 0 1 13 7v5zm-7-4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm6 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM5 10.5h6v1H5v-1z"/>
-            </svg>
-          </span>
-          <select id="model-selector" class="plain-select" aria-label="Select model"></select>
-          <span class="dropdown-chevron">
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-              <path d="M13.078 5.672L8 10.75 2.922 5.672l.703-.703L8 9.344l4.375-4.375.703.703z"/>
-            </svg>
-          </span>
+        <div class="custom-dropdown" id="model-dropdown" style="display: none;">
+          <div class="dropdown-trigger">
+            <span class="dropdown-icon">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M12 4.5v-1a.5.5 0 0 0-.5-.5h-2v-.5a.5.5 0 0 0-.5-.5h-2a.5.5 0 0 0-.5.5v.5h-2a.5.5 0 0 0-.5.5v1A2.5 2.5 0 0 0 2 7v5a2.5 2.5 0 0 0 2.5 2.5h7a2.5 2.5 0 0 0 2.5-2.5V7a2.5 2.5 0 0 0-2.146-2.5zm-5-1h2v.5h-2v-.5zM13 12a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 12V7a1.5 1.5 0 0 1 1.5-1.5h7A1.5 1.5 0 0 1 13 7v5zm-7-4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm6 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM5 10.5h6v1H5v-1z"/></svg>
+            </span>
+            <span class="selected-label">Model</span>
+            <span class="dropdown-chevron">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M13.078 5.672L8 10.75 2.922 5.672l.703-.703L8 9.344l4.375-4.375.703.703z"/></svg>
+            </span>
+          </div>
+          <div class="dropdown-popover"></div>
         </div>
       </div>
       <div id="right-options">

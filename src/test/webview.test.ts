@@ -3,7 +3,6 @@ import { JSDOM, DOMWindow } from "jsdom";
 import {
   escapeHtml,
   getToolsHtml,
-  updateSelectLabel,
   getElements,
   WebviewController,
   initWebview,
@@ -53,7 +52,12 @@ function createWebviewHTML(): string {
       <span id="status-text">Disconnected</span>
     </span>
     <button id="connect-btn">Connect</button>
-    <select id="agent-selector"></select>
+    <div class="custom-dropdown" id="agent-dropdown">
+      <div class="dropdown-trigger">
+        <span class="selected-label"></span>
+      </div>
+      <div class="dropdown-popover"></div>
+    </div>
   </div>
 
   <div id="welcome-view" class="welcome-view">
@@ -72,11 +76,17 @@ function createWebviewHTML(): string {
     </div>
     <div id="options-bar">
       <div id="left-options">
-        <div class="dropdown-wrapper" id="mode-dropdown-wrapper">
-          <select id="mode-selector"></select>
+        <div class="custom-dropdown" id="mode-dropdown">
+          <div class="dropdown-trigger">
+            <span class="selected-label"></span>
+          </div>
+          <div class="dropdown-popover"></div>
         </div>
-        <div class="dropdown-wrapper" id="model-dropdown-wrapper">
-          <select id="model-selector"></select>
+        <div class="custom-dropdown" id="model-dropdown">
+          <div class="dropdown-trigger">
+            <span class="selected-label"></span>
+          </div>
+          <div class="dropdown-popover"></div>
         </div>
       </div>
       <div id="right-options">
@@ -224,29 +234,6 @@ suite("Webview", () => {
     });
   });
 
-  suite("updateSelectLabel", () => {
-    let dom: JSDOM;
-    let document: Document;
-
-    setup(() => {
-      dom = new JSDOM(
-        '<!DOCTYPE html><select id="test"><option value="1" data-label="First">First</option><option value="2" data-label="Second">Second</option></select>'
-      );
-      document = dom.window.document;
-    });
-
-    teardown(() => {
-      dom.window.close();
-    });
-
-    test("updates option text to data-label", () => {
-      const select = document.getElementById("test") as HTMLSelectElement;
-      select.options[0].textContent = "Modified";
-      updateSelectLabel(select);
-      assert.strictEqual(select.options[0].textContent, "First");
-    });
-  });
-
   suite("getElements", () => {
     let dom: JSDOM;
     let document: Document;
@@ -267,13 +254,11 @@ suite("Webview", () => {
       assert.ok(elements.sendBtn);
       assert.ok(elements.statusDot);
       assert.ok(elements.statusText);
-      assert.ok(elements.agentSelector);
+      assert.ok(elements.agentDropdown);
       assert.ok(elements.connectBtn);
       assert.ok(elements.welcomeConnectBtn);
-      assert.ok(elements.modeSelector);
-      assert.ok(elements.modelSelector);
-      assert.ok(elements.modeDropdownWrapper);
-      assert.ok(elements.modelDropdownWrapper);
+      assert.ok(elements.modeDropdown);
+      assert.ok(elements.modelDropdown);
       assert.ok(elements.welcomeView);
       assert.ok(elements.commandAutocomplete);
     });
@@ -282,7 +267,7 @@ suite("Webview", () => {
       const elements = getElements(document);
       assert.strictEqual(elements.inputEl.tagName, "TEXTAREA");
       assert.strictEqual(elements.sendBtn.tagName, "BUTTON");
-      assert.strictEqual(elements.agentSelector.tagName, "SELECT");
+      assert.ok(elements.agentDropdown.classList.contains("custom-dropdown"));
     });
   });
 
@@ -434,8 +419,8 @@ suite("Webview", () => {
           ],
           selected: "opencode",
         });
-        assert.strictEqual(elements.agentSelector.options.length, 2);
-        assert.strictEqual(elements.agentSelector.value, "opencode");
+        const label = elements.agentDropdown.querySelector(".selected-label");
+        assert.strictEqual(label?.textContent, "OpenCode");
       });
 
       test("handles sessionMetadata with modes", () => {
@@ -450,8 +435,9 @@ suite("Webview", () => {
           },
           models: null,
         });
-        assert.strictEqual(elements.modeDropdownWrapper.style.display, "flex");
-        assert.strictEqual(elements.modeSelector.options.length, 2);
+        assert.strictEqual(elements.modeDropdown.style.display, "flex");
+        const label = elements.modeDropdown.querySelector(".selected-label");
+        assert.strictEqual(label?.textContent, "Code");
       });
 
       test("handles chatCleared", () => {

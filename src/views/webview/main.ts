@@ -423,19 +423,141 @@ export function updateSelectLabel(select: HTMLSelectElement): void {
   });
 }
 
+export interface DropdownOption {
+  id: string;
+  name: string;
+  available?: boolean;
+  icon?: string;
+}
+
+export class Dropdown {
+  private element: HTMLElement;
+  private trigger: HTMLElement;
+  private popover: HTMLElement;
+  private labelEl: HTMLElement;
+  private options: DropdownOption[] = [];
+  private selectedId: string | null = null;
+  private onChange?: (id: string) => void;
+  private isOpen = false;
+
+  constructor(element: HTMLElement, onChange?: (id: string) => void) {
+    this.element = element;
+    this.onChange = onChange;
+    this.trigger = element.querySelector(".dropdown-trigger")!;
+    this.popover = element.querySelector(".dropdown-popover")!;
+    this.labelEl = element.querySelector(".selected-label")!;
+
+    this.trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.toggle();
+    });
+
+    this.element.ownerDocument.addEventListener("click", () => {
+      if (this.isOpen) this.close();
+    });
+
+    this.popover.addEventListener("click", (e) => e.stopPropagation());
+  }
+
+  setOptions(options: DropdownOption[], selectedId?: string): void {
+    this.options = options;
+    this.renderOptions();
+    if (selectedId !== undefined) {
+      this.select(selectedId, false);
+    }
+  }
+
+  select(id: string, triggerChange = true): void {
+    const option = this.options.find((o) => o.id === id);
+    if (!option) return;
+
+    this.selectedId = id;
+    this.labelEl.textContent = option.name;
+    this.labelEl.title = option.name;
+
+    const items = this.popover.querySelectorAll(".dropdown-item");
+    items.forEach((item) => {
+      if (item.getAttribute("data-id") === id) {
+        item.classList.add("selected");
+      } else {
+        item.classList.remove("selected");
+      }
+    });
+
+    if (triggerChange && this.onChange) {
+      this.onChange(id);
+    }
+  }
+
+  getValue(): string | null {
+    return this.selectedId;
+  }
+
+  setValue(id: string): void {
+    this.select(id, false);
+  }
+
+  toggle(): void {
+    if (this.isOpen) this.close();
+    else this.open();
+  }
+
+  open(): void {
+    // Close other dropdowns first
+    this.element.ownerDocument
+      .querySelectorAll(".custom-dropdown.open")
+      .forEach((el) => {
+        if (el !== this.element) el.classList.remove("open");
+      });
+
+    this.isOpen = true;
+    this.element.classList.add("open");
+  }
+
+  close(): void {
+    this.isOpen = false;
+    this.element.classList.remove("open");
+  }
+
+  private renderOptions(): void {
+    this.popover.innerHTML = "";
+    this.options.forEach((opt) => {
+      const item = this.element.ownerDocument.createElement("div");
+      item.className = "dropdown-item";
+      if (opt.id === this.selectedId) item.classList.add("selected");
+      if (opt.available === false) item.classList.add("disabled");
+      item.setAttribute("data-id", opt.id);
+
+      let html = "";
+      if (opt.icon) {
+        html += `<span class="dropdown-item-icon">${opt.icon}</span>`;
+      }
+      html += `<span>${escapeHtml(opt.available === false ? opt.name + " (not installed)" : opt.name)}</span>`;
+      item.innerHTML = html;
+
+      item.addEventListener("click", () => {
+        if (opt.available !== false) {
+          this.select(opt.id);
+          this.close();
+        }
+      });
+
+      this.popover.appendChild(item);
+    });
+  }
+}
+
 export interface WebviewElements {
   messagesEl: HTMLElement;
   inputEl: HTMLTextAreaElement;
   sendBtn: HTMLButtonElement;
   statusDot: HTMLElement;
   statusText: HTMLElement;
-  agentSelector: HTMLSelectElement;
+  agentDropdown: HTMLElement;
   connectBtn: HTMLButtonElement;
   welcomeConnectBtn: HTMLButtonElement;
-  modeSelector: HTMLSelectElement;
-  modelSelector: HTMLSelectElement;
-  modeDropdownWrapper: HTMLElement;
-  modelDropdownWrapper: HTMLElement;
+  modeDropdown: HTMLElement;
+  modelDropdown: HTMLElement;
   welcomeView: HTMLElement;
   commandAutocomplete: HTMLElement;
   planContainer: HTMLElement;
@@ -448,15 +570,13 @@ export function getElements(doc: Document): WebviewElements {
     sendBtn: doc.getElementById("send") as HTMLButtonElement,
     statusDot: doc.getElementById("status-dot")!,
     statusText: doc.getElementById("status-text")!,
-    agentSelector: doc.getElementById("agent-selector") as HTMLSelectElement,
+    agentDropdown: doc.getElementById("agent-dropdown")!,
     connectBtn: doc.getElementById("connect-btn") as HTMLButtonElement,
     welcomeConnectBtn: doc.getElementById(
       "welcome-connect-btn"
     ) as HTMLButtonElement,
-    modeSelector: doc.getElementById("mode-selector") as HTMLSelectElement,
-    modelSelector: doc.getElementById("model-selector") as HTMLSelectElement,
-    modeDropdownWrapper: doc.getElementById("mode-dropdown-wrapper")!,
-    modelDropdownWrapper: doc.getElementById("model-dropdown-wrapper")!,
+    modeDropdown: doc.getElementById("mode-dropdown")!,
+    modelDropdown: doc.getElementById("model-dropdown")!,
     welcomeView: doc.getElementById("welcome-view")!,
     commandAutocomplete: doc.getElementById("command-autocomplete")!,
     planContainer: doc.getElementById("agent-plan-container")!,
@@ -483,6 +603,10 @@ export class WebviewController {
   private hasActiveTool = false;
   private expandedToolId: string | null = null;
 
+  private agentDropdown: Dropdown;
+  private modeDropdown: Dropdown;
+  private modelDropdown: Dropdown;
+
   constructor(
     vscode: VsCodeApi,
     elements: WebviewElements,
@@ -493,6 +617,18 @@ export class WebviewController {
     this.elements = elements;
     this.doc = doc;
     this.win = win;
+
+    this.agentDropdown = new Dropdown(this.elements.agentDropdown, (id) => {
+      this.vscode.postMessage({ type: "selectAgent", agentId: id });
+    });
+
+    this.modeDropdown = new Dropdown(this.elements.modeDropdown, (id) => {
+      this.vscode.postMessage({ type: "selectMode", modeId: id });
+    });
+
+    this.modelDropdown = new Dropdown(this.elements.modelDropdown, (id) => {
+      this.vscode.postMessage({ type: "selectModel", modelId: id });
+    });
 
     this.restoreState();
     this.setupEventListeners();
@@ -529,7 +665,6 @@ export class WebviewController {
   private setupEventListeners(): void {
     const { sendBtn, inputEl, messagesEl, connectBtn, welcomeConnectBtn } =
       this.elements;
-    const { agentSelector, modeSelector, modelSelector } = this.elements;
 
     const { commandAutocomplete } = this.elements;
 
@@ -631,29 +766,6 @@ export class WebviewController {
 
     welcomeConnectBtn.addEventListener("click", () => {
       this.vscode.postMessage({ type: "connect" });
-    });
-
-    agentSelector.addEventListener("change", () => {
-      this.vscode.postMessage({
-        type: "selectAgent",
-        agentId: agentSelector.value,
-      });
-    });
-
-    modeSelector.addEventListener("change", () => {
-      updateSelectLabel(modeSelector);
-      this.vscode.postMessage({
-        type: "selectMode",
-        modeId: modeSelector.value,
-      });
-    });
-
-    modelSelector.addEventListener("change", () => {
-      updateSelectLabel(modelSelector);
-      this.vscode.postMessage({
-        type: "selectModel",
-        modelId: modelSelector.value,
-      });
     });
 
     this.win.addEventListener("message", (e: MessageEvent<ExtensionMessage>) =>
@@ -908,8 +1020,7 @@ export class WebviewController {
   }
 
   handleMessage(msg: ExtensionMessage): void {
-    const { modeSelector, modelSelector, agentSelector, connectBtn } =
-      this.elements;
+    const { connectBtn } = this.elements;
 
     switch (msg.type) {
       case "userMessage":
@@ -1050,25 +1161,22 @@ export class WebviewController {
         break;
       case "agents":
         if (!msg.agents) break;
-        agentSelector.innerHTML = "";
-        msg.agents.forEach((a) => {
-          const opt = this.doc.createElement("option");
-          opt.value = a.id;
-          opt.textContent = a.available ? a.name : a.name + " (not installed)";
-          if (!a.available) {
-            opt.style.color = "var(--vscode-disabledForeground)";
-          }
-          if (a.id === msg.selected) opt.selected = true;
-          agentSelector.appendChild(opt);
-        });
+        this.agentDropdown.setOptions(
+          msg.agents.map((a) => ({
+            id: a.id,
+            name: a.name,
+            available: a.available,
+          })),
+          msg.selected
+        );
         break;
       case "agentChanged":
       case "chatCleared":
         this.elements.messagesEl.innerHTML = "";
         this.currentAssistantMessage = null;
         this.messageTexts.clear();
-        this.elements.modeDropdownWrapper.style.display = "none";
-        this.elements.modelDropdownWrapper.style.display = "none";
+        this.elements.modeDropdown.style.display = "none";
+        this.elements.modelDropdown.style.display = "none";
         this.availableCommands = [];
         this.hideCommandAutocomplete();
         this.hidePlan();
@@ -1092,35 +1200,29 @@ export class WebviewController {
           msg.models.availableModels.length > 0;
 
         if (hasModes && msg.modes) {
-          this.elements.modeDropdownWrapper.style.display = "flex";
-          modeSelector.innerHTML = "";
-          msg.modes.availableModes.forEach((m) => {
-            const opt = this.doc.createElement("option");
-            opt.value = m.id;
-            opt.textContent = m.name || m.id;
-            opt.dataset.label = m.name || m.id;
-            if (m.id === msg.modes?.currentModeId) opt.selected = true;
-            modeSelector.appendChild(opt);
-          });
-          updateSelectLabel(modeSelector);
+          this.elements.modeDropdown.style.display = "flex";
+          this.modeDropdown.setOptions(
+            msg.modes.availableModes.map((m) => ({
+              id: m.id,
+              name: m.name || m.id,
+            })),
+            msg.modes.currentModeId
+          );
         } else {
-          this.elements.modeDropdownWrapper.style.display = "none";
+          this.elements.modeDropdown.style.display = "none";
         }
 
         if (hasModels && msg.models) {
-          this.elements.modelDropdownWrapper.style.display = "flex";
-          modelSelector.innerHTML = "";
-          msg.models.availableModels.forEach((m) => {
-            const opt = this.doc.createElement("option");
-            opt.value = m.modelId;
-            opt.textContent = m.name || m.modelId;
-            opt.dataset.label = m.name || m.modelId;
-            if (m.modelId === msg.models?.currentModelId) opt.selected = true;
-            modelSelector.appendChild(opt);
-          });
-          updateSelectLabel(modelSelector);
+          this.elements.modelDropdown.style.display = "flex";
+          this.modelDropdown.setOptions(
+            msg.models.availableModels.map((m) => ({
+              id: m.modelId,
+              name: m.name || m.modelId,
+            })),
+            msg.models.currentModelId
+          );
         } else {
-          this.elements.modelDropdownWrapper.style.display = "none";
+          this.elements.modelDropdown.style.display = "none";
         }
 
         if (msg.commands && Array.isArray(msg.commands)) {
@@ -1130,8 +1232,7 @@ export class WebviewController {
       }
       case "modeUpdate":
         if (msg.modeId) {
-          modeSelector.value = msg.modeId;
-          updateSelectLabel(modeSelector);
+          this.modeDropdown.setValue(msg.modeId);
         }
         break;
       case "availableCommands":
