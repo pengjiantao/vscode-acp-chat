@@ -482,9 +482,9 @@ body {
 
 /* Input Container Area */
 #chat-input-area {
-  margin: 8px var(--container-padding);
+  margin: 0 12px 12px 12px;
   border: 1px solid var(--vscode-panel-border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--vscode-input-background);
   display: flex;
   flex-direction: column;
@@ -588,7 +588,7 @@ body {
 }
 
 #input-container {
-  padding: 8px 8px 0 8px;
+  padding: 8px 8px 4px 8px;
   display: flex;
   flex-direction: column;
 }
@@ -597,14 +597,20 @@ body {
   flex: 1;
   resize: none;
   min-height: 36px;
-  max-height: 120px;
+  max-height: 33vh;
   border: none !important;
   background: transparent !important;
-  padding: 0;
+  padding: 2px 4px;
   outline: none !important;
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   color: var(--vscode-input-foreground);
+  line-height: 1.5;
+  scrollbar-width: none;
+}
+
+#input::-webkit-scrollbar {
+  display: none;
 }
 
 #input::placeholder {
@@ -622,7 +628,7 @@ body {
 #left-options {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 #right-options {
@@ -630,30 +636,39 @@ body {
   align-items: center;
 }
 
-/* Plain Dropdowns */
+/* VSCode Style Dropdowns */
 .dropdown-wrapper {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
   cursor: pointer;
   position: relative;
-  padding: 2px 4px;
+  padding: 2px 6px;
   border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  transition:
+    background 0.1s,
+    border-color 0.1s;
+  height: 24px;
 }
 
 .dropdown-wrapper:hover {
-  background: var(--vscode-toolbar-hoverBackground);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--vscode-foreground);
+  border-color: var(--vscode-panel-border);
 }
 
 .dropdown-icon {
-  font-size: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.8;
+  opacity: 0.7;
+  color: var(--vscode-foreground);
+  width: 16px;
+  height: 16px;
 }
 
 .plain-select {
@@ -663,28 +678,37 @@ body {
   border: none;
   color: inherit;
   font-family: inherit;
-  font-size: inherit;
+  font-size: 11px;
   cursor: pointer;
   padding: 0 16px 0 0;
   outline: none;
-  max-width: 120px;
+  max-width: 140px;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
+  font-weight: 500;
+  line-height: 24px;
+  height: 24px;
 }
 
 .dropdown-chevron {
   position: absolute;
-  right: 4px;
-  font-size: 8px;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
-  opacity: 0.6;
+  opacity: 0.5;
+  width: 10px;
+  height: 10px;
 }
 
 /* Send Button */
 #send {
   background: transparent;
-  color: var(--vscode-button-background);
+  color: var(--vscode-descriptionForeground);
   border: none;
   padding: 4px;
   display: flex;
@@ -692,15 +716,20 @@ body {
   justify-content: center;
   cursor: pointer;
   border-radius: 4px;
-  transition: opacity 0.2s;
+  transition:
+    color 0.1s,
+    background 0.1s;
+  width: 24px;
+  height: 24px;
 }
 
-#send:hover {
+#send:hover:not(:disabled) {
   background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-foreground);
 }
 
 #send:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: default;
 }
 

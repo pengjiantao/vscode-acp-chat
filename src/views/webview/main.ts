@@ -571,7 +571,8 @@ export class WebviewController {
 
     inputEl.addEventListener("input", () => {
       inputEl.style.height = "auto";
-      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+      const maxHeight = window.innerHeight / 3;
+      inputEl.style.height = Math.min(inputEl.scrollHeight, maxHeight) + "px";
       this.updateAutocomplete();
       this.saveState();
     });
