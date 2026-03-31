@@ -189,7 +189,7 @@ export class ACPClient {
     this.setState("connecting");
 
     try {
-      this.process = this.spawnFn(
+      const currentProcess = this.spawnFn(
         this.agentConfig.command,
         this.agentConfig.args,
         {
@@ -197,19 +197,22 @@ export class ACPClient {
           env: { ...process.env },
         }
       );
+      this.process = currentProcess;
 
-      this.process.stderr?.on("data", (data: Buffer) => {
+      currentProcess.stderr?.on("data", (data: Buffer) => {
         const text = data.toString();
         console.error("[ACP stderr]", text);
         this.stderrListeners.forEach((cb) => cb(text));
       });
 
-      this.process.on("error", (error) => {
+      currentProcess.on("error", (error) => {
+        if (this.process !== currentProcess) return;
         console.error("[ACP] Process error:", error);
         this.setState("error");
       });
 
-      this.process.on("exit", (code) => {
+      currentProcess.on("exit", (code) => {
+        if (this.process !== currentProcess) return;
         console.log("[ACP] Process exited with code:", code);
         this.setState("disconnected");
         this.connection = null;
@@ -217,8 +220,8 @@ export class ACPClient {
       });
 
       const stream = ndJsonStream(
-        Writable.toWeb(this.process.stdin!) as WritableStream<Uint8Array>,
-        Readable.toWeb(this.process.stdout!) as ReadableStream<Uint8Array>
+        Writable.toWeb(currentProcess.stdin!) as WritableStream<Uint8Array>,
+        Readable.toWeb(currentProcess.stdout!) as ReadableStream<Uint8Array>
       );
 
       const client: Client = {

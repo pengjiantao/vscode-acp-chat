@@ -170,7 +170,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           break;
         case "selectAgent":
           if (message.agentId) {
-            this.handleAgentChange(message.agentId);
+            await this.handleAgentChange(message.agentId);
           }
           break;
         case "selectMode":
@@ -625,7 +625,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private handleAgentChange(agentId: string): void {
+  private async handleAgentChange(agentId: string): Promise<void> {
     const agent = getAgent(agentId);
     if (agent) {
       this.acpClient.setAgent(agent);
@@ -633,6 +633,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.hasSession = false;
       this.postMessage({ type: "agentChanged", agentId });
       this.postMessage({ type: "sessionMetadata", modes: null, models: null });
+
+      try {
+        await this.handleConnect();
+      } catch (error) {
+        console.error(
+          "[Chat] Auto-reconnect failed after agent change:",
+          error
+        );
+      }
     }
   }
 
