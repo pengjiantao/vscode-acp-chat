@@ -66,6 +66,9 @@ type KillTerminalCommandCallback = (
 type ReleaseTerminalCallback = (
   params: ReleaseTerminalRequest
 ) => Promise<ReleaseTerminalResponse>;
+type PermissionCallback = (
+  params: RequestPermissionRequest
+) => Promise<RequestPermissionResponse | null>;
 
 export type SpawnFunction = (
   command: string,
@@ -96,6 +99,7 @@ export class ACPClient {
   private waitForTerminalExitHandler: WaitForTerminalExitCallback | null = null;
   private killTerminalCommandHandler: KillTerminalCommandCallback | null = null;
   private releaseTerminalHandler: ReleaseTerminalCallback | null = null;
+  private permissionRequestListeners: Set<PermissionCallback> = new Set();
   private agentConfig: AgentConfig;
   private spawnFn: SpawnFunction;
   private skipAvailabilityCheck: boolean;
@@ -166,6 +170,11 @@ export class ACPClient {
     this.releaseTerminalHandler = callback;
   }
 
+  setOnPermissionRequest(callback: PermissionCallback): () => void {
+    this.permissionRequestListeners.add(callback);
+    return () => this.permissionRequestListeners.delete(callback);
+  }
+
   isConnected(): boolean {
     return this.state === "connected";
   }
@@ -225,28 +234,8 @@ export class ACPClient {
       );
 
       const client: Client = {
-        requestPermission: async (
-          params: RequestPermissionRequest
-        ): Promise<RequestPermissionResponse> => {
-          console.log(
-            "[ACP] Permission request:",
-            JSON.stringify(params, null, 2)
-          );
-          const allowOption = params.options.find(
-            (opt) => opt.kind === "allow_once" || opt.kind === "allow_always"
-          );
-          if (allowOption) {
-            console.log(
-              "[ACP] Auto-approving with option:",
-              allowOption.optionId
-            );
-            return {
-              outcome: { outcome: "selected", optionId: allowOption.optionId },
-            };
-          }
-          console.log("[ACP] No allow option found, cancelling");
-          return { outcome: { outcome: "cancelled" } };
-        },
+        requestPermission: (params: RequestPermissionRequest) =>
+          this.handleRequestPermission(params),
         sessionUpdate: async (params: SessionNotification): Promise<void> => {
           const updateType = params.update?.sessionUpdate ?? "unknown";
           console.log(`[ACP] Session update: ${updateType}`);
@@ -348,7 +337,8 @@ export class ACPClient {
             writeTextFile: true,
           },
           terminal: true,
-        },
+          permissions: true,
+        } as any,
         clientInfo: {
           name: "vscode-acp",
           version: "0.0.1",
@@ -361,6 +351,53 @@ export class ACPClient {
       this.setState("error");
       throw error;
     }
+  }
+
+  async handleRequestPermission(
+    params: RequestPermissionRequest
+  ): Promise<RequestPermissionResponse> {
+    console.log(
+      "[ACP] Permission request received from agent:",
+      params.toolCall.title
+    );
+    console.log("[ACP] Request parameters:", JSON.stringify(params, null, 2));
+
+    // Iterate through listeners
+    for (const listener of this.permissionRequestListeners) {
+      try {
+        const response = await listener(params);
+        if (response) {
+          console.log(
+            "[ACP] Permission handled by listener:",
+            response.outcome.outcome
+          );
+          return response;
+        }
+      } catch (error) {
+        console.error("[ACP] Permission listener error:", error);
+      }
+    }
+
+    // Default: Auto-approve with the first "allow" option
+    const options = params.options || [];
+    const allowOption = options.find((opt) => opt.kind.startsWith("allow"));
+    if (allowOption) {
+      console.log("[ACP] Auto-approving permission with:", allowOption.name);
+      return {
+        outcome: {
+          outcome: "selected",
+          optionId: allowOption.optionId,
+        },
+      };
+    }
+
+    // Fallback: Cancel
+    console.log("[ACP] No allow option found, cancelling permission request");
+    return {
+      outcome: {
+        outcome: "cancelled",
+      },
+    };
   }
 
   async newSession(workingDirectory: string): Promise<NewSessionResponse> {

@@ -22,6 +22,8 @@ import type {
   KillTerminalCommandResponse,
   ReleaseTerminalRequest,
   ReleaseTerminalResponse,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
 
 const SELECTED_AGENT_KEY = "vscode-acp.selectedAgent";
@@ -41,6 +43,7 @@ interface WebviewMessage {
     | "copyMessage"
     | "searchFiles"
     | "openFile"
+    | "permissionResponse"
     | "stop";
   text?: string;
   agentId?: string;
@@ -55,6 +58,8 @@ interface WebviewMessage {
     range?: { startLine: number; endLine: number };
   }>;
   path?: string;
+  requestId?: string;
+  outcome?: { outcome: "selected" | "cancelled"; optionId?: string };
 }
 
 export interface SelectionMention {
@@ -87,6 +92,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private hasRestoredModeModel = false;
   private terminals: Map<string, ManagedTerminal> = new Map();
   private terminalCounter = 0;
+  private permissionQueue: Array<{
+    id: string;
+    params: RequestPermissionRequest;
+    resolver: (response: RequestPermissionResponse) => void;
+  }> = [];
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -107,6 +117,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this.acpClient.setOnStateChange((state) => {
       this.postMessage({ type: "connectionState", state });
+      if (state === "disconnected" || state === "error") {
+        this.postMessage({ type: "streamEnd", stopReason: "error" });
+        if (this.stderrBuffer.trim().length > 0) {
+          const lastLines = this.stderrBuffer
+            .trim()
+            .split("\n")
+            .slice(-5)
+            .join("\n");
+          this.postMessage({
+            type: "agentError",
+            text: `Agent process ${state}.\nLast stderr:\n${lastLines}`,
+          });
+          this.stderrBuffer = "";
+        }
+      }
     });
 
     this.acpClient.setOnSessionUpdate((update) => {
@@ -153,6 +178,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       async (params: ReleaseTerminalRequest) => {
         return this.handleReleaseTerminal(params);
       }
+    );
+
+    this.acpClient.setOnPermissionRequest(
+      this.handlePermissionRequest.bind(this)
     );
   }
 
@@ -242,6 +271,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           break;
         case "stop":
           await this.acpClient.cancel();
+          break;
+        case "permissionResponse":
+          if (message.requestId && message.outcome) {
+            const pending = this.permissionQueue.find(
+              (p) => p.id === message.requestId
+            );
+            if (pending) {
+              const outcome =
+                message.outcome.outcome === "selected"
+                  ? {
+                      outcome: "selected" as const,
+                      optionId: message.outcome.optionId!,
+                    }
+                  : { outcome: "cancelled" as const };
+              pending.resolver({ outcome });
+              this.permissionQueue = this.permissionQueue.filter(
+                (p) => p.id !== message.requestId
+              );
+            }
+          }
           break;
         case "ready":
           this.postMessage({
@@ -547,6 +596,60 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     terminal.terminal?.dispose();
     this.terminals.delete(params.terminalId);
     return {};
+  }
+
+  private async handlePermissionRequest(
+    params: RequestPermissionRequest
+  ): Promise<RequestPermissionResponse> {
+    return new Promise((resolve) => {
+      const requestId = `perm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      console.log(
+        "[Chat] Permission request:",
+        params.toolCall?.title,
+        params.toolCall?.kind
+      );
+
+      // Add to queue
+      this.permissionQueue.push({
+        id: requestId,
+        params,
+        resolver: resolve,
+      });
+
+      // Send to webview
+      this.postMessage({
+        type: "permissionRequest",
+        requestId,
+        toolCall: {
+          kind: params.toolCall?.kind || "Unknown",
+          title: params.toolCall?.title || "Tool Call",
+        },
+        options: (params.options || []).map((opt) => ({
+          optionId: opt.optionId,
+          kind: opt.kind,
+          name: opt.name,
+        })),
+      });
+
+      // Add a system message to chat log for debugging
+      this.postMessage({
+        type: "system",
+        text: `[System] Permission requested for tool: ${params.toolCall?.title || "Unknown"}`,
+      });
+
+      // Timeout logic
+      setTimeout(() => {
+        const pending = this.permissionQueue.find((p) => p.id === requestId);
+        if (pending) {
+          console.log("[Chat] Permission request timeout, cancelling");
+          pending.resolver({ outcome: { outcome: "cancelled" } });
+          this.permissionQueue = this.permissionQueue.filter(
+            (p) => p.id !== requestId
+          );
+        }
+      }, 60000); // 60s timeout
+    });
   }
 
   public dispose(): void {

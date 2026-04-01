@@ -100,6 +100,17 @@ export interface ExtensionMessage {
   results?: Array<{ name: string; path: string }>;
   mention?: Mention;
   plan?: { entries: PlanEntry[] };
+  requestId?: string;
+  toolCall?: {
+    kind?: string;
+    title?: string;
+    description?: string;
+  };
+  options?: Array<{
+    optionId: string;
+    kind: string;
+    name: string;
+  }>;
 }
 
 export interface Mention {
@@ -637,6 +648,7 @@ export class WebviewController {
   private agentDropdown: Dropdown;
   private modeDropdown: Dropdown;
   private modelDropdown: Dropdown;
+  private isGenerating = false;
 
   constructor(
     vscode: VsCodeApi,
@@ -666,6 +678,108 @@ export class WebviewController {
     this.updateViewState();
     this.adjustHeight();
     this.vscode.postMessage({ type: "ready" });
+  }
+
+  private showPermissionDialog(
+    requestId: string,
+    toolCall: { kind?: string; title?: string; description?: string },
+    options: Array<{ optionId: string; kind: string; name: string }>
+  ): void {
+    // Stop other interactions
+    const wasGenerating = this.isGenerating;
+    this.setGenerating(true);
+
+    const overlay = this.doc.createElement("div");
+    overlay.className = "permission-dialog-overlay";
+
+    const dialog = this.doc.createElement("div");
+    dialog.className = "permission-dialog";
+
+    const header = this.doc.createElement("div");
+    header.className = "permission-dialog-header";
+    header.innerHTML = `
+      <span class="permission-icon">🔐</span>
+      <span>Permission Required</span>
+    `;
+
+    const body = this.doc.createElement("div");
+    body.className = "permission-dialog-body";
+
+    const info = this.doc.createElement("div");
+    info.className = "permission-tool-info";
+
+    const kind = this.doc.createElement("div");
+    kind.className = "permission-tool-kind";
+    kind.textContent = toolCall.kind || "Unknown";
+
+    const title = this.doc.createElement("div");
+    title.className = "permission-tool-title";
+    title.textContent = toolCall.title || "Tool Call";
+
+    info.appendChild(kind);
+    info.appendChild(title);
+
+    if (toolCall.description) {
+      const desc = this.doc.createElement("div");
+      desc.className = "permission-tool-desc";
+      desc.textContent = toolCall.description;
+      info.appendChild(desc);
+    }
+
+    const optionsContainer = this.doc.createElement("div");
+    optionsContainer.className = "permission-options";
+
+    if (options.length === 0) {
+      options.push({
+        optionId: "cancel",
+        kind: "reject_once",
+        name: "Cancel (No options provided)",
+      });
+    }
+
+    options.forEach((opt) => {
+      const btn = this.doc.createElement("button");
+      btn.className = `permission-option-btn permission-option-${opt.kind}`;
+
+      const label = this.getOptionLabel(opt.kind);
+      btn.textContent = `${label}: ${opt.name}`;
+
+      btn.addEventListener("click", () => {
+        const outcome = opt.kind.startsWith("reject")
+          ? { outcome: "cancelled" as const }
+          : { outcome: "selected" as const, optionId: opt.optionId };
+
+        this.vscode.postMessage({
+          type: "permissionResponse",
+          requestId,
+          outcome,
+        });
+
+        overlay.remove();
+        this.setGenerating(wasGenerating);
+      });
+
+      optionsContainer.appendChild(btn);
+    });
+
+    body.appendChild(info);
+    body.appendChild(optionsContainer);
+
+    dialog.appendChild(header);
+    dialog.appendChild(body);
+    overlay.appendChild(dialog);
+
+    this.doc.body.appendChild(overlay);
+  }
+
+  private getOptionLabel(kind: string): string {
+    const labels: Record<string, string> = {
+      allow_once: "Allow Once",
+      allow_always: "Always Allow",
+      reject_once: "Reject Once",
+      reject_always: "Always Reject",
+    };
+    return labels[kind] || kind;
   }
 
   private adjustHeight(): void {
@@ -1417,6 +1531,7 @@ export class WebviewController {
   }
 
   private setGenerating(isGenerating: boolean): void {
+    this.isGenerating = isGenerating;
     const { typingIndicatorEl, messagesEl, sendBtn, stopBtn } = this.elements;
     if (isGenerating) {
       sendBtn.style.display = "none";
@@ -1437,6 +1552,7 @@ export class WebviewController {
   }
 
   handleMessage(msg: ExtensionMessage): void {
+    console.log("[Webview] Message received:", msg.type, msg);
     switch (msg.type) {
       case "fileSearchResults":
         if (msg.results) {
@@ -1579,6 +1695,9 @@ export class WebviewController {
       case "agentError":
         if (msg.text) this.addMessage(msg.text, "error");
         break;
+      case "system":
+        if (msg.text) this.addMessage(msg.text, "system");
+        break;
       case "connectionState":
         if (msg.state) {
           this.updateStatus(msg.state);
@@ -1673,6 +1792,11 @@ export class WebviewController {
         break;
       case "planComplete":
         this.hidePlan();
+        break;
+      case "permissionRequest":
+        if (msg.requestId && msg.toolCall && msg.options) {
+          this.showPermissionDialog(msg.requestId, msg.toolCall, msg.options);
+        }
         break;
     }
   }
