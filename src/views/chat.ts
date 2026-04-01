@@ -699,6 +699,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           }
         }
 
+        // Fallback to raw output if no terminal content or explicit output found
+        if (
+          !terminalOutput &&
+          update.rawOutput &&
+          typeof update.rawOutput === "object" &&
+          "output" in update.rawOutput
+        ) {
+          terminalOutput = String(update.rawOutput.output);
+        }
+
         const startTime = this.toolCallStartTimes.get(update.toolCallId);
         const duration = startTime ? Date.now() - startTime : undefined;
         this.toolCallStartTimes.delete(update.toolCallId);

@@ -498,6 +498,31 @@ suite("Webview", () => {
         assert.strictEqual(tools["tool-1"].input, "ls -la");
       });
 
+      test("handles toolCallComplete and uses cached title if missing in message", () => {
+        // Start tool call with a name and kind
+        controller.handleMessage({
+          type: "toolCallStart",
+          toolCallId: "tool-cache-test",
+          name: "Original Descriptive Name",
+          kind: "execute",
+        });
+
+        // Complete tool call WITHOUT title (common in incremental updates)
+        controller.handleMessage({
+          type: "toolCallComplete",
+          toolCallId: "tool-cache-test",
+          status: "completed",
+          rawInput: { command: "ls -la" },
+        });
+
+        const tools = controller.getTools();
+        // Should use cached title because it's descriptive
+        assert.strictEqual(
+          tools["tool-cache-test"].name,
+          "Run: Original Descriptive Name"
+        );
+      });
+
       test("handles streaming", () => {
         controller.handleMessage({ type: "streamStart" });
         controller.handleMessage({ type: "streamChunk", text: "Hello " });

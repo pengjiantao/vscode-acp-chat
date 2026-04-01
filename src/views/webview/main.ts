@@ -46,6 +46,7 @@ export interface Block {
   content: string;
   toolId?: string;
   kind?: ToolKind;
+  title?: string;
 }
 
 export interface WebviewState {
@@ -1811,12 +1812,13 @@ export class WebviewController {
           if (!block) {
             block = this.ensureBlock("tool", msg.toolCallId);
             block.kind = msg.kind;
+            block.title = msg.name;
           }
           const summary = block.element.querySelector("summary");
           if (summary) {
             const summaryHtml = renderToolSummary({
               toolCallId: msg.toolCallId,
-              title: msg.name,
+              title: msg.name || block.title || "Tool",
               kind: msg.kind || block.kind,
               status: "in_progress",
             });
@@ -1834,11 +1836,13 @@ export class WebviewController {
             block.kind = msg.kind;
           }
           if (block) {
+            const finalTitle =
+              msg.title || block.title || block.toolId || "Tool";
             const summary = block.element.querySelector("summary");
             if (summary) {
               const summaryHtml = renderToolSummary({
                 toolCallId: msg.toolCallId,
-                title: msg.title || block.toolId || "Tool",
+                title: finalTitle,
                 kind: msg.kind || block.kind,
                 status: msg.status || "completed",
                 locations: msg.locations,
@@ -1850,7 +1854,7 @@ export class WebviewController {
 
             const detailsHtml = renderToolDetails({
               toolCallId: msg.toolCallId,
-              title: msg.title || "Tool",
+              title: finalTitle,
               kind: msg.kind || block.kind,
               status: msg.status || "completed",
               locations: msg.locations,

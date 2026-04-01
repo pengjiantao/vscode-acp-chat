@@ -18,21 +18,79 @@ function getIdentifier(info: ToolCallSummary): string {
   const { locations, rawInput, title } = info;
   // 1. 优先从 locations 提取
   if (locations && locations.length > 0) return locations[0].path;
-  // 2. 从 rawInput 常见字段提取
+
+  // 2. 检查描述字段
+  if (
+    rawInput &&
+    typeof rawInput.description === "string" &&
+    rawInput.description
+  )
+    return rawInput.description;
+
+  // 3. 检查是否有“有意义”的 title。
+  // 对于大部分现代 Agent (如 Claude)，title 已经是经过润色的人类可读描述。
+  const genericTitles = [
+    "bash",
+    "sh",
+    "shell",
+    "execute_command",
+    "read_file",
+    "write_file",
+    "ls",
+    "grep",
+    "tool",
+    "read",
+    "write",
+    "search",
+    "execute",
+    "move",
+    "delete",
+    "edit",
+    "think",
+    "fetch",
+  ];
+  const isGeneric =
+    !title ||
+    title.startsWith("call_") ||
+    /^[0-9a-f-]{32,}$/i.test(title) ||
+    genericTitles.includes(title.toLowerCase());
+
+  if (title && !isGeneric) return title;
+
+  // 4. 从 rawInput 常见字段提取 (作为通用标题的补充)
   if (rawInput) {
     const p =
-      rawInput.path || rawInput.file || rawInput.filePath || rawInput.uri;
+      rawInput.path ||
+      rawInput.file ||
+      rawInput.filePath ||
+      rawInput.uri ||
+      rawInput.filename ||
+      rawInput.target;
     if (typeof p === "string") return p;
 
     const q =
-      rawInput.pattern || rawInput.query || rawInput.search || rawInput.keyword;
+      rawInput.pattern ||
+      rawInput.query ||
+      rawInput.search ||
+      rawInput.keyword ||
+      rawInput.regex ||
+      rawInput.text;
     if (typeof q === "string") return q;
 
-    const cmd = rawInput.command;
+    const cmd = rawInput.command || rawInput.cmd || rawInput.script;
     if (typeof cmd === "string") return cmd;
+
+    // 5. 兜底：尝试从 rawInput 寻找任何其他的字符串字段
+    for (const [key, value] of Object.entries(rawInput)) {
+      if (
+        typeof value === "string" &&
+        value.length > 0 &&
+        !["tool", "kind", "id", "call_id"].includes(key.toLowerCase())
+      ) {
+        return value;
+      }
+    }
   }
-  // 3. 回退到 title，如果 title 看起来像 UUID/callID 且有其他信息，优先使用其他信息
-  if (title && !title.startsWith("call_")) return title;
 
   return title || "Tool";
 }
@@ -120,8 +178,14 @@ const BaseRenderer: ToolRenderer = {
           firstContent.newText
         );
       }
-    } else if (rawOutput?.output) {
-      output = String(rawOutput.output);
+    }
+
+    if (!output) {
+      if (terminalOutput) {
+        output = terminalOutput;
+      } else if (rawOutput?.output) {
+        output = String(rawOutput.output);
+      }
     }
 
     if (output) {
