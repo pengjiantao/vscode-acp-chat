@@ -44,6 +44,7 @@ export interface Block {
   contentEl: HTMLElement;
   content: string;
   toolId?: string;
+  kind?: ToolKind;
 }
 
 export interface WebviewState {
@@ -1072,6 +1073,7 @@ export class WebviewController {
           input: input || null,
           output: b.element.querySelector(".tool-output")?.textContent || null,
           status: isRunning ? "running" : "completed",
+          kind: b.kind,
         };
       });
     return tools;
@@ -1487,6 +1489,7 @@ export class WebviewController {
       case "toolCallStart":
         if (msg.toolCallId && msg.name) {
           const block = this.ensureBlock("tool", msg.toolCallId);
+          block.kind = msg.kind;
           const summary = block.element.querySelector("summary");
           if (summary) {
             const kindIcon = getToolKindIcon(msg.kind);
@@ -1509,7 +1512,8 @@ export class WebviewController {
               const statusIcon = msg.status === "failed" ? "✗" : "✓";
               const statusClass =
                 msg.status === "failed" ? "failed" : "completed";
-              const kindIcon = getToolKindIcon(msg.kind);
+              const kind = msg.kind || block.kind;
+              const kindIcon = getToolKindIcon(kind);
               const name = msg.title || block.toolId || "Tool";
               summary.innerHTML = `
                 <span class="tool-status ${statusClass}">${statusIcon}</span>
