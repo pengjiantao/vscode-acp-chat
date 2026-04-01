@@ -1047,7 +1047,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         </div>
       </div>
       <div id="right-options">
-        <button id="send" class="icon-button" aria-label="Send message" title="Send (Enter)">
+        <button id="send" class="icon-button" aria-label="Send message" title="Send (Enter)" disabled>
           <span class="dropdown-icon icon-send"></span>
         </button>
         <button id="stop" class="icon-button" aria-label="Stop generation" title="Stop" style="display: none;">

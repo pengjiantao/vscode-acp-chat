@@ -677,6 +677,7 @@ export class WebviewController {
     this.setupEventListeners();
     this.updateViewState();
     this.adjustHeight();
+    this.updateInputState();
     this.vscode.postMessage({ type: "ready" });
   }
 
@@ -782,6 +783,24 @@ export class WebviewController {
     return labels[kind] || kind;
   }
 
+  private updateInputState(): void {
+    const text = this.elements.inputEl.textContent?.trim() || "";
+    const hasMentions =
+      this.elements.inputEl.querySelectorAll(".mention-chip").length > 0;
+    const hasImages = this.elements.imageAttachmentsEl.children.length > 0;
+
+    // Fix for placeholder: if truly empty of text and mentions, ensure innerHTML is empty
+    // to allow :empty CSS selector to work.
+    if (!text && !hasMentions) {
+      if (this.elements.inputEl.innerHTML !== "") {
+        this.elements.inputEl.innerHTML = "";
+      }
+    }
+
+    this.elements.sendBtn.disabled =
+      (!text && !hasMentions && !hasImages) || this.isGenerating;
+  }
+
   private adjustHeight(): void {
     const { inputEl } = this.elements;
     inputEl.style.height = "auto";
@@ -867,6 +886,7 @@ export class WebviewController {
       this.adjustHeight();
       this.updateAutocomplete();
       this.saveState();
+      this.updateInputState();
     });
 
     inputEl.addEventListener("paste", (e) => {
@@ -962,6 +982,7 @@ export class WebviewController {
 
     item.querySelector(".image-delete")?.addEventListener("click", () => {
       item.remove();
+      this.updateInputState();
     });
 
     item.addEventListener("mouseenter", (e) =>
@@ -970,6 +991,7 @@ export class WebviewController {
     item.addEventListener("mouseleave", () => this.hideImagePreview());
 
     imageAttachmentsEl.appendChild(item);
+    this.updateInputState();
   }
 
   private showImagePreview(base64: string, event: MouseEvent): void {
@@ -1306,12 +1328,13 @@ export class WebviewController {
   }
 
   private clearInput(): void {
-    this.elements.inputEl.textContent = "";
+    this.elements.inputEl.innerHTML = "";
     this.elements.imageAttachmentsEl.innerHTML = "";
     this.adjustHeight();
     this.elements.inputEl.focus();
     this.hideAutocomplete();
     this.saveState();
+    this.updateInputState();
   }
 
   getFilteredCommands(query: string): AvailableCommand[] {
@@ -1511,6 +1534,7 @@ export class WebviewController {
       e.stopPropagation();
       chip.remove();
       this.saveState();
+      this.updateInputState();
     });
 
     if (mention.path) {
@@ -1528,6 +1552,7 @@ export class WebviewController {
     selection.addRange(range);
     this.elements.inputEl.focus();
     this.saveState();
+    this.updateInputState();
   }
 
   private setGenerating(isGenerating: boolean): void {
@@ -1548,6 +1573,7 @@ export class WebviewController {
       sendBtn.style.display = "flex";
       stopBtn.style.display = "none";
       typingIndicatorEl.classList.remove("visible");
+      this.updateInputState();
     }
   }
 
@@ -1598,7 +1624,6 @@ export class WebviewController {
         break;
       case "streamEnd":
         this.finalizeBlocks();
-        this.elements.sendBtn.disabled = false;
         this.setGenerating(false);
         this.elements.inputEl.focus();
         break;
@@ -1697,7 +1722,6 @@ export class WebviewController {
         break;
       case "error":
         if (msg.text) this.addMessage(msg.text, "error");
-        this.elements.sendBtn.disabled = false;
         this.setGenerating(false);
         this.elements.inputEl.focus();
         break;
