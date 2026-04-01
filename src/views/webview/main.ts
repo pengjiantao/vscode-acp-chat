@@ -684,12 +684,144 @@ export class WebviewController {
   private showPermissionDialog(
     requestId: string,
     toolCall: { kind?: string; title?: string; description?: string },
-    options: Array<{ optionId: string; kind: string; name: string }>
+    options: Array<{ optionId: string; kind: string; name: string }>,
+    toolCallId?: string
   ): void {
-    // Stop other interactions
     const wasGenerating = this.isGenerating;
+    // Always block input while waiting for permission
     this.setGenerating(true);
 
+    if (options.length === 0) {
+      options.push({
+        optionId: "cancel",
+        kind: "reject_once",
+        name: "Cancel (No options provided)",
+      });
+    }
+
+    // Try to find the tool block to embed the permission UI
+    let targetContainer: HTMLElement | null = null;
+    if (toolCallId) {
+      const block = this.blocks.find(
+        (b) => b.type === "tool" && b.toolId === toolCallId
+      );
+      if (block) {
+        targetContainer = block.contentEl;
+      }
+    }
+
+    if (targetContainer) {
+      this.renderEmbeddedPermission(
+        targetContainer,
+        requestId,
+        toolCall,
+        options,
+        wasGenerating
+      );
+    } else {
+      this.renderPermissionOverlay(requestId, toolCall, options, wasGenerating);
+    }
+  }
+
+  private handlePermissionOptionClick(
+    requestId: string,
+    option: { optionId: string; kind: string },
+    cleanup: () => void,
+    wasGenerating: boolean
+  ): void {
+    const isReject = option.kind.startsWith("reject");
+    const outcome = isReject
+      ? { outcome: "cancelled" as const }
+      : { outcome: "selected" as const, optionId: option.optionId };
+
+    this.vscode.postMessage({
+      type: "permissionResponse",
+      requestId,
+      outcome,
+    });
+
+    cleanup();
+    this.setGenerating(wasGenerating);
+  }
+
+  private renderEmbeddedPermission(
+    container: HTMLElement,
+    requestId: string,
+    toolCall: { kind?: string; title?: string; description?: string },
+    options: Array<{ optionId: string; kind: string; name: string }>,
+    wasGenerating: boolean
+  ): void {
+    const wrapper = this.doc.createElement("div");
+    wrapper.className = "embedded-permission";
+
+    const header = this.doc.createElement("div");
+    header.className = "embedded-permission-header";
+    header.innerHTML = `<span class="permission-icon">🔐</span> <span>Permission Required</span>`;
+
+    const body = this.doc.createElement("div");
+    body.className = "embedded-permission-body";
+
+    if (toolCall.description) {
+      const desc = this.doc.createElement("div");
+      desc.className = "permission-tool-desc";
+      desc.style.marginBottom = "8px";
+      desc.textContent = toolCall.description;
+      body.appendChild(desc);
+    }
+
+    const optionsContainer = this.doc.createElement("div");
+    optionsContainer.className = "embedded-permission-options";
+
+    options.forEach((opt) => {
+      const btn = this.doc.createElement("button");
+      const isAllow = !opt.kind.startsWith("reject");
+      const isAlways = opt.kind.endsWith("always");
+
+      btn.className = `embedded-permission-option ${
+        isAllow
+          ? "embedded-permission-option-allow"
+          : "embedded-permission-option-reject"
+      } ${isAlways ? "embedded-permission-option-always" : ""}`;
+
+      const icon = this.doc.createElement("span");
+      icon.className = "embedded-permission-option-icon";
+      icon.innerHTML = isAllow
+        ? `<div class="icon-checkmark"></div>`
+        : `<div class="icon-dismiss"></div>`;
+
+      const text = this.doc.createElement("span");
+      const label = this.getOptionLabel(opt.kind);
+      text.textContent = `${label}: ${opt.name}`;
+
+      btn.appendChild(icon);
+      btn.appendChild(text);
+
+      btn.addEventListener("click", () => {
+        this.handlePermissionOptionClick(
+          requestId,
+          opt,
+          () => wrapper.remove(),
+          wasGenerating
+        );
+      });
+
+      optionsContainer.appendChild(btn);
+    });
+
+    body.appendChild(optionsContainer);
+    wrapper.appendChild(header);
+    wrapper.appendChild(body);
+
+    container.appendChild(wrapper);
+    this.elements.messagesEl.scrollTop = this.elements.messagesEl.scrollHeight;
+  }
+
+  private renderPermissionOverlay(
+    requestId: string,
+    toolCall: { kind?: string; title?: string; description?: string },
+    options: Array<{ optionId: string; kind: string; name: string }>,
+    wasGenerating: boolean
+  ): void {
     const overlay = this.doc.createElement("div");
     overlay.className = "permission-dialog-overlay";
 
@@ -730,14 +862,6 @@ export class WebviewController {
     const optionsContainer = this.doc.createElement("div");
     optionsContainer.className = "permission-options";
 
-    if (options.length === 0) {
-      options.push({
-        optionId: "cancel",
-        kind: "reject_once",
-        name: "Cancel (No options provided)",
-      });
-    }
-
     options.forEach((opt) => {
       const btn = this.doc.createElement("button");
       btn.className = `permission-option-btn permission-option-${opt.kind}`;
@@ -746,18 +870,12 @@ export class WebviewController {
       btn.textContent = `${label}: ${opt.name}`;
 
       btn.addEventListener("click", () => {
-        const outcome = opt.kind.startsWith("reject")
-          ? { outcome: "cancelled" as const }
-          : { outcome: "selected" as const, optionId: opt.optionId };
-
-        this.vscode.postMessage({
-          type: "permissionResponse",
+        this.handlePermissionOptionClick(
           requestId,
-          outcome,
-        });
-
-        overlay.remove();
-        this.setGenerating(wasGenerating);
+          opt,
+          () => overlay.remove(),
+          wasGenerating
+        );
       });
 
       optionsContainer.appendChild(btn);
@@ -1828,7 +1946,12 @@ export class WebviewController {
         break;
       case "permissionRequest":
         if (msg.requestId && msg.toolCall && msg.options) {
-          this.showPermissionDialog(msg.requestId, msg.toolCall, msg.options);
+          this.showPermissionDialog(
+            msg.requestId,
+            msg.toolCall,
+            msg.options,
+            msg.toolCallId
+          );
         }
         break;
     }

@@ -630,6 +630,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.postMessage({
         type: "permissionRequest",
         requestId,
+        toolCallId: params.toolCall?.toolCallId,
         toolCall: {
           kind: params.toolCall?.kind || "Unknown",
           title: params.toolCall?.title || "Tool Call",
@@ -639,12 +640,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           kind: opt.kind,
           name: opt.name,
         })),
-      });
-
-      // Add a system message to chat log for debugging
-      this.postMessage({
-        type: "system",
-        text: `[System] Permission requested for tool: ${params.toolCall?.title || "Unknown"}`,
       });
 
       // Timeout logic
