@@ -1604,8 +1604,13 @@ export class WebviewController {
         break;
       case "toolCallStart":
         if (msg.toolCallId && msg.name) {
-          const block = this.ensureBlock("tool", msg.toolCallId);
-          block.kind = msg.kind;
+          let block = this.blocks.find(
+            (b) => b.type === "tool" && b.toolId === msg.toolCallId
+          );
+          if (!block) {
+            block = this.ensureBlock("tool", msg.toolCallId);
+            block.kind = msg.kind;
+          }
           const summary = block.element.querySelector("summary");
           if (summary) {
             const kindIcon = getToolKindIcon(msg.kind);
@@ -1621,7 +1626,11 @@ export class WebviewController {
         break;
       case "toolCallComplete":
         if (msg.toolCallId) {
-          const block = this.blocks.find((b) => b.toolId === msg.toolCallId);
+          let block = this.blocks.find((b) => b.toolId === msg.toolCallId);
+          if (!block) {
+            block = this.ensureBlock("tool", msg.toolCallId);
+            block.kind = msg.kind;
+          }
           if (block) {
             const summary = block.element.querySelector("summary");
             if (summary) {

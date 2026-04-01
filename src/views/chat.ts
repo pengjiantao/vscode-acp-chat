@@ -617,6 +617,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         resolver: resolve,
       });
 
+      if (params.toolCall?.toolCallId) {
+        this.postMessage({
+          type: "toolCallStart",
+          name: params.toolCall.title || "Tool",
+          toolCallId: params.toolCall.toolCallId,
+          kind: params.toolCall.kind,
+        });
+      }
+
       // Send to webview
       this.postMessage({
         type: "permissionRequest",
@@ -703,6 +712,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           rawOutput: update.rawOutput,
           status: update.status,
           terminalOutput,
+        });
+      } else {
+        // Ensure the tool block is created even if we missed the initial tool_call
+        this.postMessage({
+          type: "toolCallStart",
+          name: update.title || "Tool",
+          toolCallId: update.toolCallId,
+          kind: update.kind,
         });
       }
     } else if (update.sessionUpdate === "current_mode_update") {
