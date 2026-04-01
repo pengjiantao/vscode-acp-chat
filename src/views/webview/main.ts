@@ -580,6 +580,7 @@ export interface WebviewElements {
   attachImageBtn: HTMLButtonElement;
   imagePreviewPopover: HTMLElement;
   sendBtn: HTMLButtonElement;
+  stopBtn: HTMLButtonElement;
   statusDot: HTMLElement;
   agentDropdown: HTMLElement;
   modeDropdown: HTMLElement;
@@ -587,6 +588,7 @@ export interface WebviewElements {
   welcomeView: HTMLElement;
   commandAutocomplete: HTMLElement;
   planContainer: HTMLElement;
+  typingIndicatorEl: HTMLElement;
 }
 
 export function getElements(doc: Document): WebviewElements {
@@ -597,6 +599,7 @@ export function getElements(doc: Document): WebviewElements {
     attachImageBtn: doc.getElementById("attach-image") as HTMLButtonElement,
     imagePreviewPopover: doc.getElementById("image-preview-popover")!,
     sendBtn: doc.getElementById("send") as HTMLButtonElement,
+    stopBtn: doc.getElementById("stop") as HTMLButtonElement,
     statusDot: doc.getElementById("status-dot")!,
     agentDropdown: doc.getElementById("agent-dropdown")!,
     modeDropdown: doc.getElementById("mode-dropdown")!,
@@ -604,6 +607,7 @@ export function getElements(doc: Document): WebviewElements {
     welcomeView: doc.getElementById("welcome-view")!,
     commandAutocomplete: doc.getElementById("command-autocomplete")!,
     planContainer: doc.getElementById("agent-plan-container")!,
+    typingIndicatorEl: doc.getElementById("typing-indicator")!,
   };
 }
 
@@ -685,11 +689,15 @@ export class WebviewController {
   }
 
   private setupEventListeners(): void {
-    const { sendBtn, inputEl, messagesEl, attachImageBtn } = this.elements;
+    const { sendBtn, stopBtn, inputEl, messagesEl, attachImageBtn } =
+      this.elements;
 
     const { commandAutocomplete } = this.elements;
 
     sendBtn.addEventListener("click", () => this.send());
+    stopBtn.addEventListener("click", () => {
+      this.vscode.postMessage({ type: "stop" });
+    });
 
     inputEl.addEventListener("keydown", (e) => {
       const isAutocompleteVisible =
@@ -928,6 +936,12 @@ export class WebviewController {
     // Create new block
     if (!this.currentAssistantMessage) {
       this.currentAssistantMessage = this.addMessage("", "assistant");
+      // If generating, move indicator to the bottom of the new message
+      if (this.elements.typingIndicatorEl.classList.contains("visible")) {
+        this.currentAssistantMessage.appendChild(
+          this.elements.typingIndicatorEl
+        );
+      }
     }
 
     const blockEl = this.doc.createElement("div");
@@ -968,7 +982,18 @@ export class WebviewController {
       contentEl = blockEl;
     }
 
-    this.currentAssistantMessage.appendChild(blockEl);
+    // Insert block before the typing indicator if it exists within the message
+    if (
+      this.elements.typingIndicatorEl.parentNode ===
+      this.currentAssistantMessage
+    ) {
+      this.currentAssistantMessage.insertBefore(
+        blockEl,
+        this.elements.typingIndicatorEl
+      );
+    } else {
+      this.currentAssistantMessage.appendChild(blockEl);
+    }
 
     const block: Block = {
       type,
@@ -1345,6 +1370,26 @@ export class WebviewController {
     this.saveState();
   }
 
+  private setGenerating(isGenerating: boolean): void {
+    const { typingIndicatorEl, messagesEl, sendBtn, stopBtn } = this.elements;
+    if (isGenerating) {
+      sendBtn.style.display = "none";
+      stopBtn.style.display = "flex";
+      typingIndicatorEl.classList.add("visible");
+      // Move indicator to the end of the current assistant message if it exists,
+      // otherwise to the end of the messages container
+      if (this.currentAssistantMessage) {
+        this.currentAssistantMessage.appendChild(typingIndicatorEl);
+      } else {
+        messagesEl.appendChild(typingIndicatorEl);
+      }
+    } else {
+      sendBtn.style.display = "flex";
+      stopBtn.style.display = "none";
+      typingIndicatorEl.classList.remove("visible");
+    }
+  }
+
   handleMessage(msg: ExtensionMessage): void {
     switch (msg.type) {
       case "fileSearchResults":
@@ -1364,6 +1409,7 @@ export class WebviewController {
         this.currentAssistantMessage = null;
         this.activeBlock = null;
         this.blocks = [];
+        this.setGenerating(true);
         break;
       case "streamChunk":
         if (msg.text) {
@@ -1386,6 +1432,7 @@ export class WebviewController {
       case "streamEnd":
         this.finalizeBlocks();
         this.elements.sendBtn.disabled = false;
+        this.setGenerating(false);
         this.elements.inputEl.focus();
         break;
       case "toolCallStart":
@@ -1473,6 +1520,7 @@ export class WebviewController {
       case "error":
         if (msg.text) this.addMessage(msg.text, "error");
         this.elements.sendBtn.disabled = false;
+        this.setGenerating(false);
         this.elements.inputEl.focus();
         break;
       case "agentError":

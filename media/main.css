@@ -237,6 +237,52 @@ body {
   }
 }
 
+/* Typing/Loading Indicator */
+.typing-indicator {
+  padding: 6px 0;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.message .typing-indicator {
+  padding: 8px 0 0 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--vscode-panel-border);
+  opacity: 0.8;
+}
+
+.typing-indicator.visible {
+  display: flex;
+}
+
+.zed-loader {
+  display: grid;
+  grid-template-columns: repeat(2, 4px);
+  grid-template-rows: repeat(2, 4px);
+  gap: 2px;
+  animation: zed-rotate 1.5s linear infinite;
+  opacity: 0.7;
+}
+
+.zed-loader div {
+  width: 4px;
+  height: 4px;
+  background-color: currentColor;
+  border-radius: 50%;
+}
+
+@keyframes zed-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
 /* Tool Calls */
 .tool-details {
   margin-top: 8px;
@@ -626,6 +672,12 @@ body {
 .icon-send {
   mask: url(./icons/send.svg) no-repeat center;
   -webkit-mask: url(./icons/send.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-stop {
+  mask: url(./icons/stop.svg) no-repeat center;
+  -webkit-mask: url(./icons/stop.svg) no-repeat center;
   background-color: currentColor;
 }
 

@@ -40,7 +40,8 @@ interface WebviewMessage {
     | "clearChat"
     | "copyMessage"
     | "searchFiles"
-    | "openFile";
+    | "openFile"
+    | "stop";
   text?: string;
   agentId?: string;
   modeId?: string;
@@ -224,6 +225,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             const uri = vscode.Uri.file(message.path);
             await vscode.window.showTextDocument(uri);
           }
+          break;
+        case "stop":
+          await this.acpClient.cancel();
           break;
         case "ready":
           this.postMessage({
@@ -839,6 +843,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   <div id="messages" role="log" aria-label="Chat messages" aria-live="polite" tabindex="0"></div>
 
+  <div id="typing-indicator" class="typing-indicator" aria-hidden="true">
+    <div class="zed-loader">
+      <div></div><div></div><div></div><div></div>
+    </div>
+  </div>
+
   <div id="chat-input-area">
     <div id="image-attachments" class="image-attachment-container"></div>
     <div id="input-container">
@@ -886,6 +896,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       <div id="right-options">
         <button id="send" class="icon-button" aria-label="Send message" title="Send (Enter)">
           <span class="dropdown-icon icon-send"></span>
+        </button>
+        <button id="stop" class="icon-button" aria-label="Stop generation" title="Stop" style="display: none;">
+          <span class="dropdown-icon icon-stop"></span>
         </button>
       </div>
     </div>

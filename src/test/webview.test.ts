@@ -67,6 +67,12 @@ function createWebviewHTML(): string {
 
   <div id="messages"></div>
 
+  <div id="typing-indicator">
+    <div class="zed-loader">
+      <div></div><div></div><div></div><div></div>
+    </div>
+  </div>
+
   <div id="chat-input-area">
     <div id="image-attachments"></div>
     <div id="input-container">
@@ -91,6 +97,7 @@ function createWebviewHTML(): string {
       </div>
       <div id="right-options">
         <button id="send">Send</button>
+        <button id="stop">Stop</button>
       </div>
     </div>
   </div>
@@ -284,12 +291,14 @@ suite("Webview", () => {
       assert.ok(elements.messagesEl);
       assert.ok(elements.inputEl);
       assert.ok(elements.sendBtn);
+      assert.ok(elements.stopBtn);
       assert.ok(elements.statusDot);
       assert.ok(elements.agentDropdown);
       assert.ok(elements.modeDropdown);
       assert.ok(elements.modelDropdown);
       assert.ok(elements.welcomeView);
       assert.ok(elements.commandAutocomplete);
+      assert.ok(elements.typingIndicatorEl);
     });
 
     test("returns correct element types", () => {
