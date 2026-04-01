@@ -28,7 +28,12 @@ import {
   type SessionModelState,
   type AvailableCommand,
 } from "@agentclientprotocol/sdk";
-import { type AgentConfig, getDefaultAgent, isAgentAvailable } from "./agents";
+import {
+  type AgentConfig,
+  getDefaultAgent,
+  isAgentAvailable,
+  getGlobalBinPaths,
+} from "./agents";
 
 export interface SessionMetadata {
   modes: SessionModeState | null;
@@ -198,12 +203,25 @@ export class ACPClient {
     this.setState("connecting");
 
     try {
+      // Build the PATH including global bin directories
+      const globalBinPaths = getGlobalBinPaths();
+      const pathEnvName = process.platform === "win32" ? "Path" : "PATH";
+      const existingPath = process.env[pathEnvName] || "";
+      const separator = process.platform === "win32" ? ";" : ":";
+
+      const newPath = [...globalBinPaths, existingPath]
+        .filter((p) => !!p)
+        .join(separator);
+
       const currentProcess = this.spawnFn(
         this.agentConfig.command,
         this.agentConfig.args,
         {
           stdio: ["pipe", "pipe", "pipe"],
-          env: { ...process.env },
+          env: {
+            ...process.env,
+            [pathEnvName]: newPath,
+          },
         }
       );
       this.process = currentProcess;
