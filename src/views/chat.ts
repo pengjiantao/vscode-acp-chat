@@ -896,8 +896,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         aria-label="Message input"
         aria-describedby="input-hint"
         aria-autocomplete="list"
-        aria-controls="command-autocomplete"
-      ></div>
+        aria-controls="command-autocomplete"></div>
+      <div id="input-hint" class="input-hint">Press Enter to send, Shift+Enter for new line. Type / for commands.</div>
     </div>
 
     <div id="options-bar" role="toolbar" aria-label="Session options">
@@ -936,7 +936,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       </div>
     </div>
   </div>
-  <span id="input-hint" class="sr-only">Press Enter to send, Shift+Enter for new line, Escape to clear. Type / for slash commands.</span>
 
   <div id="image-preview-popover" class="image-preview-popover">
     <img src="" alt="Preview">

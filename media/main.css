@@ -527,23 +527,6 @@ body {
 /* Rich Text Input Support */
 .input-rich {
   width: 100%;
-  min-height: 36px;
-  max-height: 200px;
-  overflow-y: auto;
-  padding: 8px;
-  outline: none;
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
-  color: var(--vscode-input-foreground);
-  line-height: 1.5;
-  box-sizing: border-box;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.input-rich:empty::before {
-  content: attr(data-placeholder);
-  color: var(--vscode-input-placeholderForeground);
 }
 
 /* File and Folder Chips */
@@ -889,21 +872,32 @@ body {
 
 #input {
   width: 100%;
-  resize: none;
   min-height: 36px;
-  border: none !important;
-  background: transparent !important;
-  padding: 4px;
-  outline: none !important;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px 8px;
+  outline: none;
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   color: var(--vscode-input-foreground);
   line-height: 1.5;
   box-sizing: border-box;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-#input::placeholder {
+#input:empty::before {
+  content: attr(data-placeholder);
   color: var(--vscode-input-placeholderForeground);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.input-hint {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  padding: 4px 8px;
+  opacity: 0.7;
 }
 
 /* Options Bar */
