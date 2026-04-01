@@ -109,14 +109,14 @@
         {
           "command": "vscode-acp.sendSelectionToChat",
           "when": "editorHasSelection",
-          "group": "navigation@1"
+          "group": "acp@1"
         }
       ],
       "terminal/context": [
         {
           "command": "vscode-acp.sendTerminalSelectionToChat",
           "when": "terminalTextSelected",
-          "group": "navigation"
+          "group": "acp@1"
         }
       ],
       "view/title": [
