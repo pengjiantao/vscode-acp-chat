@@ -46,18 +46,6 @@ function createWebviewHTML(): string {
   <meta charset="UTF-8">
 </head>
 <body>
-  <div id="top-bar">
-    <span class="status-indicator">
-      <span class="status-dot" id="status-dot"></span>
-    </span>
-    <div class="custom-dropdown" id="agent-dropdown">
-      <div class="dropdown-trigger">
-        <span class="selected-label"></span>
-      </div>
-      <div class="dropdown-popover"></div>
-    </div>
-  </div>
-
   <div id="welcome-view" class="welcome-view">
     <img src="logo.svg" class="welcome-logo">
     <h3>Welcome to VSCode ACP</h3>
@@ -292,8 +280,6 @@ suite("Webview", () => {
       assert.ok(elements.inputEl);
       assert.ok(elements.sendBtn);
       assert.ok(elements.stopBtn);
-      assert.ok(elements.statusDot);
-      assert.ok(elements.agentDropdown);
       assert.ok(elements.modeDropdown);
       assert.ok(elements.modelDropdown);
       assert.ok(elements.welcomeView);
@@ -305,7 +291,6 @@ suite("Webview", () => {
       const elements = getElements(document);
       assert.strictEqual(elements.inputEl.tagName, "DIV");
       assert.strictEqual(elements.sendBtn.tagName, "BUTTON");
-      assert.ok(elements.agentDropdown.classList.contains("custom-dropdown"));
     });
   });
 
@@ -381,11 +366,6 @@ suite("Webview", () => {
     });
 
     suite("updateStatus", () => {
-      test("updates status dot class", () => {
-        controller.updateStatus("connected");
-        assert.ok(elements.statusDot.className.includes("connected"));
-      });
-
       test("saves state after update", () => {
         controller.updateStatus("connected");
         const state = mockVsCode.getState<{ isConnected: boolean }>();
@@ -421,7 +401,7 @@ suite("Webview", () => {
           type: "connectionState",
           state: "connected",
         });
-        assert.ok(elements.statusDot.className.includes("connected"));
+        assert.strictEqual(controller.getIsConnected(), true);
       });
 
       test("handles error", () => {
@@ -431,19 +411,6 @@ suite("Webview", () => {
         });
         const msgs = elements.messagesEl.querySelectorAll(".message.error");
         assert.strictEqual(msgs.length, 1);
-      });
-
-      test("handles agents list", () => {
-        controller.handleMessage({
-          type: "agents",
-          agents: [
-            { id: "opencode", name: "OpenCode", available: true },
-            { id: "claude", name: "Claude", available: false },
-          ],
-          selected: "opencode",
-        });
-        const label = elements.agentDropdown.querySelector(".selected-label");
-        assert.strictEqual(label?.textContent, "OpenCode");
       });
 
       test("handles sessionMetadata with modes", () => {

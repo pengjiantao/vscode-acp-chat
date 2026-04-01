@@ -72,6 +72,12 @@
         "icon": "$(clear-all)"
       },
       {
+        "command": "vscode-acp.selectAgent",
+        "title": "Select Agent",
+        "category": "ACP",
+        "icon": "$(robot)"
+      },
+      {
         "command": "vscode-acp.sendSelectionToChat",
         "title": "Send to ACP",
         "category": "ACP",
@@ -120,6 +126,11 @@
         }
       ],
       "view/title": [
+        {
+          "command": "vscode-acp.selectAgent",
+          "when": "view == vscode-acp.chatView",
+          "group": "navigation@0"
+        },
         {
           "command": "vscode-acp.newChat",
           "when": "view == vscode-acp.chatView",

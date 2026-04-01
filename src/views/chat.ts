@@ -1,11 +1,7 @@
 import * as vscode from "vscode";
 import { spawn } from "child_process";
 import { ACPClient } from "../acp/client";
-import {
-  getAgent,
-  getAgentsWithStatus,
-  getFirstAvailableAgent,
-} from "../acp/agents";
+import { getAgent, getFirstAvailableAgent } from "../acp/agents";
 import type {
   SessionNotification,
   ReadTextFileRequest,
@@ -34,7 +30,6 @@ interface WebviewMessage {
   type:
     | "sendMessage"
     | "ready"
-    | "selectAgent"
     | "selectMode"
     | "selectModel"
     | "connect"
@@ -46,7 +41,6 @@ interface WebviewMessage {
     | "permissionResponse"
     | "stop";
   text?: string;
-  agentId?: string;
   modeId?: string;
   modelId?: string;
   images?: string[];
@@ -218,11 +212,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             );
           }
           break;
-        case "selectAgent":
-          if (message.agentId) {
-            await this.handleAgentChange(message.agentId);
-          }
-          break;
         case "selectMode":
           if (message.modeId) {
             await this.handleModeChange(message.modeId);
@@ -297,16 +286,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.postMessage({
             type: "connectionState",
             state: this.acpClient.getState(),
-          });
-          const agentsWithStatus = getAgentsWithStatus();
-          this.postMessage({
-            type: "agents",
-            agents: agentsWithStatus.map((a) => ({
-              id: a.id,
-              name: a.name,
-              available: a.available,
-            })),
-            selected: this.acpClient.getAgentId(),
           });
           this.sendSessionMetadata();
           break;
@@ -812,6 +791,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  public async switchAgent(agentId: string): Promise<void> {
+    await this.handleAgentChange(agentId);
+  }
+
   private async handleAgentChange(agentId: string): Promise<void> {
     const agent = getAgent(agentId);
     if (agent) {
@@ -987,21 +970,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   <title>VSCode ACP Chat</title>
 </head>
 <body>
-  <div id="top-bar" role="toolbar" aria-label="Chat controls">
-    <span class="status-indicator" role="status" aria-live="polite">
-      <span class="status-dot" id="status-dot" aria-hidden="true"></span>
-    </span>
-    <div class="custom-dropdown inline-dropdown" id="agent-dropdown" aria-label="Select AI agent">
-      <div class="dropdown-trigger">
-        <span class="selected-label">Select Agent</span>
-        <span class="dropdown-chevron">
-          <span class="icon-chevron-down" style="width: 10px; height: 10px; display: block;"></span>
-        </span>
-      </div>
-      <div class="dropdown-popover"></div>
-    </div>
-  </div>
-
   <div id="welcome-view" class="welcome-view" role="main" aria-label="Welcome">
     <img src="${logoUri}" alt="VSCode ACP Logo" class="welcome-logo">
     <h3>Welcome to VSCode ACP</h3>

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { ACPClient } from "./acp/client";
 import { ChatViewProvider } from "./views/chat";
+import { getAgentsWithStatus } from "./acp/agents";
 
 let acpClient: ACPClient | undefined;
 let chatProvider: ChatViewProvider | undefined;
@@ -74,6 +75,31 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("vscode-acp.clearChat", () => {
       chatProvider?.clearChat();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("vscode-acp.selectAgent", async () => {
+      const agents = getAgentsWithStatus();
+      const availableAgents = agents.filter((a) => a.available);
+      const currentAgentId = acpClient?.getAgentId();
+
+      const items = availableAgents.map((a) => ({
+        label: a.name,
+        description: a.id,
+        id: a.id,
+        picked: a.id === currentAgentId,
+        detail: a.id === currentAgentId ? "$(check) Currently selected" : "",
+      }));
+
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select an AI agent",
+        title: "VSCode ACP: Select Agent",
+      });
+
+      if (selected) {
+        await chatProvider?.switchAgent(selected.id);
+      }
     })
   );
 

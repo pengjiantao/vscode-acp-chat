@@ -101,9 +101,6 @@ export interface ExtensionMessage {
   text?: string;
   html?: string;
   state?: string;
-  agents?: Array<{ id: string; name: string; available: boolean }>;
-  selected?: string;
-  agentId?: string;
   modeId?: string;
   modelId?: string;
   modes?: {
@@ -504,8 +501,6 @@ export function updateSelectLabel(select: HTMLSelectElement): void {
 export interface DropdownOption {
   id: string;
   name: string;
-  available?: boolean;
-  icon?: string;
 }
 
 export class Dropdown {
@@ -603,21 +598,13 @@ export class Dropdown {
       const item = this.element.ownerDocument.createElement("div");
       item.className = "dropdown-item";
       if (opt.id === this.selectedId) item.classList.add("selected");
-      if (opt.available === false) item.classList.add("disabled");
       item.setAttribute("data-id", opt.id);
 
-      let html = "";
-      if (opt.icon) {
-        html += `<span class="dropdown-item-icon">${opt.icon}</span>`;
-      }
-      html += `<span>${escapeHtml(opt.available === false ? opt.name + " (not installed)" : opt.name)}</span>`;
-      item.innerHTML = html;
+      item.innerHTML = `<span>${escapeHtml(opt.name)}</span>`;
 
       item.addEventListener("click", () => {
-        if (opt.available !== false) {
-          this.select(opt.id);
-          this.close();
-        }
+        this.select(opt.id);
+        this.close();
       });
 
       this.popover.appendChild(item);
@@ -633,8 +620,6 @@ export interface WebviewElements {
   imagePreviewPopover: HTMLElement;
   sendBtn: HTMLButtonElement;
   stopBtn: HTMLButtonElement;
-  statusDot: HTMLElement;
-  agentDropdown: HTMLElement;
   modeDropdown: HTMLElement;
   modelDropdown: HTMLElement;
   welcomeView: HTMLElement;
@@ -652,8 +637,6 @@ export function getElements(doc: Document): WebviewElements {
     imagePreviewPopover: doc.getElementById("image-preview-popover")!,
     sendBtn: doc.getElementById("send") as HTMLButtonElement,
     stopBtn: doc.getElementById("stop") as HTMLButtonElement,
-    statusDot: doc.getElementById("status-dot")!,
-    agentDropdown: doc.getElementById("agent-dropdown")!,
     modeDropdown: doc.getElementById("mode-dropdown")!,
     modelDropdown: doc.getElementById("model-dropdown")!,
     welcomeView: doc.getElementById("welcome-view")!,
@@ -681,7 +664,6 @@ export class WebviewController {
   private autocompleteMode: "none" | "command" | "file" = "none";
   private autocompleteTriggerPos = -1;
 
-  private agentDropdown: Dropdown;
   private modeDropdown: Dropdown;
   private modelDropdown: Dropdown;
   private isGenerating = false;
@@ -696,10 +678,6 @@ export class WebviewController {
     this.elements = elements;
     this.doc = doc;
     this.win = win;
-
-    this.agentDropdown = new Dropdown(this.elements.agentDropdown, (id) => {
-      this.vscode.postMessage({ type: "selectAgent", agentId: id });
-    });
 
     this.modeDropdown = new Dropdown(this.elements.modeDropdown, (id) => {
       this.vscode.postMessage({ type: "selectMode", modeId: id });
@@ -1393,7 +1371,6 @@ export class WebviewController {
   }
 
   public updateStatus(state: string): void {
-    this.elements.statusDot.className = "status-dot " + state;
     this.isConnected = state === "connected";
     this.updateViewState();
     this.saveState();
@@ -1889,17 +1866,6 @@ export class WebviewController {
         if (msg.state) {
           this.updateStatus(msg.state);
         }
-        break;
-      case "agents":
-        if (!msg.agents) break;
-        this.agentDropdown.setOptions(
-          msg.agents.map((a) => ({
-            id: a.id,
-            name: a.name,
-            available: a.available,
-          })),
-          msg.selected
-        );
         break;
       case "agentChanged":
       case "chatCleared":

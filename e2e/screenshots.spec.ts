@@ -50,15 +50,9 @@ async function injectMockState(frame: Frame, setupFn: string): Promise<void> {
 }
 
 const TOOL_ICONS_SETUP = `
-  const statusDot = document.querySelector(".status-dot");
-  const statusText = document.querySelector(".status-text");
-  const connectBtn = document.getElementById("connect-btn");
   const welcomeView = document.getElementById("welcome-view");
   const messagesEl = document.getElementById("messages");
 
-  if (statusDot) statusDot.className = "status-dot connected";
-  if (statusText) statusText.textContent = "Connected";
-  if (connectBtn) connectBtn.style.display = "none";
   if (welcomeView) welcomeView.style.display = "none";
   if (messagesEl) messagesEl.style.display = "flex";
 
@@ -107,15 +101,9 @@ const TOOL_ICONS_SETUP = `
 `;
 
 const ANSI_OUTPUT_SETUP = `
-  const statusDot = document.querySelector(".status-dot");
-  const statusText = document.querySelector(".status-text");
-  const connectBtn = document.getElementById("connect-btn");
   const welcomeView = document.getElementById("welcome-view");
   const messagesEl = document.getElementById("messages");
 
-  if (statusDot) statusDot.className = "status-dot connected";
-  if (statusText) statusText.textContent = "Connected";
-  if (connectBtn) connectBtn.style.display = "none";
   if (welcomeView) welcomeView.style.display = "none";
   if (messagesEl) messagesEl.style.display = "flex";
 
@@ -167,15 +155,9 @@ const ANSI_OUTPUT_SETUP = `
 `;
 
 const PLAN_DISPLAY_SETUP = `
-  const statusDot = document.querySelector(".status-dot");
-  const statusText = document.querySelector(".status-text");
-  const connectBtn = document.getElementById("connect-btn");
   const welcomeView = document.getElementById("welcome-view");
   const messagesEl = document.getElementById("messages");
 
-  if (statusDot) statusDot.className = "status-dot connected";
-  if (statusText) statusText.textContent = "Connected";
-  if (connectBtn) connectBtn.style.display = "none";
   if (welcomeView) welcomeView.style.display = "none";
   if (messagesEl) messagesEl.style.display = "flex";
 
