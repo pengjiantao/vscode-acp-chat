@@ -91,6 +91,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private globalState: vscode.Memento;
   private hasRestoredModeModel = false;
   private terminals: Map<string, ManagedTerminal> = new Map();
+  private toolCallStartTimes: Map<string, number> = new Map();
   private terminalCounter = 0;
   private permissionQueue: Array<{
     id: string;
@@ -678,6 +679,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         console.log("[Chat] Non-text chunk type:", update.content.type);
       }
     } else if (update.sessionUpdate === "tool_call") {
+      this.toolCallStartTimes.set(update.toolCallId, Date.now());
       this.postMessage({
         type: "toolCallStart",
         name: update.title,
@@ -697,6 +699,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           }
         }
 
+        const startTime = this.toolCallStartTimes.get(update.toolCallId);
+        const duration = startTime ? Date.now() - startTime : undefined;
+        this.toolCallStartTimes.delete(update.toolCallId);
+
         this.postMessage({
           type: "toolCallComplete",
           toolCallId: update.toolCallId,
@@ -707,9 +713,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           rawOutput: update.rawOutput,
           status: update.status,
           terminalOutput,
+          locations: update.locations,
+          duration,
         });
       } else {
         // Ensure the tool block is created even if we missed the initial tool_call
+        if (!this.toolCallStartTimes.has(update.toolCallId)) {
+          this.toolCallStartTimes.set(update.toolCallId, Date.now());
+        }
         this.postMessage({
           type: "toolCallStart",
           name: update.title || "Tool",

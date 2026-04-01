@@ -1727,3 +1727,93 @@ kbd {
 .embedded-permission-option-always {
   font-weight: 600;
 }
+
+/* 工具调用总结行 */
+.tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--vscode-font-family);
+  font-size: 13px;
+}
+
+.tool-kind-icon {
+  font-size: 14px;
+}
+
+.tool-duration {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.tool-status.completed {
+  color: var(--vscode-terminal-ansiGreen);
+}
+
+.tool-status.failed {
+  color: var(--vscode-terminal-ansiRed);
+}
+
+.tool-status.running {
+  color: var(--vscode-terminal-ansiYellow);
+}
+
+/* 详细信息面板 */
+.tool-details-panel {
+  padding: 8px 0;
+  border-top: 1px solid var(--vscode-widget-border);
+  margin-top: 8px;
+}
+
+.detail-section {
+  margin-bottom: 8px;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  margin-right: 8px;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.detail-path {
+  font-family: var(--vscode-editor-font-family);
+  color: var(--vscode-textLink-foreground);
+  margin-left: 16px;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.detail-input {
+  background: var(--vscode-textBlockQuote-background);
+  padding: 8px;
+  border-radius: 4px;
+  margin: 4px 0;
+  overflow-x: auto;
+  font-size: 12px;
+  border: 1px solid var(--vscode-widget-border);
+}
+
+.detail-input div {
+  margin: 2px 0;
+}
+
+/* 工具输出 */
+.tool-output {
+  background: var(--vscode-textBlockQuote-background);
+  padding: 8px;
+  border-radius: 4px;
+  margin: 4px 0;
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 12px;
+  border: 1px solid var(--vscode-widget-border);
+}
+
+.tool-output.terminal {
+  font-family: var(--vscode-terminal-font-family);
+  font-size: 11px;
+}

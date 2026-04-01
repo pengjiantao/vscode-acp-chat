@@ -1,4 +1,5 @@
 import { marked } from "marked";
+import { renderToolSummary, renderToolDetails } from "./tool-render";
 
 export interface VsCodeApi {
   postMessage(message: unknown): void;
@@ -69,6 +70,31 @@ export type ToolCallContentItem =
   | { type: "diff"; path?: string; oldText?: string; newText?: string }
   | { type: "terminal"; terminalId?: string };
 
+export interface ToolCallLocation {
+  path: string;
+  line?: number;
+}
+
+export interface ToolCallSummary {
+  toolCallId: string;
+  title: string;
+  kind?: ToolKind;
+  status: string;
+  locations?: ToolCallLocation[];
+  rawInput?: {
+    command?: string;
+    description?: string;
+    path?: string;
+    cwd?: string;
+    args?: string[];
+    [key: string]: unknown;
+  };
+  rawOutput?: { output?: string };
+  content?: ToolCallContentItem[];
+  duration?: number;
+  terminalOutput?: string;
+}
+
 export interface ExtensionMessage {
   type: string;
   text?: string;
@@ -93,7 +119,14 @@ export interface ExtensionMessage {
   title?: string;
   kind?: ToolKind;
   content?: ToolCallContentItem[];
-  rawInput?: { command?: string; description?: string };
+  rawInput?: {
+    command?: string;
+    description?: string;
+    path?: string;
+    cwd?: string;
+    args?: string[];
+    [key: string]: unknown;
+  };
   rawOutput?: { output?: string };
   status?: string;
   terminalOutput?: string;
@@ -111,6 +144,8 @@ export interface ExtensionMessage {
     kind: string;
     name: string;
   }>;
+  locations?: ToolCallLocation[];
+  duration?: number;
 }
 
 export interface Mention {
@@ -1229,7 +1264,7 @@ export class WebviewController {
       details.className = "tool-item";
       details.setAttribute("open", "");
       details.innerHTML = `
-        <summary>
+        <summary class="tool-summary">
           <span class="tool-status running">⋯</span>
           <span class="tool-name">Initializing...</span>
         </summary>
@@ -1314,16 +1349,39 @@ export class WebviewController {
       .forEach((b) => {
         const isRunning =
           b.element.querySelector(".tool-status.running") !== null;
-        const inputText =
-          b.element.querySelector(".tool-input")?.textContent || "";
+
+        // Handle new detail-input or old tool-input
+        const detailInput = b.element.querySelector(".detail-input");
+        const toolInput = b.element.querySelector(".tool-input");
+        let inputText = "";
+
+        if (detailInput) {
+          // In new structure, command is often prefixed with $ in a div
+          const cmdDiv = detailInput.querySelector("div");
+          if (cmdDiv && cmdDiv.textContent?.startsWith("$ ")) {
+            inputText = cmdDiv.textContent.substring(2);
+          } else {
+            inputText = detailInput.textContent || "";
+          }
+        } else if (toolInput) {
+          inputText = toolInput.textContent || "";
+        }
+
         const input = inputText.startsWith("$ ")
           ? inputText.substring(2)
           : inputText.startsWith("$")
             ? inputText.substring(1).trim()
             : inputText;
+
+        // Clean up name which might contain duration
+        let name = b.element.querySelector(".tool-name")?.textContent || "Tool";
+        if (name.includes(" | ")) {
+          name = name.split(" | ")[0];
+        }
+
         tools[b.toolId!] = {
           id: b.toolId!,
-          name: b.element.querySelector(".tool-name")?.textContent || "Tool",
+          name: name,
           input: input || null,
           output: b.element.querySelector(".tool-output")?.textContent || null,
           status: isRunning ? "running" : "completed",
@@ -1756,12 +1814,13 @@ export class WebviewController {
           }
           const summary = block.element.querySelector("summary");
           if (summary) {
-            const kindIcon = getToolKindIcon(msg.kind);
-            summary.innerHTML = `
-              <span class="tool-status running">⋯</span>
-              ${kindIcon ? `<span class="tool-kind-icon">${kindIcon}</span> ` : ""}
-              <span class="tool-name">${escapeHtml(msg.name)}</span>
-            `;
+            const summaryHtml = renderToolSummary({
+              toolCallId: msg.toolCallId,
+              title: msg.name,
+              kind: msg.kind || block.kind,
+              status: "in_progress",
+            });
+            summary.innerHTML = summaryHtml;
           }
           this.elements.messagesEl.scrollTop =
             this.elements.messagesEl.scrollHeight;
@@ -1777,62 +1836,35 @@ export class WebviewController {
           if (block) {
             const summary = block.element.querySelector("summary");
             if (summary) {
-              const statusIcon = msg.status === "failed" ? "✗" : "✓";
-              const statusClass =
-                msg.status === "failed" ? "failed" : "completed";
-              const kind = msg.kind || block.kind;
-              const kindIcon = getToolKindIcon(kind);
-              const name = msg.title || block.toolId || "Tool";
-              summary.innerHTML = `
-                <span class="tool-status ${statusClass}">${statusIcon}</span>
-                ${kindIcon ? `<span class="tool-kind-icon">${kindIcon}</span> ` : ""}
-                <span class="tool-name">${escapeHtml(name)}</span>
-              `;
+              const summaryHtml = renderToolSummary({
+                toolCallId: msg.toolCallId,
+                title: msg.title || block.toolId || "Tool",
+                kind: msg.kind || block.kind,
+                status: msg.status || "completed",
+                locations: msg.locations,
+                rawInput: msg.rawInput,
+                duration: msg.duration,
+              });
+              summary.innerHTML = summaryHtml;
             }
 
-            let output = "";
-            if (msg.content && msg.content.length > 0) {
-              const firstContent = msg.content[0];
-              if (
-                firstContent.type === "content" &&
-                firstContent.content?.text
-              ) {
-                output = firstContent.content.text;
-              } else if (firstContent.type === "terminal") {
-                output = msg.terminalOutput || "";
-              } else if (firstContent.type === "diff") {
-                output = renderDiff(
-                  firstContent.path,
-                  firstContent.oldText,
-                  firstContent.newText
-                );
-              }
-            }
-
-            if (!output) {
-              output = msg.rawOutput?.output || "";
-            }
-
-            const input =
-              msg.rawInput?.command || msg.rawInput?.description || "";
-
-            let detailsHtml = "";
-            if (input) {
-              detailsHtml += `<div class="tool-input"><strong>$</strong> ${escapeHtml(input)}</div>`;
-            }
-            if (output) {
-              const hasAnsi = hasAnsiCodes(output);
-              const outputHtml = hasAnsi
-                ? ansiToHtml(output)
-                : escapeHtml(output);
-              const terminalClass = hasAnsi ? " terminal" : "";
-              detailsHtml += `<pre class="tool-output${terminalClass}">${outputHtml}</pre>`;
-            }
+            const detailsHtml = renderToolDetails({
+              toolCallId: msg.toolCallId,
+              title: msg.title || "Tool",
+              kind: msg.kind || block.kind,
+              status: msg.status || "completed",
+              locations: msg.locations,
+              rawInput: msg.rawInput,
+              rawOutput: msg.rawOutput,
+              content: msg.content,
+              duration: msg.duration,
+              terminalOutput: msg.terminalOutput,
+            });
             block.contentEl.innerHTML = detailsHtml;
 
             // Auto-collapse after completion
             const details = block.element.querySelector("details");
-            if (details) {
+            if (details && msg.status !== "failed") {
               details.removeAttribute("open");
             }
           }
