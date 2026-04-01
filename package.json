@@ -76,6 +76,12 @@
         "title": "Send to ACP",
         "category": "ACP",
         "icon": "$(send)"
+      },
+      {
+        "command": "vscode-acp.sendTerminalSelectionToChat",
+        "title": "Send to ACP",
+        "category": "ACP",
+        "icon": "$(send)"
       }
     ],
     "viewsContainers": {
@@ -108,8 +114,8 @@
       ],
       "terminal/context": [
         {
-          "command": "vscode-acp.sendSelectionToChat",
-          "when": "terminalHasSelection",
+          "command": "vscode-acp.sendTerminalSelectionToChat",
+          "when": "terminalTextSelected",
           "group": "navigation"
         }
       ],
