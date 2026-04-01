@@ -421,7 +421,13 @@ export class ACPClient {
   async sendMessage(
     message: string,
     images: string[] = [],
-    mentions: Array<{ name: string; path: string }> = []
+    mentions: Array<{
+      name: string;
+      path?: string;
+      type?: "file" | "selection" | "terminal";
+      content?: string;
+      range?: { startLine: number; endLine: number };
+    }> = []
   ): Promise<PromptResponse> {
     if (!this.connection || !this.currentSessionId) {
       throw new Error("No active session");
@@ -446,12 +452,35 @@ export class ACPClient {
 
       // Add mentions as part of the context or a special text block
       if (mentions.length > 0) {
-        const mentionsText = mentions
+        const fileMentions = mentions
+          .filter((m) => !m.type || m.type === "file")
           .map((m) => `[Referenced File: ${m.name} at ${m.path}]`)
           .join("\n");
+
+        const selectionMentions = mentions
+          .filter((m) => m.type === "selection")
+          .map(
+            (m) =>
+              `[Code Selection from ${m.name}]:\n\`\`\`\n${m.content}\n\`\`\``
+          )
+          .join("\n\n");
+
+        const terminalMentions = mentions
+          .filter((m) => m.type === "terminal")
+          .map(
+            (m) =>
+              `[Terminal Selection (${m.name})]:\n\`\`\`\n${m.content}\n\`\`\``
+          )
+          .join("\n\n");
+
+        let contextText = "\n\nContext - Referenced Items:";
+        if (fileMentions) contextText += `\n${fileMentions}`;
+        if (selectionMentions) contextText += `\n\n${selectionMentions}`;
+        if (terminalMentions) contextText += `\n\n${terminalMentions}`;
+
         prompt.push({
           type: "text",
-          text: `\n\nContext - Referenced Files:\n${mentionsText}`,
+          text: contextText,
         });
       }
 

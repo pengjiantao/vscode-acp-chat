@@ -70,6 +70,12 @@
         "title": "Clear Chat",
         "category": "ACP",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "vscode-acp.sendSelectionToChat",
+        "title": "Send to ACP",
+        "category": "ACP",
+        "icon": "$(send)"
       }
     ],
     "viewsContainers": {
@@ -93,6 +99,20 @@
       ]
     },
     "menus": {
+      "editor/context": [
+        {
+          "command": "vscode-acp.sendSelectionToChat",
+          "when": "editorHasSelection",
+          "group": "navigation@1"
+        }
+      ],
+      "terminal/context": [
+        {
+          "command": "vscode-acp.sendSelectionToChat",
+          "when": "terminalHasSelection",
+          "group": "navigation"
+        }
+      ],
       "view/title": [
         {
           "command": "vscode-acp.newChat",

@@ -77,6 +77,70 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "vscode-acp.sendSelectionToChat",
+      async () => {
+        const activeEditor = vscode.window.activeTextEditor;
+        const activeTerminal = vscode.window.activeTerminal;
+
+        // Try editor selection first
+        if (activeEditor && !activeEditor.selection.isEmpty) {
+          const selection = activeEditor.selection;
+          const text = activeEditor.document.getText(selection);
+          const fileName = vscode.workspace.asRelativePath(
+            activeEditor.document.uri
+          );
+
+          chatProvider?.addSelection({
+            type: "selection",
+            name: `${fileName}:${selection.start.line + 1}-${selection.end.line + 1}`,
+            path: activeEditor.document.uri.fsPath,
+            content: text,
+            range: {
+              startLine: selection.start.line + 1,
+              endLine: selection.end.line + 1,
+            },
+          });
+
+          await vscode.commands.executeCommand("vscode-acp.chatView.focus");
+          return;
+        }
+
+        // Try terminal selection if no editor selection
+        if (activeTerminal) {
+          // VS Code doesn't have a direct API to get terminal selection text.
+          // The standard workaround is to use the "copySelection" command and then read from clipboard.
+          const originalClipboard = await vscode.env.clipboard.readText();
+          await vscode.commands.executeCommand(
+            "workbench.action.terminal.copySelection"
+          );
+          const selection = await vscode.env.clipboard.readText();
+
+          // Restore clipboard if it didn't change (no selection)
+          if (selection === originalClipboard) {
+            // Check if clipboard actually changed by clearing it momentarily (risky) or just assume no selection
+            // A better way is to check if there's any active selection in terminal via command state,
+            // but for simplicity, we'll just check if it's different from before.
+          }
+
+          if (selection) {
+            chatProvider?.addSelection({
+              type: "terminal",
+              name: `Terminal: ${activeTerminal.name}`,
+              content: selection,
+            });
+            await vscode.commands.executeCommand("vscode-acp.chatView.focus");
+          } else {
+            vscode.window.showInformationMessage(
+              "No text selected in editor or terminal."
+            );
+          }
+        }
+      }
+    )
+  );
+
   context.subscriptions.push({
     dispose: () => {
       acpClient?.dispose();

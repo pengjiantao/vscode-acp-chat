@@ -47,8 +47,22 @@ interface WebviewMessage {
   modeId?: string;
   modelId?: string;
   images?: string[];
-  mentions?: Array<{ name: string; path: string }>;
+  mentions?: Array<{
+    name: string;
+    path?: string;
+    type?: "file" | "selection" | "terminal";
+    content?: string;
+    range?: { startLine: number; endLine: number };
+  }>;
   path?: string;
+}
+
+export interface SelectionMention {
+  type: "selection" | "terminal";
+  name: string;
+  path?: string;
+  content: string;
+  range?: { startLine: number; endLine: number };
 }
 
 interface ManagedTerminal {
@@ -256,6 +270,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   public clearChat(): void {
     this.postMessage({ type: "triggerClearChat" });
+  }
+
+  public addSelection(selection: SelectionMention): void {
+    this.postMessage({
+      type: "addMention",
+      mention: {
+        type: selection.type,
+        name: selection.name,
+        path: selection.path,
+        content: selection.content,
+        range: selection.range,
+      },
+    });
   }
 
   private stderrBuffer = "";
@@ -600,7 +627,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async handleUserMessage(
     text: string,
     images: string[] = [],
-    mentions: Array<{ name: string; path: string }> = []
+    mentions: Array<{
+      name: string;
+      path?: string;
+      type?: "file" | "selection" | "terminal";
+      content?: string;
+      range?: { startLine: number; endLine: number };
+    }> = []
   ): Promise<void> {
     this.postMessage({ type: "userMessage", text });
 

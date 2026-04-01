@@ -97,12 +97,16 @@ export interface ExtensionMessage {
   status?: string;
   terminalOutput?: string;
   results?: Array<{ name: string; path: string }>;
+  mention?: Mention;
   plan?: { entries: PlanEntry[] };
 }
 
 export interface Mention {
   name: string;
-  path: string;
+  path?: string;
+  type?: "file" | "selection" | "terminal";
+  content?: string;
+  range?: { startLine: number; endLine: number };
 }
 
 export function escapeHtml(str: string): string {
@@ -1155,10 +1159,21 @@ export class WebviewController {
     ).map((img) => img.src);
     const mentions: Mention[] = Array.from(
       this.elements.inputEl.querySelectorAll(".mention-chip")
-    ).map((chip) => ({
-      name: (chip as HTMLElement).dataset.name || "",
-      path: (chip as HTMLElement).dataset.path || "",
-    }));
+    ).map((chip) => {
+      const c = chip as HTMLElement;
+      return {
+        name: c.dataset.name || "",
+        path: c.dataset.path,
+        type: c.dataset.type as Mention["type"],
+        content: c.dataset.content,
+        range: c.dataset.range
+          ? {
+              startLine: parseInt(c.dataset.range.split("-")[0], 10),
+              endLine: parseInt(c.dataset.range.split("-")[1], 10),
+            }
+          : undefined,
+      };
+    });
 
     if (!text && images.length === 0) return;
 
@@ -1310,7 +1325,11 @@ export class WebviewController {
     } else if (this.autocompleteMode === "file") {
       if (index >= 0 && index < this.fileResults.length) {
         const file = this.fileResults[index];
-        this.insertMentionChip(file);
+        this.insertMentionChip({
+          name: file.name,
+          path: file.path,
+          type: "file",
+        });
       }
     }
     this.hideAutocomplete();
@@ -1329,22 +1348,44 @@ export class WebviewController {
     this.elements.inputEl.focus();
   }
 
-  private insertMentionChip(file: { name: string; path: string }): void {
+  private insertMentionChip(mention: Mention): void {
     const selection = this.win.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
+    if (!selection) return;
 
-    const range = selection.getRangeAt(0);
-    range.setStart(range.startContainer, this.autocompleteTriggerPos);
-    range.deleteContents();
+    let range: Range;
+    if (this.autocompleteMode !== "none" && selection.rangeCount > 0) {
+      range = selection.getRangeAt(0);
+      range.setStart(range.startContainer, this.autocompleteTriggerPos);
+      range.deleteContents();
+    } else {
+      this.elements.inputEl.focus();
+      const currentSelection = this.win.getSelection();
+      if (!currentSelection || currentSelection.rangeCount === 0) {
+        // If no range, insert at end
+        range = this.doc.createRange();
+        range.selectNodeContents(this.elements.inputEl);
+        range.collapse(false);
+      } else {
+        range = currentSelection.getRangeAt(0);
+      }
+    }
 
     const chip = this.doc.createElement("span");
     chip.className = "mention-chip";
     chip.contentEditable = "false";
-    chip.dataset.name = file.name;
-    chip.dataset.path = file.path;
+    chip.dataset.name = mention.name;
+    if (mention.path) chip.dataset.path = mention.path;
+    chip.dataset.type = mention.type || "file";
+    if (mention.content) chip.dataset.content = mention.content;
+    if (mention.range)
+      chip.dataset.range = `${mention.range.startLine}-${mention.range.endLine}`;
+
+    const iconClass =
+      mention.type === "terminal" ? "icon-terminal" : "icon-document";
+
     chip.innerHTML = `
-      <span class="chip-icon icon-document"></span>
-      <span class="chip-label">${escapeHtml(file.name)}</span>
+      <span class="chip-icon ${iconClass}"></span>
+      <span class="chip-label">${escapeHtml(mention.name)}</span>
       <div class="chip-delete" title="Remove attachment">
         <span class="icon-dismiss"></span>
       </div>
@@ -1356,16 +1397,19 @@ export class WebviewController {
       this.saveState();
     });
 
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.vscode.postMessage({ type: "openFile", path: file.path });
-    });
+    if (mention.path) {
+      chip.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.vscode.postMessage({ type: "openFile", path: mention.path });
+      });
+    }
 
     range.insertNode(chip);
     const space = this.doc.createTextNode(" ");
     range.collapse(false);
     range.insertNode(space);
-    selection.collapse(space, 1);
+    selection.removeAllRanges();
+    selection.addRange(range);
     this.elements.inputEl.focus();
     this.saveState();
   }
@@ -1403,6 +1447,11 @@ export class WebviewController {
         if (msg.text) {
           this.addMessage(msg.text, "user");
           this.updateViewState();
+        }
+        break;
+      case "addMention":
+        if (msg.mention) {
+          this.insertMentionChip(msg.mention);
         }
         break;
       case "streamStart":
