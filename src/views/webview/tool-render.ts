@@ -66,7 +66,10 @@ function getIdentifier(info: ToolCallSummary): string {
       rawInput.file_path ||
       rawInput.uri ||
       rawInput.filename ||
-      rawInput.target;
+      rawInput.filepath ||
+      rawInput.file_name ||
+      rawInput.target ||
+      rawInput.destination;
     if (typeof p === "string") return p;
 
     const q =

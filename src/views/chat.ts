@@ -391,7 +391,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private lastFileContents: Map<string, string> = new Map();
+  private lastFileContents: Map<string, string | null> = new Map();
 
   private async handleWriteTextFile(
     params: WriteTextFileRequest
@@ -406,8 +406,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const oldContent = this.textDecoder.decode(fileContent);
         this.lastFileContents.set(params.path, oldContent);
       } catch {
-        // File doesn't exist yet, it's a new file
-        this.lastFileContents.delete(params.path);
+        // Use null to indicate a new file (vs undefined which means not yet captured)
+        this.lastFileContents.set(params.path, null);
       }
 
       const content = this.textEncoder.encode(params.content);
@@ -811,7 +811,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
           // If tool_call_update arrived after write completed, use the pre-write snapshot
           if (oldText === undefined && this.lastFileContents.has(path)) {
-            oldText = this.lastFileContents.get(path);
+            const captured = this.lastFileContents.get(path);
+            oldText = captured ?? undefined; // null becomes undefined for webview
           }
           this.lastFileContents.delete(path);
 
@@ -821,7 +822,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             rawInput?.newContent ||
             rawInput?.newText ||
             rawInput?.new_string ||
-            rawInput?.replacement;
+            rawInput?.replacement ||
+            rawInput?.data ||
+            rawInput?.text_content ||
+            rawInput?.modified_content;
 
           if (
             newText !== undefined &&
@@ -934,7 +938,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       rawInput?.filePath ||
       rawInput?.file_path ||
       rawInput?.filename ||
-      rawInput?.uri
+      rawInput?.uri ||
+      rawInput?.filepath ||
+      rawInput?.file_name ||
+      rawInput?.target ||
+      rawInput?.destination
     );
   }
 
