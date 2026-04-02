@@ -48,7 +48,9 @@ export type ACPConnectionState =
   | "error";
 
 type StateChangeCallback = (state: ACPConnectionState) => void;
-type SessionUpdateCallback = (update: SessionNotification) => void;
+type SessionUpdateCallback = (
+  update: SessionNotification
+) => void | Promise<void>;
 type StderrCallback = (data: string) => void;
 type ReadTextFileCallback = (
   params: ReadTextFileRequest
@@ -278,11 +280,15 @@ export class ACPClient {
               update.availableCommands.length
             );
           }
-          try {
-            this.sessionUpdateListeners.forEach((cb) => cb(params));
-          } catch (error) {
-            console.error("[ACP] Error in session update listener:", error);
-          }
+          await Promise.all(
+            Array.from(this.sessionUpdateListeners).map(async (cb) => {
+              try {
+                await cb(params);
+              } catch (error) {
+                console.error("[ACP] Error in session update listener:", error);
+              }
+            })
+          );
         },
         readTextFile: async (
           params: ReadTextFileRequest

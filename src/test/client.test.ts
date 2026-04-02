@@ -208,7 +208,9 @@ suite("ACPClient with Mock Server", () => {
       await client.newSession("/test/dir");
 
       const updates: unknown[] = [];
-      client.setOnSessionUpdate((update) => updates.push(update));
+      client.setOnSessionUpdate((update) => {
+        updates.push(update);
+      });
 
       const response = await client.sendMessage("Hello");
 
@@ -222,8 +224,12 @@ suite("ACPClient with Mock Server", () => {
       const updates1: unknown[] = [];
       const updates2: unknown[] = [];
 
-      client.setOnSessionUpdate((update) => updates1.push(update));
-      client.setOnSessionUpdate((update) => updates2.push(update));
+      client.setOnSessionUpdate((update) => {
+        updates1.push(update);
+      });
+      client.setOnSessionUpdate((update) => {
+        updates2.push(update);
+      });
 
       await client.sendMessage("Hello");
 

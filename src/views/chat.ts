@@ -90,7 +90,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private toolCallRawInputs: Map<string, any> = new Map();
   private toolCallKinds: Map<string, string> = new Map();
   private toolCallTitles: Map<string, string> = new Map();
+  private toolCallBaseContents: Map<string, Promise<string | undefined>> =
+    new Map();
+  private pendingToolCalls: Set<string> = new Set();
   private terminalCounter = 0;
+  private textDecoder = new TextDecoder();
+  private textEncoder = new TextEncoder();
   private permissionQueue: Array<{
     id: string;
     params: RequestPermissionRequest;
@@ -134,7 +139,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     });
 
     this.acpClient.setOnSessionUpdate((update) => {
-      this.handleSessionUpdate(update);
+      this.handleSessionUpdate(update).catch((error) => {
+        console.error("[Chat] Error handling session update:", error);
+      });
     });
 
     this.acpClient.setOnStderr((text) => {
@@ -366,7 +373,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         content = openDoc.getText();
       } else {
         const fileContent = await vscode.workspace.fs.readFile(uri);
-        content = new TextDecoder().decode(fileContent);
+        content = this.textDecoder.decode(fileContent);
       }
 
       if (params.line !== undefined || params.limit !== undefined) {
@@ -393,17 +400,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       const uri = vscode.Uri.file(params.path);
 
-      // Capture old content for diffing in webview
+      // Capture old content for diffing in webview (fallback for missing tool_call_update)
       try {
         const fileContent = await vscode.workspace.fs.readFile(uri);
-        const oldContent = new TextDecoder().decode(fileContent);
+        const oldContent = this.textDecoder.decode(fileContent);
         this.lastFileContents.set(params.path, oldContent);
       } catch {
         // File doesn't exist yet, it's a new file
         this.lastFileContents.delete(params.path);
       }
 
-      const content = new TextEncoder().encode(params.content);
+      const content = this.textEncoder.encode(params.content);
       await vscode.workspace.fs.writeFile(uri, content);
       return {};
     } catch (error) {
@@ -658,6 +665,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  private clearToolCallMetadata(): void {
+    this.toolCallStartTimes.clear();
+    this.toolCallRawInputs.clear();
+    this.toolCallKinds.clear();
+    this.toolCallTitles.clear();
+    this.toolCallBaseContents.clear();
+    this.lastFileContents.clear();
+  }
+
+  private cleanupToolCall(toolCallId: string): void {
+    this.toolCallStartTimes.delete(toolCallId);
+    this.toolCallRawInputs.delete(toolCallId);
+    this.toolCallKinds.delete(toolCallId);
+    this.toolCallTitles.delete(toolCallId);
+    this.toolCallBaseContents.delete(toolCallId);
+  }
+
   public dispose(): void {
     for (const terminal of this.terminals.values()) {
       this.killTerminalProcess(terminal);
@@ -666,9 +690,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       } catch {}
     }
     this.terminals.clear();
+    this.clearToolCallMetadata();
   }
 
-  private handleSessionUpdate(notification: SessionNotification): void {
+  private async handleSessionUpdate(
+    notification: SessionNotification
+  ): Promise<void> {
     const update = notification.update;
     console.log("[Chat] Session update received:", update.sessionUpdate);
 
@@ -680,6 +707,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         console.log("[Chat] Non-text chunk type:", update.content.type);
       }
     } else if (update.sessionUpdate === "tool_call") {
+      this.pendingToolCalls.add(update.toolCallId);
       this.toolCallStartTimes.set(update.toolCallId, Date.now());
       if (update.rawInput) {
         this.toolCallRawInputs.set(update.toolCallId, update.rawInput);
@@ -690,6 +718,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       if (update.title) {
         this.toolCallTitles.set(update.toolCallId, update.title);
       }
+
+      // Early capture base content for diffing if we have a path
+      const path = this.extractPath(update.rawInput);
+      if (path) {
+        const capturePromise = this.captureBaseContent(
+          update.kind,
+          update.title,
+          update.rawInput
+        );
+        this.toolCallBaseContents.set(update.toolCallId, capturePromise);
+      }
+
       this.postMessage({
         type: "toolCallStart",
         name: update.title,
@@ -697,8 +737,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         kind: update.kind,
         rawInput: update.rawInput,
       });
+
+      // Cleanup after 10 minutes to prevent leaks if protocol fails
+      setTimeout(() => this.cleanupToolCall(update.toolCallId), 10 * 60 * 1000);
     } else if (update.sessionUpdate === "tool_call_update") {
       if (update.status === "completed" || update.status === "failed") {
+        if (!this.pendingToolCalls.has(update.toolCallId)) {
+          return;
+        }
+
         let terminalOutput: string | undefined;
 
         if (update.content && update.content.length > 0) {
@@ -724,13 +771,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const rawInput =
           (update.rawInput as any) ||
           this.toolCallRawInputs.get(update.toolCallId);
-        const path =
-          rawInput?.path ||
-          rawInput?.file ||
-          rawInput?.filePath ||
-          rawInput?.file_path ||
-          rawInput?.filename ||
-          rawInput?.uri;
+        const path = this.extractPath(rawInput);
 
         const kind = update.kind || this.toolCallKinds.get(update.toolCallId);
         const title =
@@ -738,12 +779,39 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         if (
           typeof path === "string" &&
-          ((kind as any) === "write" ||
+          (kind === "write" ||
             kind === "edit" ||
             title?.toLowerCase().includes("write") ||
             title?.toLowerCase().includes("edit"))
         ) {
-          const oldText = this.lastFileContents.get(path);
+          // IMPORTANT: Await the snapshot promise to avoid race conditions
+          const oldTextPromise = this.toolCallBaseContents.get(
+            update.toolCallId
+          );
+          let oldText = oldTextPromise ? await oldTextPromise : undefined;
+
+          // Check if tool call was cleaned up while awaiting
+          if (!this.pendingToolCalls.has(update.toolCallId)) {
+            return;
+          }
+
+          // If tool_call notification was missed, toolCallBaseContents might be empty.
+          // Try to capture it now before completing the diff.
+          if (oldText === undefined && !this.lastFileContents.has(path)) {
+            oldText = await this.captureBaseContent(kind, title, rawInput);
+
+            // Re-check after second await
+            if (!this.pendingToolCalls.has(update.toolCallId)) {
+              return;
+            }
+          }
+
+          // If tool_call_update arrived after write completed, use the pre-write snapshot
+          if (oldText === undefined && this.lastFileContents.has(path)) {
+            oldText = this.lastFileContents.get(path);
+          }
+          this.lastFileContents.delete(path);
+
           const newText =
             rawInput?.content ||
             rawInput?.text ||
@@ -763,19 +831,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               oldText,
               newText: String(newText),
             });
-            this.lastFileContents.delete(path);
           }
         }
 
         const startTime = this.toolCallStartTimes.get(update.toolCallId);
         const duration = startTime ? Date.now() - startTime : undefined;
-        this.toolCallStartTimes.delete(update.toolCallId);
 
         const finalRawInput =
           update.rawInput || this.toolCallRawInputs.get(update.toolCallId);
-        this.toolCallRawInputs.delete(update.toolCallId);
-        this.toolCallKinds.delete(update.toolCallId);
-        this.toolCallTitles.delete(update.toolCallId);
 
         this.postMessage({
           type: "toolCallComplete",
@@ -790,25 +853,51 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           locations: update.locations,
           duration,
         });
+
+        this.cleanupToolCall(update.toolCallId);
       } else {
-        // Ensure the tool block is created even if we missed the initial tool_call
+        // Ensure metadata is always updated from newest notification
+        if (update.rawInput) {
+          this.toolCallRawInputs.set(update.toolCallId, update.rawInput);
+        }
+        if (update.kind) {
+          this.toolCallKinds.set(update.toolCallId, update.kind);
+        }
+        if (update.title) {
+          this.toolCallTitles.set(update.toolCallId, update.title);
+        }
+
         if (!this.toolCallStartTimes.has(update.toolCallId)) {
           this.toolCallStartTimes.set(update.toolCallId, Date.now());
-          if (update.rawInput) {
-            this.toolCallRawInputs.set(update.toolCallId, update.rawInput);
-          }
-          if (update.kind) {
-            this.toolCallKinds.set(update.toolCallId, update.kind);
-          }
-          if (update.title) {
-            this.toolCallTitles.set(update.toolCallId, update.title);
+        }
+
+        // Try to capture base content if we haven't already.
+        // We do NOT await here to avoid blocking notification loop.
+        if (!this.toolCallBaseContents.has(update.toolCallId)) {
+          const kind = update.kind || this.toolCallKinds.get(update.toolCallId);
+          const title =
+            update.title || this.toolCallTitles.get(update.toolCallId);
+          const rawInput =
+            update.rawInput || this.toolCallRawInputs.get(update.toolCallId);
+
+          if (this.extractPath(rawInput)) {
+            const capturePromise = this.captureBaseContent(
+              kind,
+              title,
+              rawInput
+            );
+            this.toolCallBaseContents.set(update.toolCallId, capturePromise);
           }
         }
+
         this.postMessage({
           type: "toolCallStart",
-          name: update.title || "Tool",
+          name:
+            update.title ||
+            this.toolCallTitles.get(update.toolCallId) ||
+            "Tool",
           toolCallId: update.toolCallId,
-          kind: update.kind,
+          kind: update.kind || this.toolCallKinds.get(update.toolCallId),
           rawInput:
             update.rawInput || this.toolCallRawInputs.get(update.toolCallId),
         });
@@ -833,6 +922,53 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         });
       }
     }
+  }
+
+  private extractPath(rawInput: any): string | undefined {
+    return (
+      rawInput?.path ||
+      rawInput?.file ||
+      rawInput?.filePath ||
+      rawInput?.file_path ||
+      rawInput?.filename ||
+      rawInput?.uri
+    );
+  }
+
+  private async captureBaseContent(
+    kind: string | undefined,
+    title: string | undefined,
+    rawInput: any
+  ): Promise<string | undefined> {
+    const path = this.extractPath(rawInput);
+
+    if (
+      typeof path === "string" &&
+      (kind === "write" ||
+        kind === "edit" ||
+        title?.toLowerCase().includes("write") ||
+        title?.toLowerCase().includes("edit"))
+    ) {
+      try {
+        const uri = vscode.Uri.file(path);
+        const fileContent = await vscode.workspace.fs.readFile(uri);
+        return this.textDecoder.decode(fileContent);
+      } catch (error) {
+        if (
+          error instanceof vscode.FileSystemError &&
+          error.code === "FileNotFound"
+        ) {
+          // File doesn't exist, it's a new file. No base content.
+          return undefined;
+        }
+        console.error(
+          `[Chat] Unexpected error capturing base content for ${path}:`,
+          error
+        );
+        return undefined;
+      }
+    }
+    return undefined;
   }
 
   private async handleUserMessage(
@@ -959,6 +1095,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async handleNewChat(): Promise<void> {
     this.hasSession = false;
     this.hasRestoredModeModel = false;
+    this.clearToolCallMetadata();
     this.postMessage({ type: "chatCleared" });
     this.postMessage({ type: "sessionMetadata", modes: null, models: null });
 
