@@ -88,6 +88,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private terminals: Map<string, ManagedTerminal> = new Map();
   private toolCallStartTimes: Map<string, number> = new Map();
   private toolCallRawInputs: Map<string, any> = new Map();
+  private toolCallKinds: Map<string, string> = new Map();
+  private toolCallTitles: Map<string, string> = new Map();
   private terminalCounter = 0;
   private permissionQueue: Array<{
     id: string;
@@ -682,6 +684,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       if (update.rawInput) {
         this.toolCallRawInputs.set(update.toolCallId, update.rawInput);
       }
+      if (update.kind) {
+        this.toolCallKinds.set(update.toolCallId, update.kind);
+      }
+      if (update.title) {
+        this.toolCallTitles.set(update.toolCallId, update.title);
+      }
       this.postMessage({
         type: "toolCallStart",
         name: update.title,
@@ -716,16 +724,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const rawInput =
           (update.rawInput as any) ||
           this.toolCallRawInputs.get(update.toolCallId);
-        const path = rawInput?.path || rawInput?.file || rawInput?.filePath;
+        const path =
+          rawInput?.path ||
+          rawInput?.file ||
+          rawInput?.filePath ||
+          rawInput?.file_path ||
+          rawInput?.filename ||
+          rawInput?.uri;
+
+        const kind = update.kind || this.toolCallKinds.get(update.toolCallId);
+        const title =
+          update.title || this.toolCallTitles.get(update.toolCallId);
+
         if (
           typeof path === "string" &&
-          ((update.kind as any) === "write" ||
-            update.kind === "edit" ||
-            update.title?.toLowerCase().includes("write"))
+          ((kind as any) === "write" ||
+            kind === "edit" ||
+            title?.toLowerCase().includes("write") ||
+            title?.toLowerCase().includes("edit"))
         ) {
           const oldText = this.lastFileContents.get(path);
           const newText =
-            rawInput?.content || rawInput?.text || rawInput?.newContent;
+            rawInput?.content ||
+            rawInput?.text ||
+            rawInput?.newContent ||
+            rawInput?.newText ||
+            rawInput?.new_string ||
+            rawInput?.replacement;
 
           if (
             newText !== undefined &&
@@ -749,6 +774,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const finalRawInput =
           update.rawInput || this.toolCallRawInputs.get(update.toolCallId);
         this.toolCallRawInputs.delete(update.toolCallId);
+        this.toolCallKinds.delete(update.toolCallId);
+        this.toolCallTitles.delete(update.toolCallId);
 
         this.postMessage({
           type: "toolCallComplete",
@@ -769,6 +796,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.toolCallStartTimes.set(update.toolCallId, Date.now());
           if (update.rawInput) {
             this.toolCallRawInputs.set(update.toolCallId, update.rawInput);
+          }
+          if (update.kind) {
+            this.toolCallKinds.set(update.toolCallId, update.kind);
+          }
+          if (update.title) {
+            this.toolCallTitles.set(update.toolCallId, update.title);
           }
         }
         this.postMessage({

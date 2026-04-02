@@ -63,6 +63,7 @@ function getIdentifier(info: ToolCallSummary): string {
       rawInput.path ||
       rawInput.file ||
       rawInput.filePath ||
+      rawInput.file_path ||
       rawInput.uri ||
       rawInput.filename ||
       rawInput.target;
@@ -142,8 +143,18 @@ const BaseRenderer: ToolRenderer = {
         html += `<div class="detail-path">${escapeHtml(loc.path)}${loc.line ? `:${loc.line}` : ""}</div>`;
       }
       html += "</div>";
-    } else if (rawInput?.path || rawInput?.file) {
-      html += `<div class="detail-section"><span class="detail-label">Path:</span> ${escapeHtml(String(rawInput.path || rawInput.file))}</div>`;
+    } else {
+      const p =
+        rawInput?.path ||
+        rawInput?.file ||
+        rawInput?.filePath ||
+        rawInput?.file_path ||
+        rawInput?.uri ||
+        rawInput?.filename ||
+        rawInput?.target;
+      if (typeof p === "string") {
+        html += `<div class="detail-section"><span class="detail-label">Path:</span> ${escapeHtml(p)}</div>`;
+      }
     }
 
     // Intent
@@ -153,17 +164,40 @@ const BaseRenderer: ToolRenderer = {
 
     // Input Parameters
     if (rawInput) {
-      const skipInputKeys = ["description", "content", "text", "newContent"];
-      const hasMeaningfulInput = Object.keys(rawInput).some(
-        (k) => !skipInputKeys.includes(k) && rawInput[k] !== undefined
-      );
+      const skipInputKeys = [
+        "description",
+        "content",
+        "text",
+        "newContent",
+        "newText",
+        "new_string",
+        "old_string",
+        "replacement",
+        "path",
+        "file",
+        "filePath",
+        "file_path",
+        "filename",
+        "uri",
+      ];
+
+      const hasDiff = content?.some((c) => c.type === "diff");
+
+      const hasMeaningfulInput = Object.keys(rawInput).some((k) => {
+        if (k === "description") return false;
+        if (hasDiff && skipInputKeys.includes(k)) return false;
+        return rawInput[k] !== undefined;
+      });
 
       if (hasMeaningfulInput) {
         html +=
           '<div class="detail-section"><span class="detail-label">Input:</span>';
         html += '<pre class="detail-input">';
         for (const [key, value] of Object.entries(rawInput)) {
-          if (!skipInputKeys.includes(key) && value !== undefined) {
+          if (key === "description") continue;
+          if (hasDiff && skipInputKeys.includes(key)) continue;
+
+          if (value !== undefined) {
             if (key === "command" || key === "pattern") {
               html += `<div><strong>$ ${escapeHtml(String(value))}</strong></div>`;
             } else {
