@@ -627,6 +627,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       });
 
       if (params.toolCall?.toolCallId) {
+        this.pendingToolCalls.add(params.toolCall.toolCallId);
         this.postMessage({
           type: "toolCallStart",
           name: params.toolCall.title || "Tool",
@@ -672,6 +673,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.toolCallTitles.clear();
     this.toolCallBaseContents.clear();
     this.lastFileContents.clear();
+    this.pendingToolCalls.clear();
   }
 
   private cleanupToolCall(toolCallId: string): void {
@@ -680,6 +682,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.toolCallKinds.delete(toolCallId);
     this.toolCallTitles.delete(toolCallId);
     this.toolCallBaseContents.delete(toolCallId);
+    this.pendingToolCalls.delete(toolCallId);
   }
 
   public dispose(): void {
