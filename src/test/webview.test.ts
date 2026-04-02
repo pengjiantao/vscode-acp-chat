@@ -152,7 +152,9 @@ suite("Webview", () => {
         },
       };
       const html = getToolsHtml(tools);
-      assert.ok(html.includes("⋯"));
+      assert.ok(
+        html.includes('<span class="icon icon-sparkle animate-spin"></span>')
+      );
       assert.ok(html.includes("bash"));
       assert.ok(html.includes("running"));
     });
@@ -168,7 +170,7 @@ suite("Webview", () => {
         },
       };
       const html = getToolsHtml(tools);
-      assert.ok(html.includes("✓"));
+      assert.ok(html.includes('<span class="icon icon-checkmark"></span>'));
       assert.ok(html.includes("read_file"));
     });
 
@@ -183,7 +185,7 @@ suite("Webview", () => {
         },
       };
       const html = getToolsHtml(tools);
-      assert.ok(html.includes("✗"));
+      assert.ok(html.includes('<span class="icon icon-dismiss"></span>'));
     });
 
     test("escapes tool name to prevent XSS", () => {
@@ -1212,43 +1214,43 @@ suite("Webview", () => {
 
   suite("getToolKindIcon", () => {
     test("returns read icon for read kind", () => {
-      assert.strictEqual(getToolKindIcon("read"), "📖");
+      assert.strictEqual(getToolKindIcon("read"), "icon-document");
     });
 
     test("returns edit icon for edit kind", () => {
-      assert.strictEqual(getToolKindIcon("edit"), "✏️");
+      assert.strictEqual(getToolKindIcon("edit"), "icon-edit");
     });
 
     test("returns delete icon for delete kind", () => {
-      assert.strictEqual(getToolKindIcon("delete"), "🗑️");
+      assert.strictEqual(getToolKindIcon("delete"), "icon-trash");
     });
 
     test("returns execute icon for execute kind", () => {
-      assert.strictEqual(getToolKindIcon("execute"), "▶️");
+      assert.strictEqual(getToolKindIcon("execute"), "icon-terminal");
     });
 
     test("returns search icon for search kind", () => {
-      assert.strictEqual(getToolKindIcon("search"), "🔍");
+      assert.strictEqual(getToolKindIcon("search"), "icon-search");
     });
 
     test("returns fetch icon for fetch kind", () => {
-      assert.strictEqual(getToolKindIcon("fetch"), "🌐");
+      assert.strictEqual(getToolKindIcon("fetch"), "icon-globe");
     });
 
     test("returns move icon for move kind", () => {
-      assert.strictEqual(getToolKindIcon("move"), "📦");
+      assert.strictEqual(getToolKindIcon("move"), "icon-sync");
     });
 
     test("returns think icon for think kind", () => {
-      assert.strictEqual(getToolKindIcon("think"), "🧠");
+      assert.strictEqual(getToolKindIcon("think"), "icon-sparkle-ai");
     });
 
     test("returns switch_mode icon for switch_mode kind", () => {
-      assert.strictEqual(getToolKindIcon("switch_mode"), "🔄");
+      assert.strictEqual(getToolKindIcon("switch_mode"), "icon-sync");
     });
 
     test("returns other icon for other kind", () => {
-      assert.strictEqual(getToolKindIcon("other"), "⚙️");
+      assert.strictEqual(getToolKindIcon("other"), "icon-gear");
     });
 
     test("returns empty string for undefined kind", () => {
@@ -1269,8 +1271,7 @@ suite("Webview", () => {
         },
       };
       const html = getToolsHtml(tools);
-      assert.ok(html.includes("📖"));
-      assert.ok(html.includes('class="tool-kind-icon"'));
+      assert.ok(html.includes('class="tool-kind-icon icon-document"'));
     });
 
     test("renders execute kind icon for command tools", () => {
@@ -1285,7 +1286,7 @@ suite("Webview", () => {
         },
       };
       const html = getToolsHtml(tools);
-      assert.ok(html.includes("▶️"));
+      assert.ok(html.includes('class="tool-kind-icon icon-terminal"'));
     });
 
     test("does not render kind icon when kind is undefined", () => {

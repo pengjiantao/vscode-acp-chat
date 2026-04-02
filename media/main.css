@@ -256,15 +256,22 @@ body {
 }
 
 .tool-details summary::before {
-  content: "▶";
+  content: "";
   display: inline-block;
+  width: 12px;
+  height: 12px;
   margin-right: 6px;
-  font-size: 9px;
+  vertical-align: middle;
+  mask: url(./icons/chevron-down.svg) no-repeat center;
+  -webkit-mask: url(./icons/chevron-down.svg) no-repeat center;
+  background-color: currentColor;
+  opacity: 0.6;
+  transform: rotate(-90deg);
   transition: transform 0.15s ease;
 }
 
 .tool-details[open] summary::before {
-  transform: rotate(90deg);
+  transform: rotate(0deg);
 }
 
 .tool-list {
@@ -286,6 +293,10 @@ body {
 
 .tool-status.running {
   animation: spin 1s linear infinite;
+}
+
+.animate-spin {
+  animation: spin 1.5s linear infinite;
 }
 
 @keyframes spin {
@@ -656,6 +667,55 @@ body {
   mask: url(./icons/chevron-down.svg) no-repeat center;
   -webkit-mask: url(./icons/chevron-down.svg) no-repeat center;
   background-color: currentColor;
+}
+
+.icon-search {
+  mask: url(./icons/search.svg) no-repeat center;
+  -webkit-mask: url(./icons/search.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-edit {
+  mask: url(./icons/edit.svg) no-repeat center;
+  -webkit-mask: url(./icons/edit.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-trash {
+  mask: url(./icons/trash.svg) no-repeat center;
+  -webkit-mask: url(./icons/trash.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-sync {
+  mask: url(./icons/sync.svg) no-repeat center;
+  -webkit-mask: url(./icons/sync.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-gear {
+  mask: url(./icons/gear.svg) no-repeat center;
+  -webkit-mask: url(./icons/gear.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-globe {
+  mask: url(./icons/globe.svg) no-repeat center;
+  -webkit-mask: url(./icons/globe.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon-sparkle-ai {
+  mask: url(./icons/sparkle-ai.svg) no-repeat center;
+  -webkit-mask: url(./icons/sparkle-ai.svg) no-repeat center;
+  background-color: currentColor;
+}
+
+.icon {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 /* Image Hover Preview */
@@ -1233,9 +1293,14 @@ kbd {
 }
 
 .agent-thought summary::after {
-  content: "▼";
-  font-size: 8px;
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
   margin-left: auto;
+  mask: url(./icons/chevron-down.svg) no-repeat center;
+  -webkit-mask: url(./icons/chevron-down.svg) no-repeat center;
+  background-color: currentColor;
   opacity: 0.4;
   transition: transform 0.15s ease;
 }
@@ -1291,9 +1356,14 @@ kbd {
 }
 
 .tool-item summary::after {
-  content: "▼";
-  font-size: 8px;
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
   margin-left: auto;
+  mask: url(./icons/chevron-down.svg) no-repeat center;
+  -webkit-mask: url(./icons/chevron-down.svg) no-repeat center;
+  background-color: currentColor;
   opacity: 0.4;
   transition: transform 0.15s ease;
 }

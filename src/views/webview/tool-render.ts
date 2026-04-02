@@ -98,9 +98,14 @@ function getIdentifier(info: ToolCallSummary): string {
 const BaseRenderer: ToolRenderer = {
   renderSummary(info: ToolCallSummary): string {
     const { kind, duration, status } = info;
-    const icon = getToolKindIcon(kind);
+    const iconClass = getToolKindIcon(kind);
+    const icon = iconClass ? `<span class="icon ${iconClass}"></span>` : "";
     const statusIcon =
-      status === "failed" ? "✗" : status === "in_progress" ? "⋯" : "✓";
+      status === "failed"
+        ? '<span class="icon icon-dismiss"></span>'
+        : status === "in_progress"
+          ? '<span class="icon icon-sparkle animate-spin"></span>'
+          : '<span class="icon icon-checkmark"></span>';
     const statusClass =
       status === "failed"
         ? "failed"
@@ -212,16 +217,16 @@ const Renderers: Partial<Record<ToolKind, ToolRenderer>> = {
       const suffix = limit ? ` (${limit} lines)` : "";
       const statusIcon =
         info.status === "failed"
-          ? "✗"
+          ? '<span class="icon icon-dismiss"></span>'
           : info.status === "in_progress"
-            ? "⋯"
-            : "✓";
+            ? '<span class="icon icon-sparkle animate-spin"></span>'
+            : '<span class="icon icon-checkmark"></span>';
       const durationStr = info.duration
         ? ` | ${formatDuration(info.duration)}`
         : "";
       return `
         <span class="tool-status ${info.status === "failed" ? "failed" : info.status === "in_progress" ? "running" : "completed"}">${statusIcon}</span>
-        <span class="tool-kind-icon">📖</span>
+        <span class="tool-kind-icon"><span class="icon icon-document"></span></span>
         <span class="tool-name"><strong>Read:</strong> ${escapeHtml(path)}${suffix}${durationStr}</span>
       `;
     },
@@ -232,16 +237,16 @@ const Renderers: Partial<Record<ToolKind, ToolRenderer>> = {
       const query = getIdentifier(info);
       const statusIcon =
         info.status === "failed"
-          ? "✗"
+          ? '<span class="icon icon-dismiss"></span>'
           : info.status === "in_progress"
-            ? "⋯"
-            : "✓";
+            ? '<span class="icon icon-sparkle animate-spin"></span>'
+            : '<span class="icon icon-checkmark"></span>';
       const durationStr = info.duration
         ? ` | ${formatDuration(info.duration)}`
         : "";
       return `
         <span class="tool-status ${info.status === "failed" ? "failed" : info.status === "in_progress" ? "running" : "completed"}">${statusIcon}</span>
-        <span class="tool-kind-icon">🔍</span>
+        <span class="tool-kind-icon"><span class="icon icon-search"></span></span>
         <span class="tool-name"><strong>Search:</strong> "${escapeHtml(query)}"${durationStr}</span>
       `;
     },

@@ -169,16 +169,16 @@ export function escapeHtml(str: string): string {
 }
 
 const TOOL_KIND_ICONS: Record<ToolKind, string> = {
-  read: "📖",
-  edit: "✏️",
-  delete: "🗑️",
-  move: "📦",
-  search: "🔍",
-  execute: "▶️",
-  think: "🧠",
-  fetch: "🌐",
-  switch_mode: "🔄",
-  other: "⚙️",
+  read: "icon-document",
+  edit: "icon-edit",
+  delete: "icon-trash",
+  move: "icon-sync",
+  search: "icon-search",
+  execute: "icon-terminal",
+  think: "icon-sparkle-ai",
+  fetch: "icon-globe",
+  switch_mode: "icon-sync",
+  other: "icon-gear",
 };
 
 export function getToolKindIcon(kind?: ToolKind): string {
@@ -403,22 +403,17 @@ export function getToolsHtml(
   const toolItems = toolIds
     .map((id) => {
       const tool = tools[id];
+      const iconClass = getToolKindIcon(tool.kind);
+      const kindSpan = iconClass
+        ? `<span class="tool-kind-icon ${iconClass}" title="${escapeHtml(tool.kind || "other")}"></span> `
+        : "";
       const statusIcon =
         tool.status === "completed"
-          ? "✓"
+          ? '<span class="icon icon-checkmark"></span>'
           : tool.status === "failed"
-            ? "✗"
-            : "⋯";
+            ? '<span class="icon icon-dismiss"></span>'
+            : '<span class="icon icon-sparkle animate-spin"></span>';
       const statusClass = tool.status === "running" ? "running" : "";
-      const isExpanded = id === expandedToolId;
-      const kindIcon = getToolKindIcon(tool.kind);
-      const kindSpan = kindIcon
-        ? '<span class="tool-kind-icon" title="' +
-          escapeHtml(tool.kind || "other") +
-          '">' +
-          kindIcon +
-          "</span> "
-        : "";
       let detailsContent = "";
       if (tool.input) {
         detailsContent +=
@@ -449,6 +444,7 @@ export function getToolsHtml(
           escapeHtml(tool.input) +
           "</span>"
         : "";
+      const isExpanded = id === expandedToolId;
       if (detailsContent) {
         const openAttr = isExpanded ? " open" : "";
         return (
@@ -1286,7 +1282,7 @@ export class WebviewController {
       details.setAttribute("aria-label", "Assistant is thinking");
       details.innerHTML = `
         <summary class="thought-header">
-          <span class="thought-icon">🧠</span>
+          <span class="thought-icon"><span class="icon icon-sparkle-ai"></span></span>
           <span class="thought-title">Thinking...</span>
         </summary>
         <div class="thought-content"></div>
@@ -1299,7 +1295,7 @@ export class WebviewController {
       details.setAttribute("open", "");
       details.innerHTML = `
         <summary class="tool-summary">
-          <span class="tool-status running">⋯</span>
+          <span class="tool-status running"><span class="icon icon-sparkle animate-spin"></span></span>
           <span class="tool-name">Initializing...</span>
         </summary>
         <div class="tool-details-content"></div>
@@ -1478,7 +1474,7 @@ export class WebviewController {
           .map(
             (entry) => `
           <div class="plan-entry plan-entry-${entry.status} plan-priority-${entry.priority}">
-            <span class="plan-status-icon ${this.getPlanStatusIcon(entry.status)}"></span>
+            <span class="plan-status-icon">${this.getPlanStatusHtml(entry.status)}</span>
             <span class="plan-content">${escapeHtml(entry.content)}</span>
           </div>
         `
@@ -1488,15 +1484,15 @@ export class WebviewController {
     `;
   }
 
-  private getPlanStatusIcon(status: string): string {
+  private getPlanStatusHtml(status: string): string {
     switch (status) {
       case "completed":
-        return "icon-checkmark";
+        return '<span class="icon icon-checkmark"></span>';
       case "in_progress":
-        return "icon-more";
+        return '<span class="icon icon-sparkle animate-spin"></span>';
       case "pending":
       default:
-        return "icon-circle";
+        return '<span class="icon icon-circle"></span>';
     }
   }
 
