@@ -668,6 +668,7 @@ export class WebviewController {
   private modeDropdown: Dropdown;
   private modelDropdown: Dropdown;
   private isGenerating = false;
+  private hoveredImageChip: HTMLElement | null = null;
 
   constructor(
     vscode: VsCodeApi,
@@ -920,6 +921,15 @@ export class WebviewController {
     const text = this.elements.inputEl.textContent?.trim() || "";
     const hasMentions =
       this.elements.inputEl.querySelectorAll(".mention-chip").length > 0;
+
+    // If the hovered image chip is no longer present, hide the preview
+    if (
+      this.hoveredImageChip &&
+      !this.elements.inputEl.contains(this.hoveredImageChip)
+    ) {
+      this.hoveredImageChip = null;
+      this.hideImagePreview();
+    }
 
     // Fix for placeholder: if truly empty of text and mentions, ensure innerHTML is empty
     // to allow :empty CSS selector to work.
@@ -1476,6 +1486,7 @@ export class WebviewController {
     this.adjustHeight();
     this.elements.inputEl.focus();
     this.hideAutocomplete();
+    this.hideImagePreview();
     this.saveState();
     this.updateInputState();
   }
@@ -1691,7 +1702,10 @@ export class WebviewController {
       image: {
         icon: "icon-image",
         onHover: (e) => {
-          if (mention.dataUrl) this.showImagePreview(mention.dataUrl, e);
+          if (mention.dataUrl) {
+            this.hoveredImageChip = chip;
+            this.showImagePreview(mention.dataUrl, e);
+          }
         },
       },
     };
@@ -1708,6 +1722,8 @@ export class WebviewController {
 
     chip.querySelector(".chip-delete")?.addEventListener("click", (e) => {
       e.stopPropagation();
+      this.hoveredImageChip = null;
+      this.hideImagePreview();
       chip.remove();
       this.saveState();
       this.updateInputState();
@@ -1727,6 +1743,7 @@ export class WebviewController {
         ) {
           return;
         }
+        this.hoveredImageChip = null;
         this.hideImagePreview();
       });
     }
