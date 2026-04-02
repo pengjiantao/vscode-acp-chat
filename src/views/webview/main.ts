@@ -2040,6 +2040,7 @@ export class WebviewController {
               title: msg.name || block.title || "Tool",
               kind: msg.kind || block.kind,
               status: "in_progress",
+              rawInput: msg.rawInput,
             });
             summary.innerHTML = summaryHtml;
           }

@@ -87,6 +87,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private hasRestoredModeModel = false;
   private terminals: Map<string, ManagedTerminal> = new Map();
   private toolCallStartTimes: Map<string, number> = new Map();
+  private toolCallRawInputs: Map<string, any> = new Map();
   private terminalCounter = 0;
   private permissionQueue: Array<{
     id: string;
@@ -678,11 +679,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }
     } else if (update.sessionUpdate === "tool_call") {
       this.toolCallStartTimes.set(update.toolCallId, Date.now());
+      if (update.rawInput) {
+        this.toolCallRawInputs.set(update.toolCallId, update.rawInput);
+      }
       this.postMessage({
         type: "toolCallStart",
         name: update.title,
         toolCallId: update.toolCallId,
         kind: update.kind,
+        rawInput: update.rawInput,
       });
     } else if (update.sessionUpdate === "tool_call_update") {
       if (update.status === "completed" || update.status === "failed") {
@@ -708,7 +713,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
 
         // Enrich with diff if it's a file modification and missing
-        const rawInput = update.rawInput as any;
+        const rawInput =
+          (update.rawInput as any) ||
+          this.toolCallRawInputs.get(update.toolCallId);
         const path = rawInput?.path || rawInput?.file || rawInput?.filePath;
         if (
           typeof path === "string" &&
@@ -739,13 +746,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const duration = startTime ? Date.now() - startTime : undefined;
         this.toolCallStartTimes.delete(update.toolCallId);
 
+        const finalRawInput =
+          update.rawInput || this.toolCallRawInputs.get(update.toolCallId);
+        this.toolCallRawInputs.delete(update.toolCallId);
+
         this.postMessage({
           type: "toolCallComplete",
           toolCallId: update.toolCallId,
           title: update.title,
           kind: update.kind,
           content: update.content,
-          rawInput: update.rawInput,
+          rawInput: finalRawInput,
           rawOutput: update.rawOutput,
           status: update.status,
           terminalOutput,
@@ -756,12 +767,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // Ensure the tool block is created even if we missed the initial tool_call
         if (!this.toolCallStartTimes.has(update.toolCallId)) {
           this.toolCallStartTimes.set(update.toolCallId, Date.now());
+          if (update.rawInput) {
+            this.toolCallRawInputs.set(update.toolCallId, update.rawInput);
+          }
         }
         this.postMessage({
           type: "toolCallStart",
           name: update.title || "Tool",
           toolCallId: update.toolCallId,
           kind: update.kind,
+          rawInput:
+            update.rawInput || this.toolCallRawInputs.get(update.toolCallId),
         });
       }
     } else if (update.sessionUpdate === "current_mode_update") {
