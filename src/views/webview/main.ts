@@ -1644,6 +1644,7 @@ export class WebviewController {
 
     selection.collapseToEnd();
     this.elements.inputEl.focus();
+    this.adjustHeight();
   }
 
   private insertMentionChip(mention: Mention): void {
@@ -1712,6 +1713,7 @@ export class WebviewController {
     this.elements.inputEl.focus();
     this.saveState();
     this.updateInputState();
+    this.adjustHeight();
   }
 
   private setGenerating(isGenerating: boolean): void {
