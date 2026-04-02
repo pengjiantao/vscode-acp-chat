@@ -113,6 +113,8 @@ export interface ExtensionMessage {
   } | null;
   commands?: AvailableCommand[] | null;
   toolCallId?: string;
+  agentId?: string;
+  agentName?: string;
   name?: string;
   title?: string;
   kind?: ToolKind;
@@ -933,12 +935,17 @@ export class WebviewController {
       (!text && !hasMentions && !hasImages) || this.isGenerating;
   }
 
+  private updatePlaceholder(agentName: string): void {
+    const placeholder = `Ask ${agentName.toLowerCase()}... (type / for commands, @ for files)`;
+    this.elements.inputEl.setAttribute("data-placeholder", placeholder);
+  }
+
   private adjustHeight(): void {
     const { inputEl } = this.elements;
     inputEl.style.height = "auto";
     const maxHeight = this.win.innerHeight / 3;
     const scrollHeight = inputEl.scrollHeight;
-    const newHeight = Math.max(36, Math.min(scrollHeight, maxHeight));
+    const newHeight = Math.max(52, Math.min(scrollHeight, maxHeight));
     inputEl.style.height = newHeight + "px";
     inputEl.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
   }
@@ -1378,10 +1385,8 @@ export class WebviewController {
 
   updateViewState(): void {
     const hasMessages = this.elements.messagesEl.children.length > 0;
-    this.elements.welcomeView.style.display =
-      !this.isConnected && !hasMessages ? "flex" : "none";
-    this.elements.messagesEl.style.display =
-      this.isConnected || hasMessages ? "flex" : "none";
+    this.elements.welcomeView.style.display = !hasMessages ? "flex" : "none";
+    this.elements.messagesEl.style.display = hasMessages ? "flex" : "none";
   }
 
   showPlan(entries: PlanEntry[]): void {
@@ -1868,6 +1873,10 @@ export class WebviewController {
         }
         break;
       case "agentChanged":
+        if (msg.agentName) {
+          this.updatePlaceholder(msg.agentName);
+        }
+      // fallthrough
       case "chatCleared":
         this.elements.messagesEl.innerHTML = "";
         this.currentAssistantMessage = null;

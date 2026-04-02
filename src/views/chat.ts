@@ -287,6 +287,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             type: "connectionState",
             state: this.acpClient.getState(),
           });
+          this.postMessage({
+            type: "agentChanged",
+            agentId: this.acpClient.getAgentId(),
+            agentName: this.acpClient.getAgentName(),
+          });
           this.sendSessionMetadata();
           break;
       }
@@ -801,7 +806,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.acpClient.setAgent(agent);
       this.globalState.update(SELECTED_AGENT_KEY, agentId);
       this.hasSession = false;
-      this.postMessage({ type: "agentChanged", agentId });
+      this.postMessage({
+        type: "agentChanged",
+        agentId,
+        agentName: agent.name,
+      });
       this.postMessage({ type: "sessionMetadata", modes: null, models: null });
 
       try {

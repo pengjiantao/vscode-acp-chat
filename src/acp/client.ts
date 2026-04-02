@@ -132,6 +132,10 @@ export class ACPClient {
     return this.agentConfig.id;
   }
 
+  getAgentName(): string {
+    return this.agentConfig.name;
+  }
+
   setOnStateChange(callback: StateChangeCallback): () => void {
     this.stateChangeListeners.add(callback);
     return () => this.stateChangeListeners.delete(callback);
