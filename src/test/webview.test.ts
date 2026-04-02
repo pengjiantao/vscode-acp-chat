@@ -62,7 +62,6 @@ function createWebviewHTML(): string {
   </div>
 
   <div id="chat-input-area">
-    <div id="image-attachments"></div>
     <div id="input-container">
       <div id="command-autocomplete" role="listbox"></div>
       <div id="input" contenteditable="true"></div>

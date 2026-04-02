@@ -47,9 +47,10 @@ interface WebviewMessage {
   mentions?: Array<{
     name: string;
     path?: string;
-    type?: "file" | "selection" | "terminal";
+    type?: "file" | "selection" | "terminal" | "image";
     content?: string;
     range?: { startLine: number; endLine: number };
+    dataUrl?: string;
   }>;
   path?: string;
   requestId?: string;
@@ -750,9 +751,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     mentions: Array<{
       name: string;
       path?: string;
-      type?: "file" | "selection" | "terminal";
+      type?: "file" | "selection" | "terminal" | "image";
       content?: string;
       range?: { startLine: number; endLine: number };
+      dataUrl?: string;
     }> = []
   ): Promise<void> {
     this.postMessage({ type: "userMessage", text });
@@ -996,7 +998,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div id="chat-input-area">
-    <div id="image-attachments" class="image-attachment-container"></div>
     <div id="input-container">
       <div id="command-autocomplete" role="listbox" aria-label="Slash commands"></div>
       <div

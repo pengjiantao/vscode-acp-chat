@@ -151,9 +151,10 @@ export interface ExtensionMessage {
 export interface Mention {
   name: string;
   path?: string;
-  type?: "file" | "selection" | "terminal";
+  type?: "file" | "selection" | "terminal" | "image";
   content?: string;
   range?: { startLine: number; endLine: number };
+  dataUrl?: string; // For images
 }
 
 export function escapeHtml(str: string): string {
@@ -617,7 +618,6 @@ export class Dropdown {
 export interface WebviewElements {
   messagesEl: HTMLElement;
   inputEl: HTMLElement;
-  imageAttachmentsEl: HTMLElement;
   attachImageBtn: HTMLButtonElement;
   imagePreviewPopover: HTMLElement;
   sendBtn: HTMLButtonElement;
@@ -634,7 +634,6 @@ export function getElements(doc: Document): WebviewElements {
   return {
     messagesEl: doc.getElementById("messages")!,
     inputEl: doc.getElementById("input")!,
-    imageAttachmentsEl: doc.getElementById("image-attachments")!,
     attachImageBtn: doc.getElementById("attach-image") as HTMLButtonElement,
     imagePreviewPopover: doc.getElementById("image-preview-popover")!,
     sendBtn: doc.getElementById("send") as HTMLButtonElement,
@@ -921,7 +920,6 @@ export class WebviewController {
     const text = this.elements.inputEl.textContent?.trim() || "";
     const hasMentions =
       this.elements.inputEl.querySelectorAll(".mention-chip").length > 0;
-    const hasImages = this.elements.imageAttachmentsEl.children.length > 0;
 
     // Fix for placeholder: if truly empty of text and mentions, ensure innerHTML is empty
     // to allow :empty CSS selector to work.
@@ -932,7 +930,7 @@ export class WebviewController {
     }
 
     this.elements.sendBtn.disabled =
-      (!text && !hasMentions && !hasImages) || this.isGenerating;
+      (!text && !hasMentions) || this.isGenerating;
   }
 
   private updatePlaceholder(agentName: string): void {
@@ -1103,34 +1101,13 @@ export class WebviewController {
     const reader = new FileReader();
     reader.onload = (e) => {
       const base64 = e.target?.result as string;
-      this.addImageThumbnail(base64, file.name);
+      this.insertMentionChip({
+        name: file.name,
+        type: "image",
+        dataUrl: base64,
+      });
     };
     reader.readAsDataURL(file);
-  }
-
-  private addImageThumbnail(base64: string, name: string): void {
-    const { imageAttachmentsEl } = this.elements;
-    const item = this.doc.createElement("div");
-    item.className = "image-item";
-    item.innerHTML = `
-      <img src="${base64}" alt="${escapeHtml(name)}">
-      <div class="image-delete" title="Remove image">
-        <span class="icon-dismiss"></span>
-      </div>
-    `;
-
-    item.querySelector(".image-delete")?.addEventListener("click", () => {
-      item.remove();
-      this.updateInputState();
-    });
-
-    item.addEventListener("mouseenter", (e) =>
-      this.showImagePreview(base64, e)
-    );
-    item.addEventListener("mouseleave", () => this.hideImagePreview());
-
-    imageAttachmentsEl.appendChild(item);
-    this.updateInputState();
   }
 
   private showImagePreview(base64: string, event: MouseEvent): void {
@@ -1451,18 +1428,26 @@ export class WebviewController {
 
   private send(): void {
     const text = this.elements.inputEl.textContent?.trim() || "";
-    const images = Array.from(
-      this.elements.imageAttachmentsEl.querySelectorAll("img")
-    ).map((img) => img.src);
-    const mentions: Mention[] = Array.from(
+    const mentionChips = Array.from(
       this.elements.inputEl.querySelectorAll(".mention-chip")
-    ).map((chip) => {
+    );
+
+    const images: string[] = [];
+    const mentions: Mention[] = mentionChips.map((chip) => {
       const c = chip as HTMLElement;
+      const type = c.dataset.type as Mention["type"];
+      const dataUrl = c.dataset.dataUrl;
+
+      if (type === "image" && dataUrl) {
+        images.push(dataUrl);
+      }
+
       return {
         name: c.dataset.name || "",
         path: c.dataset.path,
-        type: c.dataset.type as Mention["type"],
+        type,
         content: c.dataset.content,
+        dataUrl,
         range: c.dataset.range
           ? {
               startLine: parseInt(c.dataset.range.split("-")[0], 10),
@@ -1488,7 +1473,6 @@ export class WebviewController {
 
   private clearInput(): void {
     this.elements.inputEl.innerHTML = "";
-    this.elements.imageAttachmentsEl.innerHTML = "";
     this.adjustHeight();
     this.elements.inputEl.focus();
     this.hideAutocomplete();
@@ -1678,12 +1662,44 @@ export class WebviewController {
     if (mention.content) chip.dataset.content = mention.content;
     if (mention.range)
       chip.dataset.range = `${mention.range.startLine}-${mention.range.endLine}`;
+    if (mention.dataUrl) chip.dataset.dataUrl = mention.dataUrl;
 
-    const iconClass =
-      mention.type === "terminal" ? "icon-terminal" : "icon-document";
+    const mentionType = mention.type || "file";
+    const typeConfigs: Record<
+      string,
+      {
+        icon: string;
+        onClick?: (e: MouseEvent) => void;
+        onHover?: (e: MouseEvent) => void;
+      }
+    > = {
+      file: {
+        icon: "icon-document",
+        onClick: (e) => {
+          if (mention.path) {
+            e.stopPropagation();
+            this.vscode.postMessage({ type: "openFile", path: mention.path });
+          }
+        },
+      },
+      selection: {
+        icon: "icon-document",
+      },
+      terminal: {
+        icon: "icon-terminal",
+      },
+      image: {
+        icon: "icon-image",
+        onHover: (e) => {
+          if (mention.dataUrl) this.showImagePreview(mention.dataUrl, e);
+        },
+      },
+    };
+
+    const config = typeConfigs[mentionType] || typeConfigs.file;
 
     chip.innerHTML = `
-      <span class="chip-icon ${iconClass}"></span>
+      <span class="chip-icon ${config.icon}"></span>
       <span class="chip-label">${escapeHtml(mention.name)}</span>
       <div class="chip-delete" title="Remove attachment">
         <span class="icon-dismiss"></span>
@@ -1697,10 +1713,21 @@ export class WebviewController {
       this.updateInputState();
     });
 
-    if (mention.path) {
-      chip.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.vscode.postMessage({ type: "openFile", path: mention.path });
+    if (config.onClick) {
+      chip.addEventListener("click", config.onClick);
+    }
+
+    if (config.onHover) {
+      chip.addEventListener("mouseenter", (e) => config.onHover!(e));
+      chip.addEventListener("mouseleave", (e) => {
+        // Don't hide if moving to a child element (like the delete button)
+        if (
+          e.relatedTarget instanceof Node &&
+          chip.contains(e.relatedTarget as Node)
+        ) {
+          return;
+        }
+        this.hideImagePreview();
       });
     }
 

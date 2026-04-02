@@ -483,9 +483,10 @@ export class ACPClient {
     mentions: Array<{
       name: string;
       path?: string;
-      type?: "file" | "selection" | "terminal";
+      type?: "file" | "selection" | "terminal" | "image";
       content?: string;
       range?: { startLine: number; endLine: number };
+      dataUrl?: string;
     }> = []
   ): Promise<PromptResponse> {
     if (!this.connection || !this.currentSessionId) {
