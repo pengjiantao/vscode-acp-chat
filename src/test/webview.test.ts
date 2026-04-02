@@ -431,9 +431,30 @@ suite("Webview", () => {
       });
 
       test("handles chatCleared", () => {
+        // Set up some state that should persist
+        controller.handleMessage({
+          type: "sessionMetadata",
+          modes: {
+            availableModes: [{ id: "code", name: "Code" }],
+            currentModeId: "code",
+          },
+          models: null,
+        });
+        controller.handleMessage({
+          type: "availableCommands",
+          commands: [{ name: "help", description: "Show help" }],
+        });
+
         controller.addMessage("Test", "user");
         controller.handleMessage({ type: "chatCleared" });
+
+        // Messages should be cleared
         assert.strictEqual(elements.messagesEl.children.length, 0);
+        // Mode dropdown should still be visible
+        assert.strictEqual(elements.modeDropdown.style.display, "flex");
+        // Commands should still be available
+        const result = controller.getFilteredCommands("/");
+        assert.strictEqual(result.length, 1);
       });
 
       test("handles toolCallStart", () => {
@@ -697,14 +718,14 @@ suite("Webview", () => {
         assert.strictEqual(result.length, 3);
       });
 
-      test("chatCleared clears commands", () => {
+      test("chatCleared does not clear commands", () => {
         controller.handleMessage({
           type: "availableCommands",
           commands: testCommands,
         });
         controller.handleMessage({ type: "chatCleared" });
         const result = controller.getFilteredCommands("/");
-        assert.strictEqual(result.length, 0);
+        assert.strictEqual(result.length, 3);
       });
 
       test("Tab key selects command when autocomplete visible", () => {

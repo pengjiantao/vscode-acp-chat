@@ -1883,9 +1883,6 @@ export class WebviewController {
         this.activeBlock = null;
         this.blocks = [];
         this.messageTexts.clear();
-        this.elements.modeDropdown.style.display = "none";
-        this.elements.modelDropdown.style.display = "none";
-        this.availableCommands = [];
         this.hideAutocomplete();
         this.hidePlan();
         this.updateViewState();
