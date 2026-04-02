@@ -18,6 +18,7 @@ declare function acquireVsCodeApi(): VsCodeApi;
 export type ToolKind =
   | "read"
   | "edit"
+  | "write"
   | "delete"
   | "move"
   | "search"
@@ -171,6 +172,7 @@ export function escapeHtml(str: string): string {
 const TOOL_KIND_ICONS: Record<ToolKind, string> = {
   read: "icon-document",
   edit: "icon-edit",
+  write: "icon-edit",
   delete: "icon-trash",
   move: "icon-sync",
   search: "icon-search",
@@ -322,26 +324,70 @@ export function computeLineDiff(
   }
   if (!oldText) {
     // New file - all lines are additions
-    return newText!.split("\n").map((line) => ({ type: "add", line }));
+    return newText!.split("\n").map((line) => ({ type: "add" as const, line }));
   }
   if (!newText) {
     // Deleted file - all lines are deletions
-    return oldText!.split("\n").map((line) => ({ type: "remove", line }));
+    return oldText!
+      .split("\n")
+      .map((line) => ({ type: "remove" as const, line }));
   }
 
-  // Simple line-by-line diff
   const oldLines = oldText.split("\n");
   const newLines = newText.split("\n");
   const result: DiffLine[] = [];
 
-  // Simple algorithm: mark old lines as removed, new lines as added
-  // Future optimization: detect common lines and mark as context
-  for (const line of oldLines) {
-    result.push({ type: "remove", line });
+  // Simple greedy line-by-line diff with lookahead
+  let i = 0,
+    j = 0;
+  while (i < oldLines.length && j < newLines.length) {
+    if (oldLines[i] === newLines[j]) {
+      result.push({ type: "context", line: oldLines[i] });
+      i++;
+      j++;
+    } else {
+      // Look ahead to find a match
+      let found = false;
+      const lookahead = 10;
+      for (let k = 1; k < lookahead; k++) {
+        if (i + k < oldLines.length && oldLines[i + k] === newLines[j]) {
+          // Found a match by skipping lines in old text (deletions)
+          for (let l = 0; l < k; l++) {
+            result.push({ type: "remove", line: oldLines[i + l] });
+          }
+          i += k;
+          found = true;
+          break;
+        }
+        if (j + k < newLines.length && oldLines[i] === newLines[j + k]) {
+          // Found a match by skipping lines in new text (additions)
+          for (let l = 0; l < k; l++) {
+            result.push({ type: "add", line: newLines[j + l] });
+          }
+          j += k;
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        // No match found in lookahead, treat as a replacement
+        result.push({ type: "remove", line: oldLines[i++] });
+        result.push({ type: "add", line: newLines[j++] });
+      }
+    }
   }
-  for (const line of newLines) {
-    result.push({ type: "add", line });
+
+  // Add remaining lines
+  while (i < oldLines.length) {
+    result.push({ type: "remove", line: oldLines[i++] });
   }
+  while (j < newLines.length) {
+    result.push({ type: "add", line: newLines[j++] });
+  }
+
+  // Combine contiguous removals and additions for better rendering if needed
+  // For now, the current order is fine.
 
   return result;
 }
@@ -357,34 +403,65 @@ export function renderDiff(
     return '<div class="diff-container"><div class="diff-empty">No changes</div></div>';
   }
 
-  const truncated = diffLines.length > 500;
-  const linesToShow = truncated ? diffLines.slice(0, 500) : diffLines;
+  // Simple hunk detection: if we have context lines, we might want to truncate large blocks of them
+  const hunks: DiffLine[][] = [];
+  let currentHunk: DiffLine[] = [];
+  let contextCount = 0;
+
+  for (const line of diffLines) {
+    if (line.type === "context") {
+      contextCount++;
+      if (contextCount > 6 && currentHunk.length > 0) {
+        // Truncate large context between changes
+        let lastChangeIdx = -1;
+        for (let l = currentHunk.length - 1; l >= 0; l--) {
+          if (currentHunk[l].type !== "context") {
+            lastChangeIdx = l;
+            break;
+          }
+        }
+        if (lastChangeIdx !== -1 && currentHunk.length - lastChangeIdx > 3) {
+          hunks.push(currentHunk.slice(0, lastChangeIdx + 4));
+          currentHunk = [];
+          contextCount = 1;
+        }
+      }
+    } else {
+      contextCount = 0;
+    }
+    currentHunk.push(line);
+  }
+  if (currentHunk.length > 0) hunks.push(currentHunk);
+
+  // If the diff is too large, we still truncate lines overall
+  const truncated = diffLines.length > 1000;
+  const linesToShow = truncated ? diffLines.slice(0, 1000) : diffLines;
 
   let html = '<div class="diff-container">';
 
   if (path) {
-    html += '<div class="diff-header">' + escapeHtml(path) + "</div>";
+    const filename = path.split("/").pop() || path;
+    html += `<div class="diff-header" title="${escapeHtml(path)}">
+      <span class="icon icon-document"></span>
+      <span class="diff-path">${escapeHtml(filename)}</span>
+    </div>`;
   }
 
   html += '<pre class="diff-content">';
 
   for (const diffLine of linesToShow) {
+    // Add separator if we have hunks (simplified for now)
     const prefix =
       diffLine.type === "add" ? "+ " : diffLine.type === "remove" ? "- " : "  ";
     const className = "diff-line diff-" + diffLine.type;
-    html +=
-      '<div class="' +
-      className +
-      '">' +
-      escapeHtml(prefix + diffLine.line) +
-      "</div>";
+    html += `<div class="${className}">${escapeHtml(prefix + diffLine.line)}</div>`;
   }
 
   html += "</pre>";
 
   if (truncated) {
     html +=
-      '<div class="diff-truncated">... (truncated, showing first 500 of ' +
+      '<div class="diff-truncated">... (truncated, showing first 1000 of ' +
       diffLines.length +
       " lines)</div>";
   }
@@ -1354,7 +1431,17 @@ export class WebviewController {
       } else if (block.type === "tool") {
         const details = block.element.querySelector("details");
         if (details) {
-          details.removeAttribute("open");
+          // Keep edit/write tools open if they are completed successfully
+          // This matches the user's request for "Zed-style" visibility
+          const shouldKeepOpen =
+            block.kind === "edit" ||
+            block.kind === "write" ||
+            block.title?.toLowerCase().includes("write") ||
+            block.title?.toLowerCase().includes("edit");
+
+          if (!shouldKeepOpen) {
+            details.removeAttribute("open");
+          }
         }
       }
     });

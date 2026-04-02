@@ -153,53 +153,66 @@ const BaseRenderer: ToolRenderer = {
 
     // Input Parameters
     if (rawInput) {
-      html +=
-        '<div class="detail-section"><span class="detail-label">Input:</span>';
-      html += '<pre class="detail-input">';
-      for (const [key, value] of Object.entries(rawInput)) {
-        if (key !== "description" && value !== undefined) {
-          if (key === "command" || key === "pattern") {
-            html += `<div><strong>$ ${escapeHtml(String(value))}</strong></div>`;
-          } else {
-            html += `<div><span class="param-key">${key}:</span> ${escapeHtml(String(value))}</div>`;
+      const skipInputKeys = ["description", "content", "text", "newContent"];
+      const hasMeaningfulInput = Object.keys(rawInput).some(
+        (k) => !skipInputKeys.includes(k) && rawInput[k] !== undefined
+      );
+
+      if (hasMeaningfulInput) {
+        html +=
+          '<div class="detail-section"><span class="detail-label">Input:</span>';
+        html += '<pre class="detail-input">';
+        for (const [key, value] of Object.entries(rawInput)) {
+          if (!skipInputKeys.includes(key) && value !== undefined) {
+            if (key === "command" || key === "pattern") {
+              html += `<div><strong>$ ${escapeHtml(String(value))}</strong></div>`;
+            } else {
+              html += `<div><span class="param-key">${key}:</span> ${escapeHtml(String(value))}</div>`;
+            }
           }
         }
+        html += "</pre></div>";
       }
-      html += "</pre></div>";
     }
 
-    // Output
-    let output = "";
+    // Output / Content
+    let hasOutput = false;
     if (content && content.length > 0) {
-      const firstContent = content[0];
-      if (firstContent.type === "content" && firstContent.content?.text) {
-        output = firstContent.content.text;
-      } else if (firstContent.type === "terminal") {
-        output = terminalOutput || "";
-      } else if (firstContent.type === "diff") {
-        output = renderDiff(
-          firstContent.path,
-          firstContent.oldText,
-          firstContent.newText
-        );
+      for (const item of content) {
+        if (item.type === "content" && item.content?.text) {
+          html += `<div class="detail-section"><span class="detail-label">Output:</span>`;
+          html += `<pre class="tool-output">${escapeHtml(item.content.text)}</pre></div>`;
+          hasOutput = true;
+        } else if (item.type === "terminal") {
+          const output = terminalOutput || "";
+          const hasAnsi = hasAnsiCodes(output);
+          const outputHtml = hasAnsi ? ansiToHtml(output) : escapeHtml(output);
+          const terminalClass = hasAnsi ? " terminal" : "";
+          html += `<div class="detail-section"><span class="detail-label">Terminal:</span>`;
+          html += `<pre class="tool-output${terminalClass}">${outputHtml}</pre></div>`;
+          hasOutput = true;
+        } else if (item.type === "diff") {
+          html += renderDiff(item.path, item.oldText, item.newText);
+          hasOutput = true;
+        }
       }
     }
 
-    if (!output) {
+    if (!hasOutput) {
+      let output = "";
       if (terminalOutput) {
         output = terminalOutput;
       } else if (rawOutput?.output) {
         output = String(rawOutput.output);
       }
-    }
 
-    if (output) {
-      const hasAnsi = hasAnsiCodes(output);
-      const outputHtml = hasAnsi ? ansiToHtml(output) : escapeHtml(output);
-      const terminalClass = hasAnsi ? " terminal" : "";
-      html += `<div class="detail-section"><span class="detail-label">Output:</span>`;
-      html += `<pre class="tool-output${terminalClass}">${outputHtml}</pre>`;
-      html += "</div>";
+      if (output) {
+        const hasAnsi = hasAnsiCodes(output);
+        const outputHtml = hasAnsi ? ansiToHtml(output) : escapeHtml(output);
+        const terminalClass = hasAnsi ? " terminal" : "";
+        html += `<div class="detail-section"><span class="detail-label">Output:</span>`;
+        html += `<pre class="tool-output${terminalClass}">${outputHtml}</pre></div>`;
+      }
     }
 
     html += "</div>";
@@ -209,6 +222,26 @@ const BaseRenderer: ToolRenderer = {
 
 // 专用渲染器映射
 const Renderers: Partial<Record<ToolKind, ToolRenderer>> = {
+  edit: {
+    ...BaseRenderer,
+    renderSummary(info) {
+      const path = getIdentifier(info);
+      const statusIcon =
+        info.status === "failed"
+          ? '<span class="icon icon-dismiss"></span>'
+          : info.status === "in_progress"
+            ? '<span class="icon icon-sparkle animate-spin"></span>'
+            : '<span class="icon icon-checkmark"></span>';
+      const durationStr = info.duration
+        ? ` | ${formatDuration(info.duration)}`
+        : "";
+      return `
+        <span class="tool-status ${info.status === "failed" ? "failed" : info.status === "in_progress" ? "running" : "completed"}">${statusIcon}</span>
+        <span class="tool-kind-icon"><span class="icon icon-edit"></span></span>
+        <span class="tool-name"><strong>Edit:</strong> ${escapeHtml(path)}${durationStr}</span>
+      `;
+    },
+  },
   read: {
     ...BaseRenderer,
     renderSummary(info) {

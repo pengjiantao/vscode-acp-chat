@@ -1387,10 +1387,10 @@ suite("Webview", () => {
     });
 
     test("truncates large diffs", () => {
-      const manyLines = Array(600).fill("line").join("\n");
+      const manyLines = Array(1100).fill("line").join("\n");
       const result = renderDiff(undefined, null, manyLines);
       assert.ok(result.includes("diff-truncated"));
-      assert.ok(result.includes("500"));
+      assert.ok(result.includes("1000"));
     });
   });
 });

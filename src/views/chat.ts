@@ -381,12 +381,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private lastFileContents: Map<string, string> = new Map();
+
   private async handleWriteTextFile(
     params: WriteTextFileRequest
   ): Promise<WriteTextFileResponse> {
     console.log("[Chat] Writing file:", params.path);
     try {
       const uri = vscode.Uri.file(params.path);
+
+      // Capture old content for diffing in webview
+      try {
+        const fileContent = await vscode.workspace.fs.readFile(uri);
+        const oldContent = new TextDecoder().decode(fileContent);
+        this.lastFileContents.set(params.path, oldContent);
+      } catch {
+        // File doesn't exist yet, it's a new file
+        this.lastFileContents.delete(params.path);
+      }
+
       const content = new TextEncoder().encode(params.content);
       await vscode.workspace.fs.writeFile(uri, content);
       return {};
@@ -692,6 +705,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           "output" in update.rawOutput
         ) {
           terminalOutput = String(update.rawOutput.output);
+        }
+
+        // Enrich with diff if it's a file modification and missing
+        const rawInput = update.rawInput as any;
+        const path = rawInput?.path || rawInput?.file || rawInput?.filePath;
+        if (
+          typeof path === "string" &&
+          ((update.kind as any) === "write" ||
+            update.kind === "edit" ||
+            update.title?.toLowerCase().includes("write"))
+        ) {
+          const oldText = this.lastFileContents.get(path);
+          const newText =
+            rawInput?.content || rawInput?.text || rawInput?.newContent;
+
+          if (
+            newText !== undefined &&
+            !update.content?.some((c: any) => c.type === "diff")
+          ) {
+            update.content = update.content || [];
+            update.content.push({
+              type: "diff",
+              path: path,
+              oldText,
+              newText: String(newText),
+            });
+            this.lastFileContents.delete(path);
+          }
         }
 
         const startTime = this.toolCallStartTimes.get(update.toolCallId);
