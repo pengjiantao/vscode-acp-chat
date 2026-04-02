@@ -308,6 +308,8 @@ export function hasAnsiCodes(text: string): boolean {
 export interface DiffLine {
   type: "add" | "remove" | "context";
   line: string;
+  oldLineNumber?: number;
+  newLineNumber?: number;
 }
 
 /**
@@ -324,25 +326,38 @@ export function computeLineDiff(
   }
   if (!oldText) {
     // New file - all lines are additions
-    return newText!.split("\n").map((line) => ({ type: "add" as const, line }));
+    return newText!.split("\n").map((line, idx) => ({
+      type: "add" as const,
+      line,
+      newLineNumber: idx + 1,
+    }));
   }
   if (!newText) {
     // Deleted file - all lines are deletions
-    return oldText!
-      .split("\n")
-      .map((line) => ({ type: "remove" as const, line }));
+    return oldText!.split("\n").map((line, idx) => ({
+      type: "remove" as const,
+      line,
+      oldLineNumber: idx + 1,
+    }));
   }
 
   const oldLines = oldText.split("\n");
   const newLines = newText.split("\n");
   const result: DiffLine[] = [];
 
-  // Simple greedy line-by-line diff with lookahead
   let i = 0,
     j = 0;
+  let oldLineNum = 1;
+  let newLineNum = 1;
+
   while (i < oldLines.length && j < newLines.length) {
     if (oldLines[i] === newLines[j]) {
-      result.push({ type: "context", line: oldLines[i] });
+      result.push({
+        type: "context",
+        line: oldLines[i],
+        oldLineNumber: oldLineNum++,
+        newLineNumber: newLineNum++,
+      });
       i++;
       j++;
     } else {
@@ -353,7 +368,11 @@ export function computeLineDiff(
         if (i + k < oldLines.length && oldLines[i + k] === newLines[j]) {
           // Found a match by skipping lines in old text (deletions)
           for (let l = 0; l < k; l++) {
-            result.push({ type: "remove", line: oldLines[i + l] });
+            result.push({
+              type: "remove",
+              line: oldLines[i + l],
+              oldLineNumber: oldLineNum++,
+            });
           }
           i += k;
           found = true;
@@ -362,7 +381,11 @@ export function computeLineDiff(
         if (j + k < newLines.length && oldLines[i] === newLines[j + k]) {
           // Found a match by skipping lines in new text (additions)
           for (let l = 0; l < k; l++) {
-            result.push({ type: "add", line: newLines[j + l] });
+            result.push({
+              type: "add",
+              line: newLines[j + l],
+              newLineNumber: newLineNum++,
+            });
           }
           j += k;
           found = true;
@@ -372,22 +395,35 @@ export function computeLineDiff(
 
       if (!found) {
         // No match found in lookahead, treat as a replacement
-        result.push({ type: "remove", line: oldLines[i++] });
-        result.push({ type: "add", line: newLines[j++] });
+        result.push({
+          type: "remove",
+          line: oldLines[i++],
+          oldLineNumber: oldLineNum++,
+        });
+        result.push({
+          type: "add",
+          line: newLines[j++],
+          newLineNumber: newLineNum++,
+        });
       }
     }
   }
 
   // Add remaining lines
   while (i < oldLines.length) {
-    result.push({ type: "remove", line: oldLines[i++] });
+    result.push({
+      type: "remove",
+      line: oldLines[i++],
+      oldLineNumber: oldLineNum++,
+    });
   }
   while (j < newLines.length) {
-    result.push({ type: "add", line: newLines[j++] });
+    result.push({
+      type: "add",
+      line: newLines[j++],
+      newLineNumber: newLineNum++,
+    });
   }
-
-  // Combine contiguous removals and additions for better rendering if needed
-  // For now, the current order is fine.
 
   return result;
 }
@@ -403,39 +439,25 @@ export function renderDiff(
     return '<div class="diff-container"><div class="diff-empty">No changes</div></div>';
   }
 
-  // Simple hunk detection: if we have context lines, we might want to truncate large blocks of them
-  const hunks: DiffLine[][] = [];
-  let currentHunk: DiffLine[] = [];
-  let contextCount = 0;
+  const CONTEXT_LINES = 3;
+  const showLineIndexes = new Set<number>();
 
-  for (const line of diffLines) {
-    if (line.type === "context") {
-      contextCount++;
-      if (contextCount > 6 && currentHunk.length > 0) {
-        // Truncate large context between changes
-        let lastChangeIdx = -1;
-        for (let l = currentHunk.length - 1; l >= 0; l--) {
-          if (currentHunk[l].type !== "context") {
-            lastChangeIdx = l;
-            break;
-          }
-        }
-        if (lastChangeIdx !== -1 && currentHunk.length - lastChangeIdx > 3) {
-          hunks.push(currentHunk.slice(0, lastChangeIdx + 4));
-          currentHunk = [];
-          contextCount = 1;
-        }
+  // Mark lines to show: changes and their context
+  for (let i = 0; i < diffLines.length; i++) {
+    if (diffLines[i].type !== "context") {
+      for (
+        let k = Math.max(0, i - CONTEXT_LINES);
+        k <= Math.min(diffLines.length - 1, i + CONTEXT_LINES);
+        k++
+      ) {
+        showLineIndexes.add(k);
       }
-    } else {
-      contextCount = 0;
     }
-    currentHunk.push(line);
   }
-  if (currentHunk.length > 0) hunks.push(currentHunk);
 
-  // If the diff is too large, we still truncate lines overall
-  const truncated = diffLines.length > 1000;
-  const linesToShow = truncated ? diffLines.slice(0, 1000) : diffLines;
+  if (showLineIndexes.size === 0) {
+    return '<div class="diff-container"><div class="diff-empty">No changes found</div></div>';
+  }
 
   let html = '<div class="diff-container">';
 
@@ -449,23 +471,35 @@ export function renderDiff(
 
   html += '<pre class="diff-content">';
 
-  for (const diffLine of linesToShow) {
-    // Add separator if we have hunks (simplified for now)
+  let lastIndex = -1;
+  const sortedIndexes = Array.from(showLineIndexes).sort((a, b) => a - b);
+
+  for (const idx of sortedIndexes) {
+    const diffLine = diffLines[idx];
+
+    // Add separator if there's a gap
+    if (lastIndex !== -1 && idx > lastIndex + 1) {
+      html += '<div class="diff-hunk-separator">...</div>';
+    }
+
     const prefix =
-      diffLine.type === "add" ? "+ " : diffLine.type === "remove" ? "- " : "  ";
+      diffLine.type === "add" ? "+" : diffLine.type === "remove" ? "-" : " ";
     const className = "diff-line diff-" + diffLine.type;
-    html += `<div class="${className}">${escapeHtml(prefix + diffLine.line)}</div>`;
+
+    const oldNum = diffLine.oldLineNumber?.toString() || "";
+    const newNum = diffLine.newLineNumber?.toString() || "";
+
+    html += `<div class="${className}">`;
+    html += `<span class="diff-line-number">${oldNum}</span>`;
+    html += `<span class="diff-line-number">${newNum}</span>`;
+    html += `<span class="diff-line-prefix">${prefix}</span>`;
+    html += `<span class="diff-line-code">${escapeHtml(diffLine.line)}</span>`;
+    html += `</div>`;
+
+    lastIndex = idx;
   }
 
   html += "</pre>";
-
-  if (truncated) {
-    html +=
-      '<div class="diff-truncated">... (truncated, showing first 1000 of ' +
-      diffLines.length +
-      " lines)</div>";
-  }
-
   html += "</div>";
 
   return html;

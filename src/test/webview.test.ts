@@ -1367,13 +1367,15 @@ suite("Webview", () => {
     test("renders additions with diff-add class", () => {
       const result = renderDiff(undefined, null, "added line");
       assert.ok(result.includes("diff-add"));
-      assert.ok(result.includes("+ added line"));
+      assert.ok(result.includes('class="diff-line-prefix">+</span>'));
+      assert.ok(result.includes('class="diff-line-code">added line</span>'));
     });
 
     test("renders deletions with diff-remove class", () => {
       const result = renderDiff(undefined, "removed line", null);
       assert.ok(result.includes("diff-remove"));
-      assert.ok(result.includes("- removed line"));
+      assert.ok(result.includes('class="diff-line-prefix">-</span>'));
+      assert.ok(result.includes('class="diff-line-code">removed line</span>'));
     });
 
     test("escapes HTML in diff content", () => {
@@ -1386,11 +1388,23 @@ suite("Webview", () => {
       assert.ok(!result.includes("<script>alert"));
     });
 
-    test("truncates large diffs", () => {
-      const manyLines = Array(1100).fill("line").join("\n");
-      const result = renderDiff(undefined, null, manyLines);
-      assert.ok(result.includes("diff-truncated"));
-      assert.ok(result.includes("1000"));
+    test("omits large sections of unmodified context", () => {
+      const oldText = ["match1", ...Array(20).fill("context"), "match2"].join(
+        "\n"
+      );
+      const newText = ["mod1", ...Array(20).fill("context"), "mod2"].join("\n");
+      const result = renderDiff(undefined, oldText, newText);
+      assert.ok(result.includes("diff-hunk-separator"));
+      assert.ok(result.includes("..."));
+      assert.ok(result.includes("mod1"));
+      assert.ok(result.includes("mod2"));
+    });
+
+    test("renders line numbers", () => {
+      const result = renderDiff(undefined, "old line", "new line");
+      assert.ok(result.includes('class="diff-line-number">1</span>'));
+      assert.ok(result.includes('class="diff-line-prefix">-</span>'));
+      assert.ok(result.includes('class="diff-line-prefix">+</span>'));
     });
   });
 });

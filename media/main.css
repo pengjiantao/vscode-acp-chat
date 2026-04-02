@@ -1505,9 +1505,37 @@ kbd {
 }
 
 .diff-line {
-  padding: 0 12px;
+  padding: 0;
   white-space: pre;
   display: flex;
+  align-items: flex-start;
+}
+
+.diff-line-number {
+  flex-shrink: 0;
+  min-width: 32px;
+  padding: 0 4px;
+  text-align: right;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.5;
+  user-select: none;
+  font-size: 9px;
+  border-right: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editor-lineHighlightBackground);
+}
+
+.diff-line-prefix {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  user-select: none;
+  font-weight: bold;
+}
+
+.diff-line-code {
+  padding-left: 4px;
+  white-space: pre;
+  overflow-wrap: normal;
 }
 
 .diff-add {
@@ -1525,22 +1553,26 @@ kbd {
   opacity: 0.8;
 }
 
+.diff-hunk-separator {
+  padding: 4px 0;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.6;
+  font-style: italic;
+  font-size: 10px;
+  background: var(--vscode-editor-lineHighlightBackground);
+  border-top: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  margin: 4px 0;
+  letter-spacing: 2px;
+}
+
 .diff-empty {
   padding: 16px;
   color: var(--vscode-descriptionForeground);
   font-style: italic;
   text-align: center;
   font-size: 12px;
-}
-
-.diff-truncated {
-  padding: 6px 12px;
-  color: var(--vscode-descriptionForeground);
-  font-size: 10px;
-  font-style: italic;
-  background: var(--vscode-editor-lineHighlightBackground);
-  border-top: 1px solid var(--vscode-panel-border);
-  text-align: right;
 }
 
 .permission-dialog-overlay {
