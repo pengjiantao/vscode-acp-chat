@@ -942,7 +942,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       rawInput?.filepath ||
       rawInput?.file_name ||
       rawInput?.target ||
-      rawInput?.destination
+      rawInput?.target_file ||
+      rawInput?.destination ||
+      rawInput?.destination_path ||
+      rawInput?.source ||
+      rawInput?.source_path
     );
   }
 

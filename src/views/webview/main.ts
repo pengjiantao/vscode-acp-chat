@@ -183,8 +183,38 @@ const TOOL_KIND_ICONS: Record<ToolKind, string> = {
   other: "icon-gear",
 };
 
-export function getToolKindIcon(kind?: ToolKind): string {
-  return kind ? TOOL_KIND_ICONS[kind] || TOOL_KIND_ICONS.other : "";
+export function getToolKindIcon(kind?: string): string {
+  if (!kind) return "";
+  const lower = kind.toLowerCase();
+
+  if (lower in TOOL_KIND_ICONS) {
+    return TOOL_KIND_ICONS[lower as ToolKind];
+  }
+
+  // Handle technical names by prefix/substring
+  if (lower.startsWith("read")) return TOOL_KIND_ICONS.read;
+  if (lower.startsWith("write")) return TOOL_KIND_ICONS.write;
+  if (
+    lower.startsWith("edit") ||
+    lower.startsWith("patch") ||
+    lower.includes("replace")
+  )
+    return TOOL_KIND_ICONS.edit;
+  if (lower.startsWith("search") || lower.startsWith("grep"))
+    return TOOL_KIND_ICONS.search;
+  if (
+    lower.startsWith("execute") ||
+    lower.startsWith("run") ||
+    lower === "bash" ||
+    lower === "sh"
+  )
+    return TOOL_KIND_ICONS.execute;
+  if (lower.startsWith("delete") || lower.startsWith("remove"))
+    return TOOL_KIND_ICONS.delete;
+  if (lower.startsWith("move") || lower.startsWith("rename"))
+    return TOOL_KIND_ICONS.move;
+
+  return TOOL_KIND_ICONS.other;
 }
 
 const ANSI_FOREGROUND: Record<number, string> = {

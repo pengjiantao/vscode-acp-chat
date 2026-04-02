@@ -16,48 +16,15 @@ export interface ToolRenderer {
 // 通用信息提取助手
 function getIdentifier(info: ToolCallSummary): string {
   const { locations, rawInput, title } = info;
-  // 1. 优先从 locations 提取
+  // 1. 优先从 locations 提取 (后端通常在处理完成后填充)
   if (locations && locations.length > 0) return locations[0].path;
 
-  // 2. 检查描述字段
-  if (
-    rawInput &&
-    typeof rawInput.description === "string" &&
-    rawInput.description
-  )
-    return rawInput.description;
+  // 2. 核心：检查是否有人性化的 title。
+  // 如果 title 本身已经是一段描述性的文字（含空格且不是技术 ID），直接使用它。
+  if (title && !isTechnicalName(title)) return title;
 
-  // 3. 检查是否有“有意义”的 title。
-  // 对于大部分现代 Agent (如 Claude)，title 已经是经过润色的人类可读描述。
-  const genericTitles = [
-    "bash",
-    "sh",
-    "shell",
-    "execute_command",
-    "read_file",
-    "write_file",
-    "ls",
-    "grep",
-    "tool",
-    "read",
-    "write",
-    "search",
-    "execute",
-    "move",
-    "delete",
-    "edit",
-    "think",
-    "fetch",
-  ];
-  const isGeneric =
-    !title ||
-    title.startsWith("call_") ||
-    /^[0-9a-f-]{32,}$/i.test(title) ||
-    genericTitles.includes(title.toLowerCase());
-
-  if (title && !isGeneric) return title;
-
-  // 4. 从 rawInput 常见字段提取 (作为通用标题的补充)
+  // 3. 次优：从 rawInput 提取参数 (路径、文件、命令等)
+  // 如果工具名是技术性的（如 read_file），提取具体的参数比显示技术名更有用。
   if (rawInput) {
     const p =
       rawInput.path ||
@@ -69,8 +36,13 @@ function getIdentifier(info: ToolCallSummary): string {
       rawInput.filepath ||
       rawInput.file_name ||
       rawInput.target ||
-      rawInput.destination;
-    if (typeof p === "string") return p;
+      rawInput.target_file ||
+      rawInput.destination ||
+      rawInput.destination_path ||
+      rawInput.source ||
+      rawInput.source_path;
+    if (typeof p === "string" && p.length > 0 && p !== "true" && p !== "false")
+      return p;
 
     const q =
       rawInput.pattern ||
@@ -79,17 +51,29 @@ function getIdentifier(info: ToolCallSummary): string {
       rawInput.keyword ||
       rawInput.regex ||
       rawInput.text;
-    if (typeof q === "string") return q;
+    if (typeof q === "string" && q.length > 0) return q;
 
     const cmd = rawInput.command || rawInput.cmd || rawInput.script;
-    if (typeof cmd === "string") return cmd;
+    if (typeof cmd === "string" && cmd.length > 0) return cmd;
 
-    // 5. 兜底：尝试从 rawInput 寻找任何其他的字符串字段
+    // 检查描述字段
+    if (
+      typeof rawInput.description === "string" &&
+      rawInput.description &&
+      !isTechnicalName(rawInput.description)
+    )
+      return rawInput.description;
+  }
+
+  // 4. 兜底：尝试从 rawInput 寻找任何其他的实质性字符串字段
+  if (rawInput) {
     for (const [key, value] of Object.entries(rawInput)) {
       if (
         typeof value === "string" &&
         value.length > 0 &&
-        !["tool", "kind", "id", "call_id"].includes(key.toLowerCase())
+        !["tool", "kind", "id", "call_id", "description"].includes(
+          key.toLowerCase()
+        )
       ) {
         return value;
       }
@@ -97,6 +81,98 @@ function getIdentifier(info: ToolCallSummary): string {
   }
 
   return title || "Tool";
+}
+
+function isTechnicalName(name: string): boolean {
+  if (!name) return true;
+  const lower = name.toLowerCase();
+  const genericTitles = [
+    "bash",
+    "sh",
+    "shell",
+    "execute_command",
+    "run_command",
+    "read_file",
+    "read_text_file",
+    "readfile",
+    "readtextfile",
+    "write_file",
+    "write_text_file",
+    "writefile",
+    "writetextfile",
+    "write_to_file",
+    "replace_file_content",
+    "patch_file",
+    "create_file",
+    "view_file",
+    "ls",
+    "list_dir",
+    "list_directory",
+    "grep",
+    "grep_search",
+    "tool",
+    "read",
+    "write",
+    "search",
+    "execute",
+    "run",
+    "move",
+    "delete",
+    "remove",
+    "edit",
+    "think",
+    "fetch",
+    "curl",
+    "wget",
+    "http",
+    "read file",
+    "write file",
+    "edit file",
+    "delete file",
+    "run command",
+    "run shell command",
+    "execute command",
+    "search files",
+    "list files",
+    "list directory",
+  ];
+
+  return (
+    genericTitles.includes(lower) ||
+    // 如果没有空格且包含 _ 或 -，或者全是小写字母且较短，通常是技术性的工具名
+    (!name.includes(" ") && (name.includes("_") || name.includes("-"))) ||
+    // 全小写字母无空格且较短
+    (name.length < 20 && /^[a-z]+$/.test(lower)) ||
+    // 类似于 "Read XXX" 的简短动作描述 (只有两个词，第一个词是 generic)
+    (name.split(" ").length <= 2 &&
+      genericTitles.some((gt) => lower.startsWith(gt + " ")))
+  );
+}
+
+function normalizeKindLabel(kind: string | undefined): string {
+  if (!kind) return "Tool";
+  const lower = kind.toLowerCase();
+
+  if (lower.startsWith("read")) return "Read";
+  if (lower.startsWith("write")) return "Write";
+  if (
+    lower.startsWith("edit") ||
+    lower.startsWith("patch") ||
+    lower.includes("replace")
+  )
+    return "Edit";
+  if (lower.startsWith("search") || lower.startsWith("grep")) return "Search";
+  if (
+    lower.startsWith("execute") ||
+    lower.startsWith("run") ||
+    lower === "bash" ||
+    lower === "sh"
+  )
+    return "Run";
+  if (lower.startsWith("delete") || lower.startsWith("remove")) return "Delete";
+  if (lower.startsWith("move") || lower.startsWith("rename")) return "Move";
+
+  return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
 const BaseRenderer: ToolRenderer = {
@@ -119,9 +195,7 @@ const BaseRenderer: ToolRenderer = {
     const durationStr = duration ? ` | ${formatDuration(duration)}` : "";
     const identifier = getIdentifier(info);
 
-    let kindLabel =
-      (kind || "tool").charAt(0).toUpperCase() + (kind || "tool").slice(1);
-    if (kind === "execute") kindLabel = "Run";
+    let kindLabel = normalizeKindLabel(kind);
 
     return `
       <span class="tool-status ${statusClass}">${statusIcon}</span>
@@ -154,7 +228,10 @@ const BaseRenderer: ToolRenderer = {
         rawInput?.file_path ||
         rawInput?.uri ||
         rawInput?.filename ||
-        rawInput?.target;
+        rawInput?.target ||
+        rawInput?.target_file ||
+        rawInput?.destination ||
+        rawInput?.source;
       if (typeof p === "string") {
         html += `<div class="detail-section"><span class="detail-label">Path:</span> ${escapeHtml(p)}</div>`;
       }
