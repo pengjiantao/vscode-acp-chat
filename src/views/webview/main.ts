@@ -962,14 +962,37 @@ export class WebviewController {
     const previousState = this.vscode.getState<WebviewState>();
     if (previousState) {
       this.isConnected = previousState.isConnected;
-      this.elements.inputEl.textContent = previousState.inputValue || "";
+      if (previousState.inputValue) {
+        this.elements.inputEl.innerHTML = previousState.inputValue;
+        // Re-attach listeners to mention chips
+        const chips = Array.from(
+          this.elements.inputEl.querySelectorAll(".mention-chip")
+        );
+        chips.forEach((chip) => {
+          const c = chip as HTMLElement;
+          const mention: Mention = {
+            name: c.dataset.name || "",
+            path: c.dataset.path,
+            type: c.dataset.type as Mention["type"],
+            content: c.dataset.content,
+            dataUrl: c.dataset.dataUrl,
+            range: c.dataset.range
+              ? {
+                  startLine: parseInt(c.dataset.range.split("-")[0], 10),
+                  endLine: parseInt(c.dataset.range.split("-")[1], 10),
+                }
+              : undefined,
+          };
+          this.setupMentionChip(c, mention);
+        });
+      }
     }
   }
 
   private saveState(): void {
     this.vscode.setState<WebviewState>({
       isConnected: this.isConnected,
-      inputValue: this.elements.inputEl.textContent || "",
+      inputValue: this.elements.inputEl.innerHTML || "",
     });
   }
 
@@ -1642,39 +1665,7 @@ export class WebviewController {
     this.adjustHeight();
   }
 
-  private insertMentionChip(mention: Mention): void {
-    const selection = this.win.getSelection();
-    if (!selection) return;
-
-    let range: Range;
-    if (this.autocompleteMode !== "none" && selection.rangeCount > 0) {
-      range = selection.getRangeAt(0);
-      range.setStart(range.startContainer, this.autocompleteTriggerPos);
-      range.deleteContents();
-    } else {
-      this.elements.inputEl.focus();
-      const currentSelection = this.win.getSelection();
-      if (!currentSelection || currentSelection.rangeCount === 0) {
-        // If no range, insert at end
-        range = this.doc.createRange();
-        range.selectNodeContents(this.elements.inputEl);
-        range.collapse(false);
-      } else {
-        range = currentSelection.getRangeAt(0);
-      }
-    }
-
-    const chip = this.doc.createElement("span");
-    chip.className = "mention-chip";
-    chip.contentEditable = "false";
-    chip.dataset.name = mention.name;
-    if (mention.path) chip.dataset.path = mention.path;
-    chip.dataset.type = mention.type || "file";
-    if (mention.content) chip.dataset.content = mention.content;
-    if (mention.range)
-      chip.dataset.range = `${mention.range.startLine}-${mention.range.endLine}`;
-    if (mention.dataUrl) chip.dataset.dataUrl = mention.dataUrl;
-
+  private setupMentionChip(chip: HTMLElement, mention: Mention): void {
     const mentionType = mention.type || "file";
     const typeConfigs: Record<
       string,
@@ -1747,13 +1738,59 @@ export class WebviewController {
         this.hideImagePreview();
       });
     }
+  }
+
+  private insertMentionChip(mention: Mention): void {
+    const selection = this.win.getSelection();
+    if (!selection) return;
+
+    let range: Range;
+    if (this.autocompleteMode !== "none" && selection.rangeCount > 0) {
+      range = selection.getRangeAt(0);
+      range.setStart(range.startContainer, this.autocompleteTriggerPos);
+      range.deleteContents();
+    } else {
+      this.elements.inputEl.focus();
+      const currentSelection = this.win.getSelection();
+      if (!currentSelection || currentSelection.rangeCount === 0) {
+        // If no range, insert at end
+        range = this.doc.createRange();
+        range.selectNodeContents(this.elements.inputEl);
+        range.collapse(false);
+      } else {
+        range = currentSelection.getRangeAt(0);
+      }
+    }
+
+    const chip = this.doc.createElement("span");
+    chip.className = "mention-chip";
+    chip.contentEditable = "false";
+    chip.dataset.name = mention.name;
+    if (mention.path) chip.dataset.path = mention.path;
+    chip.dataset.type = mention.type || "file";
+    if (mention.content) chip.dataset.content = mention.content;
+    if (mention.range)
+      chip.dataset.range = `${mention.range.startLine}-${mention.range.endLine}`;
+    if (mention.dataUrl) chip.dataset.dataUrl = mention.dataUrl;
+
+    this.setupMentionChip(chip, mention);
 
     range.insertNode(chip);
-    const space = this.doc.createTextNode(" ");
-    range.collapse(false);
+
+    // After inserting the chip, insert a space and move the cursor
+    const space = this.doc.createTextNode("\u00A0");
+    range.setStartAfter(chip);
     range.insertNode(space);
-    selection.removeAllRanges();
-    selection.addRange(range);
+
+    const selectionAfter = this.win.getSelection();
+    if (selectionAfter) {
+      selectionAfter.removeAllRanges();
+      const newRange = this.doc.createRange();
+      newRange.setStartAfter(space);
+      newRange.collapse(true);
+      selectionAfter.addRange(newRange);
+    }
+
     this.elements.inputEl.focus();
     this.saveState();
     this.updateInputState();
