@@ -146,6 +146,8 @@ export interface ExtensionMessage {
   }>;
   locations?: ToolCallLocation[];
   duration?: number;
+  images?: string[];
+  mentions?: Mention[];
 }
 
 export interface Mention {
@@ -983,7 +985,8 @@ export class WebviewController {
                 }
               : undefined,
           };
-          this.setupMentionChip(c, mention);
+          const newChip = this.renderMentionChip(mention, false);
+          c.replaceWith(newChip);
         });
       }
     }
@@ -1167,7 +1170,8 @@ export class WebviewController {
 
   public addMessage(
     text: string,
-    type: "user" | "assistant" | "error" | "system"
+    type: "user" | "assistant" | "error" | "system",
+    mentions?: Mention[]
   ): HTMLElement {
     const div = this.doc.createElement("div");
     div.className = "message " + type;
@@ -1193,8 +1197,42 @@ export class WebviewController {
     }
 
     if (text) {
-      div.textContent = text;
-      this.messageTexts.set(div, text);
+      const textEl = this.doc.createElement("div");
+      textEl.className = "message-content-text";
+
+      const placeholderRegex = /__MENTION_(\d+)__/g;
+      let lastIndex = 0;
+      let match;
+
+      while ((match = placeholderRegex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+          textEl.appendChild(
+            this.doc.createTextNode(text.substring(lastIndex, match.index))
+          );
+        }
+
+        const idx = parseInt(match[1], 10);
+        if (mentions && mentions[idx]) {
+          textEl.appendChild(this.renderMentionChip(mentions[idx], true));
+        }
+
+        lastIndex = placeholderRegex.lastIndex;
+      }
+
+      if (lastIndex < text.length) {
+        textEl.appendChild(this.doc.createTextNode(text.substring(lastIndex)));
+      }
+
+      div.appendChild(textEl);
+
+      // Clean text for copying (replace placeholders with labels)
+      const cleanText = text.replace(/__MENTION_(\d+)__/g, (m, idx) => {
+        const i = parseInt(idx, 10);
+        return mentions && mentions[i] ? mentions[i].name : m;
+      });
+      this.messageTexts.set(div, cleanText);
+    } else {
+      this.messageTexts.set(div, "");
     }
 
     this.elements.messagesEl.appendChild(div);
@@ -1296,6 +1334,16 @@ export class WebviewController {
     this.activeBlock = block;
     this.blocks.push(block);
     return block;
+  }
+
+  private updateAssistantMessageText(): void {
+    if (this.currentAssistantMessage) {
+      const allText = this.blocks
+        .filter((b) => b.type === "text")
+        .map((b) => b.content)
+        .join("\n\n");
+      this.messageTexts.set(this.currentAssistantMessage, allText);
+    }
   }
 
   private finalizeBlocks(): void {
@@ -1460,36 +1508,50 @@ export class WebviewController {
   }
 
   private send(): void {
-    const text = this.elements.inputEl.textContent?.trim() || "";
-    const mentionChips = Array.from(
-      this.elements.inputEl.querySelectorAll(".mention-chip")
-    );
-
+    const inputEl = this.elements.inputEl;
+    const mentions: Mention[] = [];
     const images: string[] = [];
-    const mentions: Mention[] = mentionChips.map((chip) => {
-      const c = chip as HTMLElement;
-      const type = c.dataset.type as Mention["type"];
-      const dataUrl = c.dataset.dataUrl;
+    let text = "";
 
-      if (type === "image" && dataUrl) {
-        images.push(dataUrl);
+    inputEl.childNodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent;
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        if (el.classList.contains("mention-chip")) {
+          const type = el.dataset.type as Mention["type"];
+          const dataUrl = el.dataset.dataUrl;
+
+          const mention: Mention = {
+            name: el.dataset.name || "",
+            path: el.dataset.path,
+            type,
+            content: el.dataset.content,
+            dataUrl,
+            range: el.dataset.range
+              ? {
+                  startLine: parseInt(el.dataset.range.split("-")[0], 10),
+                  endLine: parseInt(el.dataset.range.split("-")[1], 10),
+                }
+              : undefined,
+          };
+
+          if (type === "image" && dataUrl) {
+            images.push(dataUrl);
+          }
+
+          const idx = mentions.length;
+          mentions.push(mention);
+          text += `__MENTION_${idx}__`;
+        } else if (el.tagName === "BR") {
+          text += "\n";
+        } else {
+          text += el.textContent;
+        }
       }
-
-      return {
-        name: c.dataset.name || "",
-        path: c.dataset.path,
-        type,
-        content: c.dataset.content,
-        dataUrl,
-        range: c.dataset.range
-          ? {
-              startLine: parseInt(c.dataset.range.split("-")[0], 10),
-              endLine: parseInt(c.dataset.range.split("-")[1], 10),
-            }
-          : undefined,
-      };
     });
 
+    text = text.trim();
     if (!text && images.length === 0) return;
 
     this.vscode.postMessage({
@@ -1665,8 +1727,21 @@ export class WebviewController {
     this.adjustHeight();
   }
 
-  private setupMentionChip(chip: HTMLElement, mention: Mention): void {
+  private renderMentionChip(mention: Mention, readonly = false): HTMLElement {
+    const chip = this.doc.createElement("span");
+    chip.className = "mention-chip" + (readonly ? " readonly" : "");
+    chip.contentEditable = "false";
+
+    chip.dataset.name = mention.name;
+    if (mention.path) chip.dataset.path = mention.path;
+    chip.dataset.type = mention.type || "file";
+    if (mention.content) chip.dataset.content = mention.content;
+    if (mention.range)
+      chip.dataset.range = `${mention.range.startLine}-${mention.range.endLine}`;
+    if (mention.dataUrl) chip.dataset.dataUrl = mention.dataUrl;
+
     const mentionType = mention.type || "file";
+
     const typeConfigs: Record<
       string,
       {
@@ -1694,7 +1769,7 @@ export class WebviewController {
         icon: "icon-image",
         onHover: (e) => {
           if (mention.dataUrl) {
-            this.hoveredImageChip = chip;
+            if (!readonly) this.hoveredImageChip = chip;
             this.showImagePreview(mention.dataUrl, e);
           }
         },
@@ -1703,22 +1778,24 @@ export class WebviewController {
 
     const config = typeConfigs[mentionType] || typeConfigs.file;
 
-    chip.innerHTML = `
-      <span class="chip-icon ${config.icon}"></span>
-      <span class="chip-label">${escapeHtml(mention.name)}</span>
-      <div class="chip-delete" title="Remove attachment">
-        <span class="icon-dismiss"></span>
-      </div>
-    `;
+    let innerHTML = `<span class="chip-icon ${config.icon}"></span><span class="chip-label">${escapeHtml(mention.name)}</span>`;
 
-    chip.querySelector(".chip-delete")?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.hoveredImageChip = null;
-      this.hideImagePreview();
-      chip.remove();
-      this.saveState();
-      this.updateInputState();
-    });
+    if (!readonly) {
+      innerHTML += `<div class="chip-delete" title="Remove attachment"><span class="icon-dismiss"></span></div>`;
+    }
+
+    chip.innerHTML = innerHTML;
+
+    if (!readonly) {
+      chip.querySelector(".chip-delete")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.hoveredImageChip = null;
+        this.hideImagePreview();
+        chip.remove();
+        this.saveState();
+        this.updateInputState();
+      });
+    }
 
     if (config.onClick) {
       chip.addEventListener("click", config.onClick);
@@ -1727,17 +1804,21 @@ export class WebviewController {
     if (config.onHover) {
       chip.addEventListener("mouseenter", (e) => config.onHover!(e));
       chip.addEventListener("mouseleave", (e) => {
-        // Don't hide if moving to a child element (like the delete button)
-        if (
-          e.relatedTarget instanceof Node &&
-          chip.contains(e.relatedTarget as Node)
-        ) {
-          return;
+        if (!readonly) {
+          // Don't hide if moving to a child element (like the delete button)
+          if (
+            e.relatedTarget instanceof Node &&
+            chip.contains(e.relatedTarget as Node)
+          ) {
+            return;
+          }
+          this.hoveredImageChip = null;
         }
-        this.hoveredImageChip = null;
         this.hideImagePreview();
       });
     }
+
+    return chip;
   }
 
   private insertMentionChip(mention: Mention): void {
@@ -1762,18 +1843,7 @@ export class WebviewController {
       }
     }
 
-    const chip = this.doc.createElement("span");
-    chip.className = "mention-chip";
-    chip.contentEditable = "false";
-    chip.dataset.name = mention.name;
-    if (mention.path) chip.dataset.path = mention.path;
-    chip.dataset.type = mention.type || "file";
-    if (mention.content) chip.dataset.content = mention.content;
-    if (mention.range)
-      chip.dataset.range = `${mention.range.startLine}-${mention.range.endLine}`;
-    if (mention.dataUrl) chip.dataset.dataUrl = mention.dataUrl;
-
-    this.setupMentionChip(chip, mention);
+    const chip = this.renderMentionChip(mention, false);
 
     range.insertNode(chip);
 
@@ -1830,8 +1900,8 @@ export class WebviewController {
         }
         break;
       case "userMessage":
-        if (msg.text) {
-          this.addMessage(msg.text, "user");
+        if (msg.text || (msg.images && msg.images.length > 0)) {
+          this.addMessage(msg.text || "", "user", msg.mentions);
           this.updateViewState();
         }
         break;
@@ -1851,6 +1921,7 @@ export class WebviewController {
           const block = this.ensureBlock("text");
           block.content += msg.text;
           block.contentEl.innerHTML = marked.parse(block.content) as string;
+          this.updateAssistantMessageText();
           this.elements.messagesEl.scrollTop =
             this.elements.messagesEl.scrollHeight;
         }

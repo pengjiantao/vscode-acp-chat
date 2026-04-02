@@ -757,7 +757,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       dataUrl?: string;
     }> = []
   ): Promise<void> {
-    this.postMessage({ type: "userMessage", text });
+    this.postMessage({ type: "userMessage", text, images, mentions });
 
     try {
       if (!this.acpClient.isConnected()) {

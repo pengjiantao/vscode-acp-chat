@@ -106,6 +106,18 @@ body {
   padding: 6px 12px;
 }
 
+.message-mentions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.message-content-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Assistant Message Content */
 .message.assistant h1,
 .message.assistant h2,
@@ -494,6 +506,10 @@ body {
 .mention-chip:hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.18));
   border-color: var(--vscode-focusBorder);
+}
+
+.mention-chip.readonly {
+  padding: 2px 8px;
 }
 
 .mention-chip .chip-icon {

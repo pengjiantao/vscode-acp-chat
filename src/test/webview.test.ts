@@ -310,6 +310,7 @@ suite("Webview", () => {
       window = dom.window;
       mockVsCode = createMockVsCodeApi();
       elements = getElements(document);
+      (global as any).Node = window.Node;
       controller = new WebviewController(
         mockVsCode,
         elements,
@@ -535,7 +536,7 @@ suite("Webview", () => {
     suite("input handling", () => {
       test("Enter key sends message", () => {
         mockVsCode._clearMessages();
-        elements.inputEl.textContent = "Test message";
+        elements.inputEl.innerHTML = "Test message";
         const event = new window.KeyboardEvent("keydown", {
           key: "Enter",
           shiftKey: false,
@@ -554,7 +555,7 @@ suite("Webview", () => {
 
       test("Shift+Enter does not send message", () => {
         mockVsCode._clearMessages();
-        elements.inputEl.textContent = "Test message";
+        elements.inputEl.innerHTML = "Test message";
         const event = new window.KeyboardEvent("keydown", {
           key: "Enter",
           shiftKey: true,
@@ -571,7 +572,7 @@ suite("Webview", () => {
 
       test("empty input does not send message", () => {
         mockVsCode._clearMessages();
-        elements.inputEl.textContent = "   ";
+        elements.inputEl.innerHTML = "   ";
         const event = new window.KeyboardEvent("keydown", {
           key: "Enter",
           shiftKey: false,
@@ -587,7 +588,7 @@ suite("Webview", () => {
       });
 
       test("Escape clears input", () => {
-        elements.inputEl.textContent = "Test message";
+        elements.inputEl.innerHTML = "Test message";
         const event = new window.KeyboardEvent("keydown", { key: "Escape" });
         elements.inputEl.dispatchEvent(event);
         assert.strictEqual(elements.inputEl.textContent, "");
