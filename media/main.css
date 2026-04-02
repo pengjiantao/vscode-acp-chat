@@ -716,8 +716,7 @@ body {
 .icon {
   width: 14px;
   height: 14px;
-  display: inline-block;
-  vertical-align: text-bottom;
+  display: block;
   mask-size: contain;
   -webkit-mask-size: contain;
   mask-repeat: no-repeat;
@@ -726,7 +725,12 @@ body {
   -webkit-mask-position: center;
 }
 
-/* Image Hover Preview */
+.tool-name {
+  font-weight: 500;
+  line-height: 16px; /* 匹配图标高度 */
+  display: inline-block;
+  margin-top: 1px; /* 视觉补偿，下移 1px */
+}
 .image-preview-popover {
   position: fixed;
   z-index: 2000;
