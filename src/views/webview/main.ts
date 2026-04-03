@@ -2215,6 +2215,10 @@ export class WebviewController {
         break;
       case "userMessage":
         if (msg.text || (msg.images && msg.images.length > 0)) {
+          // Reset assistant state before adding user message
+          // This ensures subsequent streamChunk creates a new assistant message
+          this.currentAssistantMessage = null;
+          this.activeBlock = null;
           this.addMessage(msg.text || "", "user", msg.mentions);
           this.updateViewState();
         }

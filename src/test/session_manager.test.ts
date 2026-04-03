@@ -354,6 +354,18 @@ suite("SessionManager", () => {
         "text",
         "User message content type should be text"
       );
+
+      // Verify message order is preserved (user messages should come before their corresponding agent messages)
+      const firstUserIndex = updates.findIndex(
+        (u) => u.sessionUpdate === "user_message_chunk"
+      );
+      const firstAgentIndex = updates.findIndex(
+        (u) => u.sessionUpdate === "agent_message_chunk"
+      );
+      assert.ok(
+        firstUserIndex < firstAgentIndex,
+        "User message should be received before agent message"
+      );
     });
   });
 

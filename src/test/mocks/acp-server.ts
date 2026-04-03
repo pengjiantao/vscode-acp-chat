@@ -373,6 +373,7 @@ export class MockACPServer {
   }
 
   private async replayHistory(session: MockSession): Promise<void> {
+    // Replay messages in the exact order they were stored
     for (const msg of session.messageHistory) {
       if (msg.role === "user") {
         // Send user message chunk for history restoration
@@ -383,7 +384,8 @@ export class MockACPServer {
             text: msg.content,
           },
         });
-        await this.delay(50);
+        // Small delay to ensure proper ordering
+        await this.delay(30);
       } else if (msg.role === "assistant") {
         this.sendSessionUpdate(session.id, {
           sessionUpdate: "agent_message_chunk",
@@ -392,7 +394,8 @@ export class MockACPServer {
             text: msg.content,
           },
         });
-        await this.delay(50);
+        // Small delay to ensure proper ordering
+        await this.delay(30);
       }
     }
   }

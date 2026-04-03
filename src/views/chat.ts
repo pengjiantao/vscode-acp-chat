@@ -112,6 +112,8 @@ export class ChatViewProvider
     params: RequestPermissionRequest;
     resolver: (response: RequestPermissionResponse) => void;
   }> = [];
+  private sessionUpdateQueue: SessionNotification[] = [];
+  private isProcessingQueue = false;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -157,8 +159,10 @@ export class ChatViewProvider
     });
 
     this.acpClient.setOnSessionUpdate((update) => {
-      this.handleSessionUpdate(update).catch((error) => {
-        console.error("[Chat] Error handling session update:", error);
+      // Queue session updates to ensure they are processed in order
+      this.sessionUpdateQueue.push(update);
+      this.processSessionUpdateQueue().catch((error) => {
+        console.error("[Chat] Error processing session update queue:", error);
       });
     });
 
@@ -845,6 +849,31 @@ export class ChatViewProvider
     }
     this.terminals.clear();
     this.clearToolCallMetadata();
+  }
+
+  /**
+   * Process session updates from the queue in order.
+   * This ensures that messages are rendered in the correct sequence,
+   * even if they arrive rapidly or out of order.
+   */
+  private async processSessionUpdateQueue(): Promise<void> {
+    // Prevent concurrent processing
+    if (this.isProcessingQueue) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    while (this.sessionUpdateQueue.length > 0) {
+      const update = this.sessionUpdateQueue.shift()!;
+      try {
+        await this.handleSessionUpdate(update);
+      } catch (error) {
+        console.error("[Chat] Error handling session update:", error);
+      }
+    }
+
+    this.isProcessingQueue = false;
   }
 
   private async handleSessionUpdate(
