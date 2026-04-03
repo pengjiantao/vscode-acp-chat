@@ -304,6 +304,57 @@ suite("SessionManager", () => {
       // For this test, we'll verify updates were received during the prompt
       assert.ok(updates.length > 0);
     });
+
+    test("should receive both user and agent messages during history load", async () => {
+      await client.connect();
+      await client.newSession("/test/dir");
+
+      // Send a message to create history
+      await client.sendMessage("Test message");
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Get the current session ID
+      const sessionId = (client as any).currentSessionId;
+      assert.ok(sessionId, "Should have a session ID");
+
+      // Clear update tracking
+      const updates: Array<{ sessionUpdate: string; content?: any }> = [];
+      client.setOnSessionUpdate((notification) => {
+        const update = (notification as any).update;
+        updates.push(update as any);
+      });
+
+      // Load the session to trigger history replay
+      await client.loadSession({ sessionId, cwd: "/test/dir" });
+      // Wait longer for replayHistory to complete (it has delays between messages)
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      // Verify we received both user and agent message chunks
+      const userMessages = updates.filter(
+        (u) => u.sessionUpdate === "user_message_chunk"
+      );
+      const agentMessages = updates.filter(
+        (u) => u.sessionUpdate === "agent_message_chunk"
+      );
+
+      assert.ok(
+        userMessages.length > 0,
+        "Should receive user message chunks during history load"
+      );
+      assert.ok(
+        agentMessages.length > 0,
+        "Should receive agent message chunks during history load"
+      );
+
+      // Verify content is preserved
+      const userContent = userMessages[0]?.content;
+      assert.ok(userContent, "User message should have content");
+      assert.strictEqual(
+        userContent?.type,
+        "text",
+        "User message content type should be text"
+      );
+    });
   });
 
   suite("getAgentCapabilities", () => {

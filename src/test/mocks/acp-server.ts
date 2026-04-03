@@ -335,10 +335,10 @@ export class MockACPServer {
     });
   }
 
-  private handleLoadSession(
+  private async handleLoadSession(
     id: number,
     params?: Record<string, unknown>
-  ): void {
+  ): Promise<void> {
     const sessionId = params?.sessionId as string | undefined;
     const session = sessionId ? this.sessions.get(sessionId) : null;
 
@@ -347,8 +347,10 @@ export class MockACPServer {
       return;
     }
 
-    // Replay the message history as session updates
-    void this.replayHistory(session);
+    // Replay the message history as session updates (fire and forget)
+    this.replayHistory(session).catch((err) =>
+      console.error("[MockServer] Error replaying history:", err)
+    );
 
     const response: acp.LoadSessionResponse = {
       modes: {
@@ -373,11 +375,12 @@ export class MockACPServer {
   private async replayHistory(session: MockSession): Promise<void> {
     for (const msg of session.messageHistory) {
       if (msg.role === "user") {
+        // Send user message chunk for history restoration
         this.sendSessionUpdate(session.id, {
-          sessionUpdate: "agent_message_chunk",
+          sessionUpdate: "user_message_chunk",
           content: {
             type: "text",
-            text: `[History Replay] User: ${msg.content}`,
+            text: msg.content,
           },
         });
         await this.delay(50);
@@ -386,7 +389,7 @@ export class MockACPServer {
           sessionUpdate: "agent_message_chunk",
           content: {
             type: "text",
-            text: `[History Replay] Assistant: ${msg.content}`,
+            text: msg.content,
           },
         });
         await this.delay(50);

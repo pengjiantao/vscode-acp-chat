@@ -853,7 +853,21 @@ export class ChatViewProvider
     const update = notification.update;
     console.log("[Chat] Session update received:", update.sessionUpdate);
 
-    if (update.sessionUpdate === "agent_message_chunk") {
+    // Handle user message chunks (for history session restoration)
+    if (update.sessionUpdate === "user_message_chunk") {
+      console.log("[Chat] User message chunk:", JSON.stringify(update.content));
+      if (update.content.type === "text") {
+        // Extract mentions from user message content
+        const mentions = this.extractMentionsFromContent(update.content);
+        this.postMessage({
+          type: "userMessage",
+          text: update.content.text,
+          mentions,
+        });
+      } else {
+        console.log("[Chat] Non-text user chunk type:", update.content.type);
+      }
+    } else if (update.sessionUpdate === "agent_message_chunk") {
       console.log("[Chat] Chunk content:", JSON.stringify(update.content));
       if (update.content.type === "text") {
         this.postMessage({ type: "streamChunk", text: update.content.text });
@@ -1080,6 +1094,76 @@ export class ChatViewProvider
         });
       }
     }
+  }
+
+  /**
+   * Extract mentions (file references, images, etc.) from user message content.
+   * This is used during history session restoration to properly render user messages
+   * with their original mentions (files, images, selections).
+   */
+  private extractMentionsFromContent(content: any): Array<{
+    name: string;
+    path?: string;
+    type?: "file" | "selection" | "terminal" | "image";
+    content?: string;
+    range?: { startLine: number; endLine: number };
+    dataUrl?: string;
+  }> {
+    const mentions: Array<{
+      name: string;
+      path?: string;
+      type?: "file" | "selection" | "terminal" | "image";
+      content?: string;
+      range?: { startLine: number; endLine: number };
+      dataUrl?: string;
+    }> = [];
+
+    // Check for embedded resources (files, images, etc.) in the content
+    if (content && typeof content === "object") {
+      // Handle EmbeddedResource type (for files, terminal output, etc.)
+      if (content.type === "resource" && content.resource) {
+        const resource = content.resource;
+
+        // Handle file resources
+        if (resource.type === "text" || resource.type === "blob") {
+          const uri = resource.uri || resource.mimeType;
+          if (uri) {
+            try {
+              const uriObj = vscode.Uri.parse(uri);
+              const fileName = uriObj.path.split("/").pop() || uri;
+              mentions.push({
+                name: fileName,
+                path: uriObj.scheme === "file" ? uriObj.fsPath : uri,
+                type: "file",
+                content: resource.text || resource.blob,
+              });
+            } catch {
+              // If URI parsing fails, just use the raw URI
+              mentions.push({
+                name: uri,
+                path: uri,
+                type: "file",
+                content: resource.text || resource.blob,
+              });
+            }
+          }
+        }
+      }
+
+      // Handle image content
+      if (content.type === "image") {
+        const imageUri = content.uri || content.source?.uri;
+        if (imageUri) {
+          mentions.push({
+            name: imageUri.split("/").pop() || "image",
+            type: "image",
+            dataUrl: imageUri,
+          });
+        }
+      }
+    }
+
+    return mentions;
   }
 
   private extractPath(rawInput: any): string | undefined {

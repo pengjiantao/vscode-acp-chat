@@ -419,6 +419,65 @@ suite("Webview", () => {
         assert.strictEqual(msgs.length, 1);
       });
 
+      test("handles userMessage with mentions", () => {
+        controller.handleMessage({
+          type: "userMessage",
+          text: "Check this file __MENTION_0__",
+          mentions: [
+            {
+              name: "test.ts",
+              path: "/path/to/test.ts",
+              type: "file",
+              content: "console.log('test')",
+            },
+          ],
+        });
+        const msgs = elements.messagesEl.querySelectorAll(".message.user");
+        assert.strictEqual(msgs.length, 1);
+        // Check that mention chip is rendered
+        const mentionChip = msgs[0].querySelector(".mention-chip");
+        assert.ok(mentionChip !== null, "Mention chip should be rendered");
+        assert.strictEqual(mentionChip.textContent, "test.ts");
+      });
+
+      test("handles userMessage with image mentions", () => {
+        controller.handleMessage({
+          type: "userMessage",
+          text: "Look at this image __MENTION_0__",
+          mentions: [
+            {
+              name: "screenshot.png",
+              type: "image",
+              dataUrl: "data:image/png;base64,abc123",
+            },
+          ],
+        });
+        const msgs = elements.messagesEl.querySelectorAll(".message.user");
+        assert.strictEqual(msgs.length, 1);
+        // Check that image mention chip is rendered (readonly mode shows icon, not img directly)
+        const mentionChip = msgs[0].querySelector(
+          ".mention-chip"
+        ) as HTMLElement;
+        assert.ok(
+          mentionChip !== null,
+          "Image mention chip should be rendered"
+        );
+        assert.strictEqual(
+          mentionChip.dataset?.type,
+          "image",
+          "Chip type should be image"
+        );
+        assert.strictEqual(
+          mentionChip.dataset?.name,
+          "screenshot.png",
+          "Chip name should match"
+        );
+        assert.ok(
+          mentionChip.querySelector(".icon-image"),
+          "Image icon should exist"
+        );
+      });
+
       test("handles connectionState", () => {
         controller.handleMessage({
           type: "connectionState",
