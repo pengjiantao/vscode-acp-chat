@@ -48,6 +48,7 @@ export interface Block {
   toolId?: string;
   kind?: ToolKind;
   title?: string;
+  status?: string;
 }
 
 export interface WebviewState {
@@ -1398,6 +1399,12 @@ export class WebviewController {
       }
     }
 
+    // If we're starting a new block and had an active one, finalize the old one.
+    // This ensures thoughts fold as soon as the next thing (text or tool) starts.
+    if (this.activeBlock) {
+      this.finalizeBlock(this.activeBlock);
+    }
+
     // Create new block
     if (!this.currentAssistantMessage) {
       this.currentAssistantMessage = this.addMessage("", "assistant");
@@ -1483,31 +1490,33 @@ export class WebviewController {
     }
   }
 
-  private finalizeBlocks(): void {
-    this.blocks.forEach((block) => {
-      if (block.type === "thought") {
-        const details = block.element.querySelector("details");
-        if (details) {
-          details.removeAttribute("open");
-          const title = details.querySelector(".thought-title");
-          if (title) title.textContent = "Thought Process";
-        }
-      } else if (block.type === "tool") {
-        const details = block.element.querySelector("details");
-        if (details) {
-          // Keep edit/write tools open if they are completed successfully
-          // This matches the user's request for "Zed-style" visibility
-          const shouldKeepOpen =
-            block.kind === "edit" ||
-            block.kind === "write" ||
-            block.title?.toLowerCase().includes("write") ||
-            block.title?.toLowerCase().includes("edit");
+  private finalizeBlock(block: Block): void {
+    if (block.type === "thought") {
+      const details = block.element.querySelector("details");
+      if (details) {
+        details.removeAttribute("open");
+        const title = details.querySelector(".thought-title");
+        if (title) title.textContent = "Thought Process";
+      }
+    } else if (block.type === "tool") {
+      const details = block.element.querySelector("details");
+      if (details) {
+        // Keep edit/write tools open if they are completed successfully
+        // This matches the user's request for "Zed-style" visibility
+        const isWriteOrEdit = block.kind === "edit" || block.kind === "write";
 
-          if (!shouldKeepOpen) {
-            details.removeAttribute("open");
-          }
+        const shouldKeepOpen = isWriteOrEdit || block.status === "failed";
+
+        if (!shouldKeepOpen) {
+          details.removeAttribute("open");
         }
       }
+    }
+  }
+
+  private finalizeBlocks(): void {
+    this.blocks.forEach((block) => {
+      this.finalizeBlock(block);
     });
     this.activeBlock = null;
   }
@@ -1518,7 +1527,8 @@ export class WebviewController {
 
   public hideThinking(): void {
     if (this.activeBlock && this.activeBlock.type === "thought") {
-      this.finalizeBlocks();
+      this.finalizeBlock(this.activeBlock);
+      this.activeBlock = null;
     }
   }
 
@@ -2094,19 +2104,22 @@ export class WebviewController {
           );
           if (!block) {
             block = this.ensureBlock("tool", msg.toolCallId);
-            block.kind = msg.kind;
-            block.title = msg.name;
           }
-          const summary = block.element.querySelector("summary");
-          if (summary) {
-            const summaryHtml = renderToolSummary({
-              toolCallId: msg.toolCallId,
-              title: msg.name || block.title || "Tool",
-              kind: msg.kind || block.kind,
-              status: "in_progress",
-              rawInput: msg.rawInput,
-            });
-            summary.innerHTML = summaryHtml;
+          if (block) {
+            if (msg.kind) block.kind = msg.kind;
+            if (msg.name) block.title = msg.name;
+
+            const summary = block.element.querySelector("summary");
+            if (summary) {
+              const summaryHtml = renderToolSummary({
+                toolCallId: msg.toolCallId,
+                title: msg.name || block.title || "Tool",
+                kind: msg.kind || block.kind,
+                status: "in_progress",
+                rawInput: msg.rawInput,
+              });
+              summary.innerHTML = summaryHtml;
+            }
           }
           this.elements.messagesEl.scrollTop =
             this.elements.messagesEl.scrollHeight;
@@ -2117,9 +2130,13 @@ export class WebviewController {
           let block = this.blocks.find((b) => b.toolId === msg.toolCallId);
           if (!block) {
             block = this.ensureBlock("tool", msg.toolCallId);
-            block.kind = msg.kind;
           }
           if (block) {
+            // Update metadata from completion message
+            if (msg.kind) block.kind = msg.kind;
+            if (msg.title) block.title = msg.title;
+            if (msg.status) block.status = msg.status;
+
             const finalTitle =
               msg.title || block.title || block.toolId || "Tool";
             const summary = block.element.querySelector("summary");
@@ -2150,11 +2167,7 @@ export class WebviewController {
             });
             block.contentEl.innerHTML = detailsHtml;
 
-            // Auto-collapse after completion
-            const details = block.element.querySelector("details");
-            if (details && msg.status !== "failed") {
-              details.removeAttribute("open");
-            }
+            this.finalizeBlock(block);
           }
         }
         break;
