@@ -10,6 +10,21 @@ export interface FileChange {
 export class DiffManager {
   private changes: Map<string, FileChange> = new Map();
   private onDidChangeCallbacks: Array<(changes: FileChange[]) => void> = [];
+  private fileWatcher: vscode.FileSystemWatcher;
+
+  constructor() {
+    this.fileWatcher = vscode.workspace.createFileSystemWatcher("**/*");
+    this.fileWatcher.onDidDelete((uri) => {
+      const change = this.changes.get(uri.fsPath);
+      if (change && change.status === "pending") {
+        if (change.oldText === null) {
+          // File was newly created by agent, but now deleted.
+          // The net change is zero, so remove from diff manager.
+          this.removeChange(uri.fsPath);
+        }
+      }
+    });
+  }
 
   public onDidChange(
     callback: (changes: FileChange[]) => void
@@ -72,10 +87,21 @@ export class DiffManager {
         const uri = vscode.Uri.file(path);
         if (change.oldText === null) {
           // File was created, so rollback means delete
-          await vscode.workspace.fs.delete(uri, {
-            recursive: true,
-            useTrash: true,
-          });
+          try {
+            await vscode.workspace.fs.delete(uri, {
+              recursive: true,
+              useTrash: true,
+            });
+          } catch (e) {
+            // Ignore if file is already gone
+            if (
+              !(
+                e instanceof vscode.FileSystemError && e.code === "FileNotFound"
+              )
+            ) {
+              throw e;
+            }
+          }
         } else {
           // File was modified, rollback means restore old text
           const content = new TextEncoder().encode(change.oldText);
@@ -83,10 +109,21 @@ export class DiffManager {
         }
         change.status = "rolledback";
         this.notify();
-      } catch {
+      } catch (e) {
+        console.error(`[DiffManager] Failed to rollback ${path}:`, e);
         vscode.window.showErrorMessage(`Failed to rollback ${path}`);
       }
     }
+  }
+
+  public removeChange(path: string): void {
+    if (this.changes.delete(path)) {
+      this.notify();
+    }
+  }
+
+  public getChange(path: string): FileChange | undefined {
+    return this.changes.get(path);
   }
 
   public acceptAll(): void {
@@ -112,5 +149,11 @@ export class DiffManager {
 
   public isEmpty(): boolean {
     return this.getPendingChanges().length === 0;
+  }
+
+  public dispose(): void {
+    if (this.fileWatcher) {
+      this.fileWatcher.dispose();
+    }
   }
 }

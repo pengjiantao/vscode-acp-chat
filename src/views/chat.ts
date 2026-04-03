@@ -778,6 +778,9 @@ export class ChatViewProvider
   }
 
   public dispose(): void {
+    if (this.diffManager) {
+      this.diffManager.dispose();
+    }
     for (const terminal of this.terminals.values()) {
       this.killTerminalProcess(terminal);
       try {
