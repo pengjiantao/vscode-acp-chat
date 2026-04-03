@@ -9,7 +9,7 @@ import { Mention } from "../views/webview/main";
 import { ACPClient } from "../acp/client";
 
 suite("Mentions Logic", () => {
-  test("ACPClient formats different mention types correctly", async () => {
+  test("ACPClient formats different mention types correctly with new structured format", async () => {
     // We can't easily connect to a real server, but we can test the sendMessage prompt building
     // by mocking the connection.
     const client = new ACPClient({ skipAvailabilityCheck: true } as any);
@@ -41,14 +41,14 @@ suite("Mentions Logic", () => {
 
     assert.strictEqual(prompt[0].text, "my message");
 
+    // Second prompt item should contain structured mention context
     const contextText = prompt[1].text;
-    assert.ok(contextText.includes("Context - Referenced Items:"));
-    assert.ok(
-      contextText.includes("[Referenced File: file.ts at /path/file.ts]")
-    );
-    assert.ok(contextText.includes("[Code Selection from file.ts:1-5]:"));
-    assert.ok(contextText.includes("const x = 1;"));
-    assert.ok(contextText.includes("[Terminal Selection (Terminal)]:"));
-    assert.ok(contextText.includes("error: fail"));
+    assert.ok(contextText.includes("<referenced-items>"));
+    assert.ok(contextText.includes('type="file"'));
+    assert.ok(contextText.includes('name="file.ts"'));
+    assert.ok(contextText.includes('type="selection"'));
+    assert.ok(contextText.includes("<![CDATA[const x = 1;]]>"));
+    assert.ok(contextText.includes('type="terminal"'));
+    assert.ok(contextText.includes("<![CDATA[error: fail]]>"));
   });
 });

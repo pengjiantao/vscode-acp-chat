@@ -4,6 +4,10 @@ import { ACPClient } from "../acp/client";
 import { getAgent, getFirstAvailableAgent } from "../acp/agents";
 import { DiffManager } from "../acp/diff-manager";
 import { AgentSessionManager, type SessionInfo } from "../acp/session-manager";
+import {
+  parseMentionsFromText,
+  stripMentionMarkup,
+} from "../utils/mention-serializer";
 import type {
   SessionNotification,
   ReadTextFileRequest,
@@ -886,11 +890,28 @@ export class ChatViewProvider
     if (update.sessionUpdate === "user_message_chunk") {
       console.log("[Chat] User message chunk:", JSON.stringify(update.content));
       if (update.content.type === "text") {
-        // Extract mentions from user message content
-        const mentions = this.extractMentionsFromContent(update.content);
+        // Parse mentions from the structured text format
+        const rawText = update.content.text;
+        const mentions = parseMentionsFromText(rawText);
+
+        // Reconstruct text with __MENTION_N__ placeholders for webview rendering
+        let textWithPlaceholders = stripMentionMarkup(rawText);
+        for (let i = 0; i < mentions.length; i++) {
+          // Replace first occurrence of mention name with placeholder
+          const mentionName = mentions[i].name;
+          const placeholder = `__MENTION_${i}__`;
+          const nameIndex = textWithPlaceholders.indexOf(mentionName);
+          if (nameIndex !== -1) {
+            textWithPlaceholders =
+              textWithPlaceholders.slice(0, nameIndex) +
+              placeholder +
+              textWithPlaceholders.slice(nameIndex + mentionName.length);
+          }
+        }
+
         this.postMessage({
           type: "userMessage",
-          text: update.content.text,
+          text: textWithPlaceholders,
           mentions,
         });
       } else {
@@ -1126,9 +1147,8 @@ export class ChatViewProvider
   }
 
   /**
-   * Extract mentions (file references, images, etc.) from user message content.
-   * This is used during history session restoration to properly render user messages
-   * with their original mentions (files, images, selections).
+   * Extract mentions from user message content during history session restoration.
+   * Parses the structured XML-like mention format to restore mention objects.
    */
   private extractMentionsFromContent(content: any): Array<{
     name: string;
@@ -1138,61 +1158,12 @@ export class ChatViewProvider
     range?: { startLine: number; endLine: number };
     dataUrl?: string;
   }> {
-    const mentions: Array<{
-      name: string;
-      path?: string;
-      type?: "file" | "selection" | "terminal" | "image";
-      content?: string;
-      range?: { startLine: number; endLine: number };
-      dataUrl?: string;
-    }> = [];
-
-    // Check for embedded resources (files, images, etc.) in the content
-    if (content && typeof content === "object") {
-      // Handle EmbeddedResource type (for files, terminal output, etc.)
-      if (content.type === "resource" && content.resource) {
-        const resource = content.resource;
-
-        // Handle file resources
-        if (resource.type === "text" || resource.type === "blob") {
-          const uri = resource.uri || resource.mimeType;
-          if (uri) {
-            try {
-              const uriObj = vscode.Uri.parse(uri);
-              const fileName = uriObj.path.split("/").pop() || uri;
-              mentions.push({
-                name: fileName,
-                path: uriObj.scheme === "file" ? uriObj.fsPath : uri,
-                type: "file",
-                content: resource.text || resource.blob,
-              });
-            } catch {
-              // If URI parsing fails, just use the raw URI
-              mentions.push({
-                name: uri,
-                path: uri,
-                type: "file",
-                content: resource.text || resource.blob,
-              });
-            }
-          }
-        }
-      }
-
-      // Handle image content
-      if (content.type === "image") {
-        const imageUri = content.uri || content.source?.uri;
-        if (imageUri) {
-          mentions.push({
-            name: imageUri.split("/").pop() || "image",
-            type: "image",
-            dataUrl: imageUri,
-          });
-        }
-      }
+    if (!content || typeof content !== "object") {
+      return [];
     }
 
-    return mentions;
+    const text = content.text || "";
+    return parseMentionsFromText(text);
   }
 
   private extractPath(rawInput: any): string | undefined {

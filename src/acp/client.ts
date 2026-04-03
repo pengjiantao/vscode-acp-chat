@@ -39,6 +39,10 @@ import {
   isAgentAvailable,
   getGlobalBinPaths,
 } from "./agents";
+import {
+  serializeMentionsWithContext,
+  type Mention,
+} from "../utils/mention-serializer";
 
 export interface SessionMetadata {
   modes: SessionModeState | null;
@@ -557,33 +561,24 @@ export class ACPClient {
   async sendMessage(
     message: string,
     images: string[] = [],
-    mentions: Array<{
-      name: string;
-      path?: string;
-      type?: "file" | "selection" | "terminal" | "image";
-      content?: string;
-      range?: { startLine: number; endLine: number };
-      dataUrl?: string;
-    }> = []
+    mentions: Mention[] = []
   ): Promise<PromptResponse> {
     if (!this.connection || !this.currentSessionId) {
       throw new Error("No active session");
     }
 
     try {
-      // Replace __MENTION_N__ placeholders in the message with actual names
-      const cleanMessage = message.replace(
-        /__MENTION_(\d+)__/g,
-        (_match, idx: string) => {
-          const i = parseInt(idx, 10);
-          return mentions[i]?.name ?? _match;
-        }
+      // Use the new serializer to format mentions
+      const { cleanText, contextText } = serializeMentionsWithContext(
+        message,
+        mentions
       );
 
+      // Build prompt items
       const prompt: Array<
         | { type: "text"; text: string }
         | { type: "image"; data: string; mimeType: string }
-      > = [{ type: "text", text: cleanMessage }];
+      > = [{ type: "text", text: cleanText }];
 
       // Add images as image prompt items
       for (const base64 of images) {
@@ -596,34 +591,8 @@ export class ACPClient {
         });
       }
 
-      // Add mentions as part of the context or a special text block
-      if (mentions.length > 0) {
-        const fileMentions = mentions
-          .filter((m) => !m.type || m.type === "file")
-          .map((m) => `[Referenced File: ${m.name} at ${m.path}]`)
-          .join("\n");
-
-        const selectionMentions = mentions
-          .filter((m) => m.type === "selection")
-          .map(
-            (m) =>
-              `[Code Selection from ${m.name}]:\n\`\`\`\n${m.content}\n\`\`\``
-          )
-          .join("\n\n");
-
-        const terminalMentions = mentions
-          .filter((m) => m.type === "terminal")
-          .map(
-            (m) =>
-              `[Terminal Selection (${m.name})]:\n\`\`\`\n${m.content}\n\`\`\``
-          )
-          .join("\n\n");
-
-        let contextText = "\n\nContext - Referenced Items:";
-        if (fileMentions) contextText += `\n${fileMentions}`;
-        if (selectionMentions) contextText += `\n\n${selectionMentions}`;
-        if (terminalMentions) contextText += `\n\n${terminalMentions}`;
-
+      // Add structured context text if we have mentions
+      if (contextText) {
         prompt.push({
           type: "text",
           text: contextText,
