@@ -7,12 +7,14 @@ interface MockSession {
   id: string;
   cwd: string;
   pendingPrompt: AbortController | null;
+  messageHistory: Array<{ role: string; content: string }>;
 }
 
 export class MockACPServer {
   private sessions: Map<string, MockSession> = new Map();
   private sessionCounter = 0;
   private demoMode: DemoMode;
+  private enableLoadSession: boolean;
 
   readonly stdin: Writable;
   readonly stdout: Readable;
@@ -20,8 +22,9 @@ export class MockACPServer {
 
   private stdinBuffer = "";
 
-  constructor(demoMode: DemoMode = "default") {
+  constructor(demoMode: DemoMode = "default", enableLoadSession = true) {
     this.demoMode = demoMode;
+    this.enableLoadSession = enableLoadSession;
 
     this.stdin = new Writable({
       write: (chunk, _encoding, callback) => {
@@ -66,11 +69,19 @@ export class MockACPServer {
       case "initialize":
         this.sendResponse(request.id, {
           protocolVersion: acp.PROTOCOL_VERSION,
-          agentCapabilities: { loadSession: false },
+          agentCapabilities: {
+            loadSession: this.enableLoadSession,
+            sessionCapabilities: {
+              list: {},
+            },
+          },
         });
         break;
       case "session/new":
         this.handleNewSession(request.id, request.params);
+        break;
+      case "session/load":
+        this.handleLoadSession(request.id, request.params);
         break;
       case "session/prompt":
         void this.handlePrompt(request.id, request.params);
@@ -81,6 +92,12 @@ export class MockACPServer {
         break;
       case "session/cancel":
         this.handleCancel(request.id, request.params);
+        break;
+      case "_session/list":
+        this.handleListSessions(request.id);
+        break;
+      case "session/list":
+        this.handleListSessions(request.id);
         break;
       default:
         this.sendError(request.id, -32601, `Unknown method: ${request.method}`);
@@ -95,6 +112,7 @@ export class MockACPServer {
       id: sessionId,
       cwd,
       pendingPrompt: null,
+      messageHistory: [],
     });
 
     this.sendSessionUpdate(sessionId, {
@@ -147,6 +165,18 @@ export class MockACPServer {
       return;
     }
 
+    // Store the user message in history
+    const promptItems = params?.prompt as
+      | Array<{ type: string; text?: string }>
+      | undefined;
+    if (promptItems) {
+      for (const item of promptItems) {
+        if (item.type === "text" && item.text) {
+          session.messageHistory.push({ role: "user", content: item.text });
+        }
+      }
+    }
+
     session.pendingPrompt?.abort();
     session.pendingPrompt = new AbortController();
 
@@ -183,6 +213,15 @@ export class MockACPServer {
       sessionUpdate: "agent_message_chunk",
       content: { type: "text", text: "I'm a mock response." },
     });
+
+    // Store assistant message in history
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.messageHistory.push({
+        role: "assistant",
+        content: "Hello! I'm a mock response.",
+      });
+    }
   }
 
   private async demoAnsiOutput(sessionId: string): Promise<void> {
@@ -296,6 +335,79 @@ export class MockACPServer {
     });
   }
 
+  private handleLoadSession(
+    id: number,
+    params?: Record<string, unknown>
+  ): void {
+    const sessionId = params?.sessionId as string | undefined;
+    const session = sessionId ? this.sessions.get(sessionId) : null;
+
+    if (!session) {
+      this.sendError(id, -32000, "Session not found");
+      return;
+    }
+
+    // Replay the message history as session updates
+    void this.replayHistory(session);
+
+    const response: acp.LoadSessionResponse = {
+      modes: {
+        availableModes: [
+          { id: "code", name: "Code" },
+          { id: "architect", name: "Architect" },
+        ],
+        currentModeId: "code",
+      },
+      models: {
+        availableModels: [
+          { modelId: "claude-3-sonnet", name: "Claude 3 Sonnet" },
+          { modelId: "claude-3-opus", name: "Claude 3 Opus" },
+        ],
+        currentModelId: "claude-3-sonnet",
+      },
+    };
+
+    this.sendResponse(id, response);
+  }
+
+  private async replayHistory(session: MockSession): Promise<void> {
+    for (const msg of session.messageHistory) {
+      if (msg.role === "user") {
+        this.sendSessionUpdate(session.id, {
+          sessionUpdate: "agent_message_chunk",
+          content: {
+            type: "text",
+            text: `[History Replay] User: ${msg.content}`,
+          },
+        });
+        await this.delay(50);
+      } else if (msg.role === "assistant") {
+        this.sendSessionUpdate(session.id, {
+          sessionUpdate: "agent_message_chunk",
+          content: {
+            type: "text",
+            text: `[History Replay] Assistant: ${msg.content}`,
+          },
+        });
+        await this.delay(50);
+      }
+    }
+  }
+
+  private handleListSessions(id: number): void {
+    const sessionsList = Array.from(this.sessions.values()).map((s) => ({
+      sessionId: s.id,
+      title: `Session ${s.id}`,
+      cwd: s.cwd,
+      updatedAt: new Date().toISOString(),
+    }));
+
+    this.sendResponse(id, {
+      sessions: sessionsList,
+      nextCursor: null,
+    });
+  }
+
   private handleCancel(id: number, params?: Record<string, unknown>): void {
     const sessionId = params?.sessionId as string | undefined;
     if (sessionId) {
@@ -346,9 +458,10 @@ export interface MockChildProcess extends EventEmitter {
 }
 
 export function createMockProcess(
-  demoMode: DemoMode = "default"
+  demoMode: DemoMode = "default",
+  enableLoadSession = true
 ): MockChildProcess {
-  const server = new MockACPServer(demoMode);
+  const server = new MockACPServer(demoMode, enableLoadSession);
   const mockProcess = new EventEmitter() as MockChildProcess;
 
   Object.defineProperty(mockProcess, "stdin", {

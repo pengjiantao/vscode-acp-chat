@@ -3,6 +3,7 @@ import { spawn } from "child_process";
 import { ACPClient } from "../acp/client";
 import { getAgent, getFirstAvailableAgent } from "../acp/agents";
 import { DiffManager } from "../acp/diff-manager";
+import { AgentSessionManager, type SessionInfo } from "../acp/session-manager";
 import type {
   SessionNotification,
   ReadTextFileRequest,
@@ -93,6 +94,7 @@ export class ChatViewProvider
   private hasSession = false;
   private globalState: vscode.Memento;
   private hasRestoredModeModel = false;
+  private sessionManager: AgentSessionManager;
   private terminals: Map<string, ManagedTerminal> = new Map();
   private toolCallStartTimes: Map<string, number> = new Map();
   private toolCallRawInputs: Map<string, any> = new Map();
@@ -118,6 +120,7 @@ export class ChatViewProvider
   ) {
     this.globalState = globalState;
     this.diffManager = new DiffManager();
+    this.sessionManager = new AgentSessionManager(acpClient);
 
     vscode.workspace.registerTextDocumentContentProvider(
       "acp-old-content",
@@ -402,6 +405,59 @@ export class ChatViewProvider
 
   public clearChat(): void {
     this.postMessage({ type: "triggerClearChat" });
+  }
+
+  /**
+   * List available history sessions for the current agent.
+   * Returns an empty array when the agent doesn't support `loadSession`.
+   */
+  public async listSessions(): Promise<SessionInfo[]> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const cwd = workspaceFolder?.uri.fsPath || process.cwd();
+    return this.sessionManager.listSessions(cwd);
+  }
+
+  /**
+   * Return whether the current agent supports `loadSession`.
+   */
+  public getSupportsLoadSession(): boolean {
+    return this.sessionManager.supportsLoadSession;
+  }
+
+  /**
+   * Load a history session. Clears current chat, then loads via ACP.
+   * The agent will stream the full conversation history back.
+   */
+  public async loadHistorySession(sessionId: string): Promise<void> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const cwd = workspaceFolder?.uri.fsPath || process.cwd();
+
+    // Clear the current UI
+    this.hasSession = false;
+    this.hasRestoredModeModel = false;
+    this.clearToolCallMetadata();
+    this.diffManager.clear();
+    this.postMessage({ type: "chatCleared" });
+    this.postMessage({ type: "sessionMetadata", modes: null, models: null });
+
+    try {
+      if (!this.acpClient.isConnected()) {
+        await this.acpClient.connect();
+      }
+      this.sessionManager.syncCapabilities();
+
+      await this.sessionManager.loadSession(sessionId, cwd);
+      this.hasSession = true;
+      this.sendSessionMetadata();
+    } catch (error) {
+      console.error("[Chat] Failed to load history session:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : JSON.stringify(error);
+      this.postMessage({
+        type: "error",
+        text: `Failed to load history: ${errorMessage}`,
+      });
+    }
   }
 
   public addSelection(selection: SelectionMention): void {
@@ -1145,6 +1201,7 @@ export class ChatViewProvider
       this.globalState.update(SELECTED_AGENT_KEY, agentId);
       this.hasSession = false;
       this.diffManager.clear();
+      this.sessionManager.syncCapabilities();
       this.postMessage({
         type: "agentChanged",
         agentId,
@@ -1188,6 +1245,7 @@ export class ChatViewProvider
       if (!this.acpClient.isConnected()) {
         await this.acpClient.connect();
       }
+      this.sessionManager.syncCapabilities();
       if (!this.hasSession) {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         const workingDir = workspaceFolder?.uri.fsPath || process.cwd();

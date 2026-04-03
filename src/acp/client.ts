@@ -27,6 +27,11 @@ import {
   type SessionModeState,
   type SessionModelState,
   type AvailableCommand,
+  type LoadSessionRequest,
+  type LoadSessionResponse,
+  type AgentCapabilities,
+  type ListSessionsRequest,
+  type ListSessionsResponse,
 } from "@agentclientprotocol/sdk";
 import {
   type AgentConfig,
@@ -96,6 +101,7 @@ export class ACPClient {
   private currentSessionId: string | null = null;
   private sessionMetadata: SessionMetadata | null = null;
   private pendingCommands: AvailableCommand[] | null = null;
+  private agentCapabilities: AgentCapabilities | null = null;
   private stateChangeListeners: Set<StateChangeCallback> = new Set();
   private sessionUpdateListeners: Set<SessionUpdateCallback> = new Set();
   private stderrListeners: Set<StderrCallback> = new Set();
@@ -374,11 +380,76 @@ export class ACPClient {
       });
 
       this.setState("connected");
+      this.agentCapabilities = initResponse.agentCapabilities ?? null;
       return initResponse;
     } catch (error) {
       this.setState("error");
       throw error;
     }
+  }
+
+  /**
+   * Return the agent capabilities as advertised during `initialize`.
+   * Returns `null` if not yet connected.
+   */
+  getAgentCapabilities(): AgentCapabilities | null {
+    return this.agentCapabilities;
+  }
+
+  /**
+   * Load an existing session via the ACP `session/load` method.
+   *
+   * The agent is expected to stream the full conversation history back
+   * as `session/notification` messages. The client's session update
+   * listeners will receive these notifications just like a live conversation.
+   *
+   * @throws If not connected or agent doesn't support `loadSession`.
+   */
+  async loadSession(params: {
+    sessionId: string;
+    cwd: string;
+  }): Promise<LoadSessionResponse> {
+    if (!this.connection) {
+      throw new Error("Not connected");
+    }
+
+    if (!this.agentCapabilities?.loadSession) {
+      throw new Error(
+        `Agent "${this.agentConfig.name}" does not support the "loadSession" capability`
+      );
+    }
+
+    const request: LoadSessionRequest = {
+      sessionId: params.sessionId,
+      cwd: params.cwd,
+      mcpServers: [],
+    };
+
+    const response = await this.connection.loadSession(request);
+    this.currentSessionId = params.sessionId;
+
+    return response;
+  }
+
+  /**
+   * List existing sessions via the ACP `session/list` method (unstable).
+   *
+   * @throws If not connected or agent doesn't support `listSessions`.
+   */
+  async listSessions(params?: {
+    cwd?: string;
+    cursor?: string;
+  }): Promise<ListSessionsResponse> {
+    if (!this.connection) {
+      throw new Error("Not connected");
+    }
+
+    const request: ListSessionsRequest = {
+      cwd: params?.cwd ?? null,
+      cursor: params?.cursor ?? null,
+    };
+
+    return this.connection.unstable_listSessions(request);
   }
 
   async handleRequestPermission(
@@ -500,10 +571,19 @@ export class ACPClient {
     }
 
     try {
+      // Replace __MENTION_N__ placeholders in the message with actual names
+      const cleanMessage = message.replace(
+        /__MENTION_(\d+)__/g,
+        (_match, idx: string) => {
+          const i = parseInt(idx, 10);
+          return mentions[i]?.name ?? _match;
+        }
+      );
+
       const prompt: Array<
         | { type: "text"; text: string }
         | { type: "image"; data: string; mimeType: string }
-      > = [{ type: "text", text: message }];
+      > = [{ type: "text", text: cleanMessage }];
 
       // Add images as image prompt items
       for (const base64 of images) {
@@ -585,6 +665,7 @@ export class ACPClient {
     this.currentSessionId = null;
     this.sessionMetadata = null;
     this.pendingCommands = null;
+    this.agentCapabilities = null;
     this.setState("disconnected");
   }
 

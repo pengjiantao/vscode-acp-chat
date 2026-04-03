@@ -1,0 +1,6 @@
+{
+  "permissions": {
+    "allow": ["WebSearch", "WebFetch(dev.to)"]
+  },
+  "$version": 3
+}

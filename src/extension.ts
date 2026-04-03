@@ -79,6 +79,49 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand("vscode-acp.loadHistory", async () => {
+      if (!chatProvider) return;
+
+      if (!chatProvider.getSupportsLoadSession()) {
+        vscode.window.showInformationMessage(
+          "The current agent does not support loading history sessions."
+        );
+        return;
+      }
+
+      try {
+        const sessions = await chatProvider.listSessions();
+
+        if (sessions.length === 0) {
+          vscode.window.showInformationMessage(
+            "No history sessions available for the current agent."
+          );
+          return;
+        }
+
+        const items = sessions.map((s) => ({
+          label: s.title,
+          description: s.sessionId,
+          detail: `${vscode.workspace.asRelativePath(s.cwd)} · ${new Date(s.updatedAt).toLocaleString()}`,
+          sessionId: s.sessionId,
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: "Select a conversation to load",
+          title: "VSCode ACP: Load History",
+        });
+
+        if (selected) {
+          await chatProvider.loadHistorySession(selected.sessionId);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        vscode.window.showErrorMessage(`Failed to load history: ${message}`);
+      }
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand("vscode-acp.selectAgent", async () => {
       const agents = getAgentsWithStatus();
       const availableAgents = agents.filter((a) => a.available);

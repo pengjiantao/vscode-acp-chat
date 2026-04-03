@@ -72,6 +72,12 @@
         "icon": "$(clear-all)"
       },
       {
+        "command": "vscode-acp.loadHistory",
+        "title": "Load History",
+        "category": "ACP",
+        "icon": "$(history)"
+      },
+      {
         "command": "vscode-acp.selectAgent",
         "title": "Select Agent",
         "category": "ACP",
@@ -150,6 +156,11 @@
           "command": "vscode-acp.clearChat",
           "when": "view == vscode-acp.chatView",
           "group": "navigation@2"
+        },
+        {
+          "command": "vscode-acp.loadHistory",
+          "when": "view == vscode-acp.chatView",
+          "group": "navigation@3"
         }
       ],
       "commandPalette": [
@@ -163,6 +174,10 @@
         },
         {
           "command": "vscode-acp.clearChat",
+          "when": "true"
+        },
+        {
+          "command": "vscode-acp.loadHistory",
           "when": "true"
         }
       ]
