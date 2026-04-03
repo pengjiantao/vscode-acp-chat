@@ -54,6 +54,13 @@ export interface Block {
 export interface WebviewState {
   isConnected: boolean;
   inputValue: string;
+  diffChanges?: Array<{
+    path: string;
+    relativePath: string;
+    oldText: string | null;
+    newText: string;
+    status: string;
+  }>;
 }
 
 export interface AvailableCommand {
@@ -150,6 +157,13 @@ export interface ExtensionMessage {
   duration?: number;
   images?: string[];
   mentions?: Mention[];
+  changes?: Array<{
+    path: string;
+    relativePath: string;
+    oldText: string | null;
+    newText: string;
+    status: string;
+  }>;
 }
 
 export interface Mention {
@@ -768,6 +782,7 @@ export interface WebviewElements {
   commandAutocomplete: HTMLElement;
   planContainer: HTMLElement;
   typingIndicatorEl: HTMLElement;
+  diffSummaryContainer: HTMLElement;
 }
 
 export function getElements(doc: Document): WebviewElements {
@@ -784,6 +799,7 @@ export function getElements(doc: Document): WebviewElements {
     commandAutocomplete: doc.getElementById("command-autocomplete")!,
     planContainer: doc.getElementById("agent-plan-container")!,
     typingIndicatorEl: doc.getElementById("typing-indicator")!,
+    diffSummaryContainer: doc.getElementById("diff-summary-container")!,
   };
 }
 
@@ -809,6 +825,14 @@ export class WebviewController {
   private modelDropdown: Dropdown;
   private isGenerating = false;
   private hoveredImageChip: HTMLElement | null = null;
+  private diffChanges: Array<{
+    path: string;
+    relativePath: string;
+    oldText: string | null;
+    newText: string;
+    status: string;
+  }> = [];
+  private diffSummaryExpanded = false;
 
   constructor(
     vscode: VsCodeApi,
@@ -1134,6 +1158,7 @@ export class WebviewController {
     this.vscode.setState<WebviewState>({
       isConnected: this.isConnected,
       inputValue: this.elements.inputEl.innerHTML || "",
+      diffChanges: this.diffChanges,
     });
   }
 
@@ -2046,6 +2071,138 @@ export class WebviewController {
     }
   }
 
+  private renderDiffSummary(): void {
+    const { diffSummaryContainer } = this.elements;
+    if (this.diffChanges.length === 0) {
+      diffSummaryContainer.style.display = "none";
+      diffSummaryContainer.innerHTML = "";
+      return;
+    }
+
+    diffSummaryContainer.style.display = "block";
+
+    // Calculate total stats
+    let totalAdded = 0;
+    let totalRemoved = 0;
+    this.diffChanges.forEach((change) => {
+      const diff = computeLineDiff(change.oldText, change.newText);
+      totalAdded += diff.filter((l) => l.type === "add").length;
+      totalRemoved += diff.filter((l) => l.type === "remove").length;
+    });
+
+    let html = `
+      <div class="diff-summary-header">
+        <div class="diff-summary-info">
+          <span class="icon icon-sync"></span>
+          <span class="diff-summary-title">${this.diffChanges.length} files modified</span>
+          <span class="diff-stat-added">+${totalAdded}</span>
+          <span class="diff-stat-removed">-${totalRemoved}</span>
+        </div>
+        <div class="diff-summary-actions">
+          <button class="diff-action-btn accept-all" title="Accept All">
+            <span class="icon icon-checkmark"></span>
+          </button>
+          <button class="diff-action-btn rollback-all" title="Rollback All">
+            <span class="icon icon-trash"></span>
+          </button>
+          <button class="diff-action-btn toggle-expand ${this.diffSummaryExpanded ? "expanded" : ""}" title="${this.diffSummaryExpanded ? "Collapse" : "Expand"}">
+            <span class="icon icon-chevron-down"></span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    if (this.diffSummaryExpanded) {
+      html += `<div class="diff-summary-list">`;
+      this.diffChanges.forEach((change) => {
+        const diff = computeLineDiff(change.oldText, change.newText);
+        const added = diff.filter((l) => l.type === "add").length;
+        const removed = diff.filter((l) => l.type === "remove").length;
+
+        html += `
+          <div class="diff-summary-item">
+            <div class="diff-item-info" title="${escapeHtml(change.path)}">
+              <span class="icon icon-document"></span>
+              <span class="diff-item-path">${escapeHtml(change.relativePath)}</span>
+              <span class="diff-stat-added">+${added}</span>
+              <span class="diff-stat-removed">-${removed}</span>
+            </div>
+            <div class="diff-item-actions">
+              <button class="diff-item-btn review" data-path="${escapeHtml(change.path)}" title="Review">
+                <span class="icon icon-search"></span>
+              </button>
+              <button class="diff-item-btn accept" data-path="${escapeHtml(change.path)}" title="Accept">
+                <span class="icon icon-checkmark"></span>
+              </button>
+              <button class="diff-item-btn rollback" data-path="${escapeHtml(change.path)}" title="Rollback">
+                <span class="icon icon-trash"></span>
+              </button>
+            </div>
+          </div>
+        `;
+      });
+      html += `</div>`;
+    }
+
+    diffSummaryContainer.innerHTML = html;
+
+    // Add event listeners
+    const toggleBtn = diffSummaryContainer.querySelector(".toggle-expand");
+    toggleBtn?.addEventListener("click", () => {
+      this.diffSummaryExpanded = !this.diffSummaryExpanded;
+      this.renderDiffSummary();
+    });
+
+    const acceptAllBtn = diffSummaryContainer.querySelector(".accept-all");
+    acceptAllBtn?.addEventListener("click", () => {
+      this.vscode.postMessage({ type: "acceptAllDiffs" });
+      this.diffChanges = [];
+      this.renderDiffSummary();
+      this.saveState();
+    });
+
+    const rollbackAllBtn = diffSummaryContainer.querySelector(".rollback-all");
+    rollbackAllBtn?.addEventListener("click", () => {
+      this.vscode.postMessage({ type: "rollbackAllDiffs" });
+      this.diffChanges = [];
+      this.renderDiffSummary();
+      this.saveState();
+    });
+
+    diffSummaryContainer
+      .querySelectorAll(".diff-item-btn.review")
+      .forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const path = (btn as HTMLElement).dataset.path;
+          this.vscode.postMessage({ type: "reviewDiff", path });
+        });
+      });
+
+    diffSummaryContainer
+      .querySelectorAll(".diff-item-btn.accept")
+      .forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const path = (btn as HTMLElement).dataset.path;
+          this.vscode.postMessage({ type: "acceptDiff", path });
+          this.diffChanges = this.diffChanges.filter((c) => c.path !== path);
+          this.renderDiffSummary();
+          this.saveState();
+        });
+      });
+
+    diffSummaryContainer
+      .querySelectorAll(".diff-item-btn.rollback")
+      .forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const path = (btn as HTMLElement).dataset.path;
+          this.vscode.postMessage({ type: "rollbackDiff", path });
+          this.diffChanges = this.diffChanges.filter((c) => c.path !== path);
+          this.renderDiffSummary();
+          this.saveState();
+        });
+      });
+  }
+
   handleMessage(msg: ExtensionMessage): void {
     console.log("[Webview] Message received:", msg.type, msg);
     switch (msg.type) {
@@ -2191,6 +2348,8 @@ export class WebviewController {
         if (msg.agentName) {
           this.updatePlaceholder(msg.agentName);
         }
+        this.diffChanges = [];
+        this.renderDiffSummary();
       // fallthrough
       case "chatCleared":
         this.elements.messagesEl.innerHTML = "";
@@ -2200,6 +2359,8 @@ export class WebviewController {
         this.messageTexts.clear();
         this.hideAutocomplete();
         this.hidePlan();
+        this.diffChanges = [];
+        this.renderDiffSummary();
         this.updateViewState();
         break;
       case "triggerNewChat":
@@ -2266,6 +2427,13 @@ export class WebviewController {
         break;
       case "planComplete":
         this.hidePlan();
+        break;
+      case "diffSummary":
+        if (msg.changes) {
+          this.diffChanges = msg.changes;
+          this.renderDiffSummary();
+          this.saveState();
+        }
         break;
       case "permissionRequest":
         if (msg.requestId && msg.toolCall && msg.options) {

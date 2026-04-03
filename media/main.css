@@ -1849,3 +1849,121 @@ kbd {
   font-family: var(--vscode-terminal-font-family);
   font-size: 11px;
 }
+
+/* Diff Summary Area */
+.diff-summary-container {
+  background-color: var(--vscode-sideBar-background);
+  border-top: 1px solid var(--vscode-panel-border);
+  padding: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  display: none;
+  animation: slide-up 0.2s ease-out;
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.diff-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.diff-summary-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+}
+
+.diff-summary-title {
+  color: var(--vscode-foreground);
+}
+
+.diff-stat-added {
+  color: var(--vscode-gitDecoration-addedResourceForeground);
+}
+
+.diff-stat-removed {
+  color: var(--vscode-gitDecoration-deletedResourceForeground);
+}
+
+.diff-summary-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.diff-action-btn,
+.diff-item-btn {
+  background: none;
+  border: none;
+  color: var(--vscode-icon-foreground);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.diff-action-btn:hover,
+.diff-item-btn:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.diff-action-btn.toggle-expand span {
+  transition: transform 0.2s;
+}
+
+.diff-action-btn.toggle-expand.expanded span {
+  transform: rotate(180deg);
+}
+
+.diff-summary-list {
+  margin-top: 8px;
+  border-top: 1px solid var(--vscode-panel-border);
+  padding-top: 4px;
+}
+
+.diff-summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 11px;
+}
+
+.diff-item-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.diff-item-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-item-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.diff-item-btn {
+  padding: 2px;
+}

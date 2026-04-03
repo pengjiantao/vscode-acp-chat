@@ -110,6 +110,16 @@
         }
       ]
     },
+    "configuration": {
+      "title": "ACP",
+      "properties": {
+        "vscode-acp.enableDiffSummary": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the collective diff summary for file modifications."
+        }
+      }
+    },
     "menus": {
       "editor/context": [
         {

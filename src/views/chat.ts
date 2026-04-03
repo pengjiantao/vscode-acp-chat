@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { spawn } from "child_process";
 import { ACPClient } from "../acp/client";
 import { getAgent, getFirstAvailableAgent } from "../acp/agents";
+import { DiffManager } from "../acp/diff-manager";
 import type {
   SessionNotification,
   ReadTextFileRequest,
@@ -39,7 +40,12 @@ interface WebviewMessage {
     | "searchFiles"
     | "openFile"
     | "permissionResponse"
-    | "stop";
+    | "stop"
+    | "reviewDiff"
+    | "acceptDiff"
+    | "rollbackDiff"
+    | "acceptAllDiffs"
+    | "rollbackAllDiffs";
   text?: string;
   modeId?: string;
   modelId?: string;
@@ -78,7 +84,9 @@ interface ManagedTerminal {
   exitResolve: () => void;
 }
 
-export class ChatViewProvider implements vscode.WebviewViewProvider {
+export class ChatViewProvider
+  implements vscode.WebviewViewProvider, vscode.TextDocumentContentProvider
+{
   public static readonly viewType = "vscode-acp.chatView";
 
   private view?: vscode.WebviewView;
@@ -96,6 +104,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private terminalCounter = 0;
   private textDecoder = new TextDecoder();
   private textEncoder = new TextEncoder();
+  private diffManager: DiffManager;
   private permissionQueue: Array<{
     id: string;
     params: RequestPermissionRequest;
@@ -108,6 +117,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     globalState: vscode.Memento
   ) {
     this.globalState = globalState;
+    this.diffManager = new DiffManager();
+
+    vscode.workspace.registerTextDocumentContentProvider(
+      "acp-old-content",
+      this
+    );
 
     const savedAgentId = this.globalState.get<string>(SELECTED_AGENT_KEY);
     if (savedAgentId) {
@@ -189,6 +204,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.acpClient.setOnPermissionRequest(
       this.handlePermissionRequest.bind(this)
     );
+
+    this.diffManager.onDidChange((changes) => {
+      const config = vscode.workspace.getConfiguration("vscode-acp");
+      const enabled = config.get<boolean>("enableDiffSummary", true);
+      if (enabled) {
+        this.postMessage({
+          type: "diffSummary",
+          changes: changes.map((c) => ({
+            path: c.path,
+            relativePath: vscode.workspace.asRelativePath(c.path),
+            oldText: c.oldText,
+            newText: c.newText,
+            status: c.status,
+          })),
+        });
+      }
+    });
+  }
+
+  public provideTextDocumentContent(uri: vscode.Uri): string {
+    const path = uri.path;
+    const changes = this.diffManager.getPendingChanges();
+    const change = changes.find((c) => c.path === path);
+    return change?.oldText || "";
   }
 
   resolveWebviewView(
@@ -293,6 +332,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
           }
           break;
+        case "reviewDiff":
+          if (message.path) {
+            await this.handleReviewDiff(message.path);
+          }
+          break;
+        case "acceptDiff":
+          if (message.path) {
+            this.diffManager.accept(message.path);
+          }
+          break;
+        case "rollbackDiff":
+          if (message.path) {
+            await this.diffManager.rollback(message.path);
+          }
+          break;
+        case "acceptAllDiffs":
+          this.diffManager.acceptAll();
+          break;
+        case "rollbackAllDiffs":
+          await this.diffManager.rollbackAll();
+          break;
         case "ready":
           this.postMessage({
             type: "connectionState",
@@ -307,6 +367,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           break;
       }
     });
+  }
+
+  private async handleReviewDiff(path: string): Promise<void> {
+    const changes = this.diffManager.getPendingChanges();
+    const change = changes.find((c) => c.path === path);
+    if (change) {
+      const uri = vscode.Uri.file(path);
+      if (change.oldText === null) {
+        // New file
+        await vscode.window.showTextDocument(uri);
+      } else {
+        // Modified file - open diff view
+        // VS Code doesn't have a direct "diff with string" command that's easy to use here
+        // without writing to a temp file.
+        // Actually, we can use a custom FileSystemProvider or just use the current disk state.
+        // Since we already modified the disk, we need the OLD content to show a diff.
+
+        // Strategy: use a custom TextDocumentContentProvider for the old content
+
+        await vscode.commands.executeCommand(
+          "vscode.diff",
+          vscode.Uri.parse(`acp-old-content:${path}`),
+          uri,
+          `Diff: ${vscode.workspace.asRelativePath(path)} (Original ↔ Modified)`
+        );
+      }
+    }
   }
 
   public newChat(): void {
@@ -400,10 +487,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       const uri = vscode.Uri.file(params.path);
 
+      let oldContent: string | null = null;
       // Capture old content for diffing in webview (fallback for missing tool_call_update)
       try {
         const fileContent = await vscode.workspace.fs.readFile(uri);
-        const oldContent = this.textDecoder.decode(fileContent);
+        oldContent = this.textDecoder.decode(fileContent);
         this.lastFileContents.set(params.path, oldContent);
       } catch {
         // Use null to indicate a new file (vs undefined which means not yet captured)
@@ -412,6 +500,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
       const content = this.textEncoder.encode(params.content);
       await vscode.workspace.fs.writeFile(uri, content);
+
+      // Record change in diffManager
+      this.diffManager.recordChange(params.path, oldContent, params.content);
+
       return {};
     } catch (error) {
       console.error("[Chat] Failed to write file:", error);
@@ -1049,6 +1141,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.acpClient.setAgent(agent);
       this.globalState.update(SELECTED_AGENT_KEY, agentId);
       this.hasSession = false;
+      this.diffManager.clear();
       this.postMessage({
         type: "agentChanged",
         agentId,
@@ -1111,6 +1204,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.hasSession = false;
     this.hasRestoredModeModel = false;
     this.clearToolCallMetadata();
+    this.diffManager.clear();
     this.postMessage({ type: "chatCleared" });
     this.postMessage({ type: "sessionMetadata", modes: null, models: null });
 
@@ -1238,6 +1332,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       <div></div><div></div><div></div><div></div>
     </div>
   </div>
+
+  <div id="diff-summary-container" class="diff-summary-container"></div>
 
   <div id="chat-input-area">
     <div id="input-container">

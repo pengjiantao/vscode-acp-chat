@@ -61,6 +61,8 @@ function createWebviewHTML(): string {
     </div>
   </div>
 
+  <div id="diff-summary-container"></div>
+
   <div id="chat-input-area">
     <div id="input-container">
       <div id="command-autocomplete" role="listbox"></div>
@@ -96,6 +98,25 @@ function createWebviewHTML(): string {
 }
 
 suite("Webview", () => {
+  function setupController() {
+    const dom = new JSDOM(createWebviewHTML(), {
+      runScripts: "dangerously",
+      url: "https://localhost",
+    });
+    const doc = dom.window.document;
+    const window = dom.window;
+    const mockVsCode = createMockVsCodeApi();
+    const elements = getElements(doc);
+    (global as any).Node = window.Node;
+    const controller = new WebviewController(
+      mockVsCode,
+      elements,
+      doc,
+      window as unknown as Window
+    );
+    return { controller, elements, doc, window, mockVsCode };
+  }
+
   suite("escapeHtml", () => {
     test("escapes ampersands", () => {
       assert.strictEqual(escapeHtml("foo & bar"), "foo &amp; bar");
@@ -1316,6 +1337,71 @@ suite("Webview", () => {
       };
       const html = getToolsHtml(tools);
       assert.ok(html.includes('title="edit"'));
+    });
+  });
+
+  suite("diffSummary", () => {
+    test("renders diff summary when changes are present", () => {
+      const { controller, elements } = setupController();
+      const changes = [
+        {
+          path: "/test/file1.ts",
+          relativePath: "file1.ts",
+          oldText: "line1\n",
+          newText: "line1\nline2\n",
+          status: "pending",
+        },
+      ];
+
+      controller.handleMessage({
+        type: "diffSummary",
+        changes,
+      } as any);
+
+      assert.strictEqual(elements.diffSummaryContainer.style.display, "block");
+      assert.ok(
+        elements.diffSummaryContainer.innerHTML.includes("1 files modified")
+      );
+      assert.ok(elements.diffSummaryContainer.innerHTML.includes("+1"));
+      assert.ok(elements.diffSummaryContainer.innerHTML.includes("-0"));
+    });
+
+    test("hides diff summary when no changes", () => {
+      const { controller, elements } = setupController();
+      controller.handleMessage({
+        type: "diffSummary",
+        changes: [],
+      } as any);
+
+      assert.strictEqual(elements.diffSummaryContainer.style.display, "none");
+    });
+
+    test("expands diff summary when toggle button is clicked", () => {
+      const { controller, elements } = setupController();
+      const changes = [
+        {
+          path: "/test/file1.ts",
+          relativePath: "file1.ts",
+          oldText: "old",
+          newText: "new",
+          status: "pending",
+        },
+      ];
+
+      controller.handleMessage({
+        type: "diffSummary",
+        changes,
+      } as any);
+
+      const toggleBtn = elements.diffSummaryContainer.querySelector(
+        ".toggle-expand"
+      ) as HTMLButtonElement;
+      toggleBtn.click();
+
+      assert.ok(
+        elements.diffSummaryContainer.innerHTML.includes("diff-summary-list")
+      );
+      assert.ok(elements.diffSummaryContainer.innerHTML.includes("file1.ts"));
     });
   });
 
