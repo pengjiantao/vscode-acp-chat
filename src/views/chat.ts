@@ -59,7 +59,7 @@ interface WebviewMessage {
   mentions?: Array<{
     name: string;
     path?: string;
-    type?: "file" | "selection" | "terminal" | "image";
+    type?: "file" | "folder" | "selection" | "terminal" | "image";
     content?: string;
     range?: { startLine: number; endLine: number };
     dataUrl?: string;
@@ -1176,7 +1176,7 @@ export class ChatViewProvider
   private extractMentionsFromContent(content: any): Array<{
     name: string;
     path?: string;
-    type?: "file" | "selection" | "terminal" | "image";
+    type?: "file" | "folder" | "selection" | "terminal" | "image";
     content?: string;
     range?: { startLine: number; endLine: number };
     dataUrl?: string;
@@ -1250,7 +1250,7 @@ export class ChatViewProvider
     mentions: Array<{
       name: string;
       path?: string;
-      type?: "file" | "selection" | "terminal" | "image";
+      type?: "file" | "folder" | "selection" | "terminal" | "image";
       content?: string;
       range?: { startLine: number; endLine: number };
       dataUrl?: string;

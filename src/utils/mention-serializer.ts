@@ -45,7 +45,7 @@
 export interface Mention {
   name: string;
   path?: string;
-  type?: "file" | "selection" | "terminal" | "image";
+  type?: "file" | "folder" | "selection" | "terminal" | "image";
   content?: string;
   range?: { startLine: number; endLine: number };
   dataUrl?: string;
@@ -198,7 +198,9 @@ export function serializeMentionsWithContext(
     return { cleanText, contextText: "" };
   }
 
-  const fileMentions = mentions.filter((m) => !m.type || m.type === "file");
+  const fileMentions = mentions.filter(
+    (m) => !m.type || m.type === "file" || m.type === "folder"
+  );
   const selectionMentions = mentions.filter((m) => m.type === "selection");
   const terminalMentions = mentions.filter((m) => m.type === "terminal");
   const imageMentions = mentions.filter((m) => m.type === "image");
