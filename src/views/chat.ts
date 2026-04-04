@@ -1476,13 +1476,23 @@ export class ChatViewProvider
     const logoUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, "assets", "icon.svg")
     );
+    const codiconsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this.extensionUri,
+        "node_modules",
+        "@vscode/codicons",
+        "dist",
+        "codicon.css"
+      )
+    );
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource}; img-src ${webview.cspSource} data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource}; img-src ${webview.cspSource} data:; font-src ${webview.cspSource};">
+  <link href="${codiconsUri}" rel="stylesheet">
   <link href="${styleResetUri}" rel="stylesheet">
   <link href="${styleVSCodeUri}" rel="stylesheet">
   <link href="${styleMainUri}" rel="stylesheet">
@@ -1527,24 +1537,24 @@ export class ChatViewProvider
     <div id="options-bar" role="toolbar" aria-label="Session options">
       <div id="left-options">
         <button id="attach-image" class="icon-button" aria-label="Attach image" title="Attach image">
-          <span class="dropdown-icon icon-image"></span>
+          <span class="dropdown-icon codicon codicon-image"></span>
         </button>
         <div class="custom-dropdown" id="mode-dropdown" style="display: none;">
           <div class="dropdown-trigger">
-            <span class="dropdown-icon icon-sparkle"></span>
+            <span class="dropdown-icon codicon codicon-sparkle"></span>
             <span class="selected-label">Mode</span>
             <span class="dropdown-chevron">
-              <span class="icon-chevron-down" style="width: 10px; height: 10px; display: block;"></span>
+              <span class="codicon codicon-chevron-down" style="width: 10px; height: 10px; display: block;"></span>
             </span>
           </div>
           <div class="dropdown-popover"></div>
         </div>
         <div class="custom-dropdown" id="model-dropdown" style="display: none;">
           <div class="dropdown-trigger">
-            <span class="dropdown-icon icon-robot"></span>
+            <span class="dropdown-icon codicon codicon-bot"></span>
             <span class="selected-label">Model</span>
             <span class="dropdown-chevron">
-              <span class="icon-chevron-down" style="width: 10px; height: 10px; display: block;"></span>
+              <span class="codicon codicon-chevron-down" style="width: 10px; height: 10px; display: block;"></span>
             </span>
           </div>
           <div class="dropdown-popover"></div>
@@ -1552,10 +1562,10 @@ export class ChatViewProvider
       </div>
       <div id="right-options">
         <button id="send" class="icon-button" aria-label="Send message" title="Send (Enter)" disabled>
-          <span class="dropdown-icon icon-send"></span>
+          <span class="dropdown-icon codicon codicon-send"></span>
         </button>
         <button id="stop" class="icon-button" aria-label="Stop generation" title="Stop" style="display: none;">
-          <span class="dropdown-icon icon-stop"></span>
+          <span class="dropdown-icon codicon codicon-debug-stop"></span>
         </button>
       </div>
     </div>

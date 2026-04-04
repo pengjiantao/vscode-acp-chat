@@ -179,13 +179,13 @@ const BaseRenderer: ToolRenderer = {
   renderSummary(info: ToolCallSummary): string {
     const { kind, duration, status } = info;
     const iconClass = getToolKindIcon(kind);
-    const icon = iconClass ? `<span class="icon ${iconClass}"></span>` : "";
+    const icon = iconClass ? `<span class="${iconClass}"></span>` : "";
     const statusIcon =
       status === "failed"
-        ? '<span class="icon icon-dismiss"></span>'
+        ? '<span class="codicon codicon-close"></span>'
         : status === "in_progress"
-          ? '<span class="icon icon-sparkle animate-spin"></span>'
-          : '<span class="icon icon-checkmark"></span>';
+          ? '<span class="codicon codicon-loading animate-spin"></span>'
+          : '<span class="codicon codicon-check"></span>';
     const statusClass =
       status === "failed"
         ? "failed"
@@ -342,16 +342,16 @@ const Renderers: Partial<Record<ToolKind, ToolRenderer>> = {
       const path = getIdentifier(info);
       const statusIcon =
         info.status === "failed"
-          ? '<span class="icon icon-dismiss"></span>'
+          ? '<span class="codicon codicon-close"></span>'
           : info.status === "in_progress"
-            ? '<span class="icon icon-sparkle animate-spin"></span>'
-            : '<span class="icon icon-checkmark"></span>';
+            ? '<span class="codicon codicon-loading animate-spin"></span>'
+            : '<span class="codicon codicon-check"></span>';
       const durationStr = info.duration
         ? ` | ${formatDuration(info.duration)}`
         : "";
       return `
         <span class="tool-status ${info.status === "failed" ? "failed" : info.status === "in_progress" ? "running" : "completed"}">${statusIcon}</span>
-        <span class="tool-kind-icon"><span class="icon icon-edit"></span></span>
+        <span class="tool-kind-icon"><span class="codicon codicon-edit"></span></span>
         <span class="tool-name"><strong>Edit:</strong> ${escapeHtml(path)}${durationStr}</span>
       `;
     },
@@ -364,16 +364,16 @@ const Renderers: Partial<Record<ToolKind, ToolRenderer>> = {
       const suffix = limit ? ` (${limit} lines)` : "";
       const statusIcon =
         info.status === "failed"
-          ? '<span class="icon icon-dismiss"></span>'
+          ? '<span class="codicon codicon-close"></span>'
           : info.status === "in_progress"
-            ? '<span class="icon icon-sparkle animate-spin"></span>'
-            : '<span class="icon icon-checkmark"></span>';
+            ? '<span class="codicon codicon-loading animate-spin"></span>'
+            : '<span class="codicon codicon-check"></span>';
       const durationStr = info.duration
         ? ` | ${formatDuration(info.duration)}`
         : "";
       return `
         <span class="tool-status ${info.status === "failed" ? "failed" : info.status === "in_progress" ? "running" : "completed"}">${statusIcon}</span>
-        <span class="tool-kind-icon"><span class="icon icon-document"></span></span>
+        <span class="tool-kind-icon"><span class="codicon codicon-document"></span></span>
         <span class="tool-name"><strong>Read:</strong> ${escapeHtml(path)}${suffix}${durationStr}</span>
       `;
     },
@@ -384,16 +384,16 @@ const Renderers: Partial<Record<ToolKind, ToolRenderer>> = {
       const query = getIdentifier(info);
       const statusIcon =
         info.status === "failed"
-          ? '<span class="icon icon-dismiss"></span>'
+          ? '<span class="codicon codicon-close"></span>'
           : info.status === "in_progress"
-            ? '<span class="icon icon-sparkle animate-spin"></span>'
-            : '<span class="icon icon-checkmark"></span>';
+            ? '<span class="codicon codicon-loading animate-spin"></span>'
+            : '<span class="codicon codicon-check"></span>';
       const durationStr = info.duration
         ? ` | ${formatDuration(info.duration)}`
         : "";
       return `
         <span class="tool-status ${info.status === "failed" ? "failed" : info.status === "in_progress" ? "running" : "completed"}">${statusIcon}</span>
-        <span class="tool-kind-icon"><span class="icon icon-search"></span></span>
+        <span class="tool-kind-icon"><span class="codicon codicon-search"></span></span>
         <span class="tool-name"><strong>Search:</strong> "${escapeHtml(query)}"${durationStr}</span>
       `;
     },

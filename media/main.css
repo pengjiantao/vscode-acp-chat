@@ -368,108 +368,108 @@ body {
 }
 
 .tool-output.terminal {
-  background: var(--vscode-terminal-background, #1e1e1e);
-  color: var(--vscode-terminal-foreground, #cccccc);
+  background: var(--vscode-terminal-background);
+  color: var(--vscode-terminal-foreground);
 }
 
 .ansi-black {
-  color: var(--vscode-terminal-ansiBlack, #000000);
+  color: var(--vscode-terminal-ansiBlack);
 }
 .ansi-red {
-  color: var(--vscode-terminal-ansiRed, #cd3131);
+  color: var(--vscode-terminal-ansiRed);
 }
 .ansi-green {
-  color: var(--vscode-terminal-ansiGreen, #0dbc79);
+  color: var(--vscode-terminal-ansiGreen);
 }
 .ansi-yellow {
-  color: var(--vscode-terminal-ansiYellow, #e5e510);
+  color: var(--vscode-terminal-ansiYellow);
 }
 .ansi-blue {
-  color: var(--vscode-terminal-ansiBlue, #2472c8);
+  color: var(--vscode-terminal-ansiBlue);
 }
 .ansi-magenta {
-  color: var(--vscode-terminal-ansiMagenta, #bc3fbc);
+  color: var(--vscode-terminal-ansiMagenta);
 }
 .ansi-cyan {
-  color: var(--vscode-terminal-ansiCyan, #11a8cd);
+  color: var(--vscode-terminal-ansiCyan);
 }
 .ansi-white {
-  color: var(--vscode-terminal-ansiWhite, #e5e5e5);
+  color: var(--vscode-terminal-ansiWhite);
 }
 
 .ansi-bright-black {
-  color: var(--vscode-terminal-ansiBrightBlack, #666666);
+  color: var(--vscode-terminal-ansiBrightBlack);
 }
 .ansi-bright-red {
-  color: var(--vscode-terminal-ansiBrightRed, #f14c4c);
+  color: var(--vscode-terminal-ansiBrightRed);
 }
 .ansi-bright-green {
-  color: var(--vscode-terminal-ansiBrightGreen, #23d18b);
+  color: var(--vscode-terminal-ansiBrightGreen);
 }
 .ansi-bright-yellow {
-  color: var(--vscode-terminal-ansiBrightYellow, #f5f543);
+  color: var(--vscode-terminal-ansiBrightYellow);
 }
 .ansi-bright-blue {
-  color: var(--vscode-terminal-ansiBrightBlue, #3b8eea);
+  color: var(--vscode-terminal-ansiBrightBlue);
 }
 .ansi-bright-magenta {
-  color: var(--vscode-terminal-ansiBrightMagenta, #d670d6);
+  color: var(--vscode-terminal-ansiBrightMagenta);
 }
 .ansi-bright-cyan {
-  color: var(--vscode-terminal-ansiBrightCyan, #29b8db);
+  color: var(--vscode-terminal-ansiBrightCyan);
 }
 .ansi-bright-white {
-  color: var(--vscode-terminal-ansiBrightWhite, #ffffff);
+  color: var(--vscode-terminal-ansiBrightWhite);
 }
 
 .ansi-bg-black {
-  background-color: var(--vscode-terminal-ansiBlack, #000000);
+  background-color: var(--vscode-terminal-ansiBlack);
 }
 .ansi-bg-red {
-  background-color: var(--vscode-terminal-ansiRed, #cd3131);
+  background-color: var(--vscode-terminal-ansiRed);
 }
 .ansi-bg-green {
-  background-color: var(--vscode-terminal-ansiGreen, #0dbc79);
+  background-color: var(--vscode-terminal-ansiGreen);
 }
 .ansi-bg-yellow {
-  background-color: var(--vscode-terminal-ansiYellow, #e5e510);
+  background-color: var(--vscode-terminal-ansiYellow);
 }
 .ansi-bg-blue {
-  background-color: var(--vscode-terminal-ansiBlue, #2472c8);
+  background-color: var(--vscode-terminal-ansiBlue);
 }
 .ansi-bg-magenta {
-  background-color: var(--vscode-terminal-ansiMagenta, #bc3fbc);
+  background-color: var(--vscode-terminal-ansiMagenta);
 }
 .ansi-bg-cyan {
-  background-color: var(--vscode-terminal-ansiCyan, #11a8cd);
+  background-color: var(--vscode-terminal-ansiCyan);
 }
 .ansi-bg-white {
-  background-color: var(--vscode-terminal-ansiWhite, #e5e5e5);
+  background-color: var(--vscode-terminal-ansiWhite);
 }
 
 .ansi-bg-bright-black {
-  background-color: var(--vscode-terminal-ansiBrightBlack, #666666);
+  background-color: var(--vscode-terminal-ansiBrightBlack);
 }
 .ansi-bg-bright-red {
-  background-color: var(--vscode-terminal-ansiBrightRed, #f14c4c);
+  background-color: var(--vscode-terminal-ansiBrightRed);
 }
 .ansi-bg-bright-green {
-  background-color: var(--vscode-terminal-ansiBrightGreen, #23d18b);
+  background-color: var(--vscode-terminal-ansiBrightGreen);
 }
 .ansi-bg-bright-yellow {
-  background-color: var(--vscode-terminal-ansiBrightYellow, #f5f543);
+  background-color: var(--vscode-terminal-ansiBrightYellow);
 }
 .ansi-bg-bright-blue {
-  background-color: var(--vscode-terminal-ansiBrightBlue, #3b8eea);
+  background-color: var(--vscode-terminal-ansiBrightBlue);
 }
 .ansi-bg-bright-magenta {
-  background-color: var(--vscode-terminal-ansiBrightMagenta, #d670d6);
+  background-color: var(--vscode-terminal-ansiBrightMagenta);
 }
 .ansi-bg-bright-cyan {
-  background-color: var(--vscode-terminal-ansiBrightCyan, #29b8db);
+  background-color: var(--vscode-terminal-ansiBrightCyan);
 }
 .ansi-bg-bright-white {
-  background-color: var(--vscode-terminal-ansiBrightWhite, #ffffff);
+  background-color: var(--vscode-terminal-ansiBrightWhite);
 }
 
 .ansi-bold {
@@ -873,29 +873,157 @@ body {
   opacity: 1;
 }
 
-/* Icon types */
-.command-icon.icon-slash {
-  color: var(--vscode-textLink-foreground);
+/* Codicon base styling - ensure icons display correctly */
+.codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  vertical-align: middle;
 }
 
-.command-icon.icon-file {
-  color: var(--vscode-icon-foreground);
+/* Tool and status icon codicon styling */
+.tool-status .codicon,
+.tool-kind-icon .codicon {
+  font-size: 14px;
 }
 
-.command-icon.icon-folder {
+/* Folder icon color */
+.command-icon.codicon-folder,
+.codicon-folder {
   color: var(--vscode-charts-blue);
 }
 
-.command-icon.icon-image {
+/* Image icon color */
+.command-icon.codicon-image,
+.command-icon.codicon-file-media,
+.codicon-image,
+.codicon-file-media {
   color: var(--vscode-charts-purple);
 }
 
-.command-icon.icon-terminal {
+/* Terminal icon color */
+.command-icon.codicon-terminal,
+.codicon-terminal {
   color: var(--vscode-terminal-foreground);
 }
 
-.command-icon.icon-selection {
-  color: var(--vscode-editor-selectionBackground);
+/* Markdown icon color */
+.command-icon.codicon-markdown,
+.codicon-markdown {
+  color: var(--vscode-textLink-foreground);
+}
+
+/* JSON icon color */
+.command-icon.codicon-json,
+.codicon-json {
+  color: var(--vscode-editor-foreground);
+}
+
+/* File code icon - use default foreground */
+.command-icon.codicon-file-code,
+.codicon-file-code {
+  color: var(--vscode-editor-foreground);
+}
+
+/* Generic file icon */
+.command-icon.codicon-file,
+.codicon-file {
+  color: var(--vscode-icon-foreground);
+}
+
+/* Command/symbol misc icon */
+.command-icon.codicon-symbol-misc,
+.codicon-symbol-misc {
+  color: var(--vscode-textLink-foreground);
+}
+
+/* Check icon */
+.codicon-check,
+.icon-checkmark {
+  color: var(--vscode-testing-iconPassed);
+}
+
+/* Close/dismiss icon */
+.codicon-close,
+.icon-dismiss {
+  color: var(--vscode-errorForeground);
+}
+
+/* Loading spinner icon */
+.codicon-loading {
+  color: var(--vscode-editor-foreground);
+}
+
+/* Lightbulb icon (for AI thought) */
+.codicon-lightbulb {
+  color: var(--vscode-editorLightBulbAi-foreground);
+}
+
+/* Document icon */
+.codicon-document {
+  color: var(--vscode-icon-foreground);
+}
+
+/* Search icon */
+.codicon-search {
+  color: var(--vscode-icon-foreground);
+}
+
+/* Trash icon */
+.codicon-trash {
+  color: var(--vscode-errorForeground);
+}
+
+/* Edit icon */
+.codicon-edit {
+  color: var(--vscode-textLink-foreground);
+}
+
+/* Sync icon */
+.codicon-sync,
+.codicon-references {
+  color: var(--vscode-icon-foreground);
+}
+
+/* Globe icon */
+.codicon-globe {
+  color: var(--vscode-icon-foreground);
+}
+
+/* Gear icon */
+.codicon-gear {
+  color: var(--vscode-icon-foreground);
+}
+
+/* Bot/robot icon */
+.codicon-bot {
+  color: var(--vscode-icon-foreground);
+}
+
+/* Send icon */
+.codicon-send {
+  color: var(--vscode-textLink-foreground);
+}
+
+/* Debug stop icon */
+.codicon-debug-stop {
+  color: var(--vscode-errorForeground);
+}
+
+/* Chevron down icon */
+.codicon-chevron-down {
+  color: var(--vscode-foreground);
+}
+
+/* Circle outline icon */
+.codicon-circle-outline {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Lock icon (permission) */
+.codicon-lock {
+  color: var(--vscode-editorWarning-foreground);
 }
 
 /* Item content */

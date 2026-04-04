@@ -174,7 +174,9 @@ suite("Webview", () => {
       };
       const html = getToolsHtml(tools);
       assert.ok(
-        html.includes('<span class="icon icon-sparkle animate-spin"></span>')
+        html.includes(
+          '<span class="codicon codicon-loading animate-spin"></span>'
+        )
       );
       assert.ok(html.includes("bash"));
       assert.ok(html.includes("running"));
@@ -191,7 +193,7 @@ suite("Webview", () => {
         },
       };
       const html = getToolsHtml(tools);
-      assert.ok(html.includes('<span class="icon icon-checkmark"></span>'));
+      assert.ok(html.includes('<span class="codicon codicon-check"></span>'));
       assert.ok(html.includes("read_file"));
     });
 
@@ -206,7 +208,7 @@ suite("Webview", () => {
         },
       };
       const html = getToolsHtml(tools);
-      assert.ok(html.includes('<span class="icon icon-dismiss"></span>'));
+      assert.ok(html.includes('<span class="codicon codicon-close"></span>'));
     });
 
     test("escapes tool name to prevent XSS", () => {
@@ -473,7 +475,7 @@ suite("Webview", () => {
           "Chip name should match"
         );
         assert.ok(
-          mentionChip.querySelector(".icon-image"),
+          mentionChip.querySelector(".codicon-image"),
           "Image icon should exist"
         );
       });
@@ -1332,43 +1334,49 @@ suite("Webview", () => {
 
   suite("getToolKindIcon", () => {
     test("returns read icon for read kind", () => {
-      assert.strictEqual(getToolKindIcon("read"), "icon-document");
+      assert.strictEqual(getToolKindIcon("read"), "codicon codicon-document");
     });
 
     test("returns edit icon for edit kind", () => {
-      assert.strictEqual(getToolKindIcon("edit"), "icon-edit");
+      assert.strictEqual(getToolKindIcon("edit"), "codicon codicon-edit");
     });
 
     test("returns delete icon for delete kind", () => {
-      assert.strictEqual(getToolKindIcon("delete"), "icon-trash");
+      assert.strictEqual(getToolKindIcon("delete"), "codicon codicon-trash");
     });
 
     test("returns execute icon for execute kind", () => {
-      assert.strictEqual(getToolKindIcon("execute"), "icon-terminal");
+      assert.strictEqual(
+        getToolKindIcon("execute"),
+        "codicon codicon-terminal"
+      );
     });
 
     test("returns search icon for search kind", () => {
-      assert.strictEqual(getToolKindIcon("search"), "icon-search");
+      assert.strictEqual(getToolKindIcon("search"), "codicon codicon-search");
     });
 
     test("returns fetch icon for fetch kind", () => {
-      assert.strictEqual(getToolKindIcon("fetch"), "icon-globe");
+      assert.strictEqual(getToolKindIcon("fetch"), "codicon codicon-globe");
     });
 
     test("returns move icon for move kind", () => {
-      assert.strictEqual(getToolKindIcon("move"), "icon-sync");
+      assert.strictEqual(getToolKindIcon("move"), "codicon codicon-references");
     });
 
     test("returns think icon for think kind", () => {
-      assert.strictEqual(getToolKindIcon("think"), "icon-sparkle-ai");
+      assert.strictEqual(getToolKindIcon("think"), "codicon codicon-lightbulb");
     });
 
     test("returns switch_mode icon for switch_mode kind", () => {
-      assert.strictEqual(getToolKindIcon("switch_mode"), "icon-sync");
+      assert.strictEqual(
+        getToolKindIcon("switch_mode"),
+        "codicon codicon-sync"
+      );
     });
 
     test("returns other icon for other kind", () => {
-      assert.strictEqual(getToolKindIcon("other"), "icon-gear");
+      assert.strictEqual(getToolKindIcon("other"), "codicon codicon-gear");
     });
 
     test("returns empty string for undefined kind", () => {
@@ -1389,7 +1397,9 @@ suite("Webview", () => {
         },
       };
       const html = getToolsHtml(tools);
-      assert.ok(html.includes('class="tool-kind-icon icon-document"'));
+      assert.ok(
+        html.includes('class="tool-kind-icon codicon codicon-document"')
+      );
     });
 
     test("renders execute kind icon for command tools", () => {
@@ -1404,7 +1414,9 @@ suite("Webview", () => {
         },
       };
       const html = getToolsHtml(tools);
-      assert.ok(html.includes('class="tool-kind-icon icon-terminal"'));
+      assert.ok(
+        html.includes('class="tool-kind-icon codicon codicon-terminal"')
+      );
     });
 
     test("does not render kind icon when kind is undefined", () => {

@@ -191,17 +191,17 @@ export function escapeHtml(str: string): string {
 }
 
 const TOOL_KIND_ICONS: Record<ToolKind, string> = {
-  read: "icon-document",
-  edit: "icon-edit",
-  write: "icon-edit",
-  delete: "icon-trash",
-  move: "icon-sync",
-  search: "icon-search",
-  execute: "icon-terminal",
-  think: "icon-sparkle-ai",
-  fetch: "icon-globe",
-  switch_mode: "icon-sync",
-  other: "icon-gear",
+  read: "codicon codicon-document",
+  edit: "codicon codicon-edit",
+  write: "codicon codicon-edit",
+  delete: "codicon codicon-trash",
+  move: "codicon codicon-references",
+  search: "codicon codicon-search",
+  execute: "codicon codicon-terminal",
+  think: "codicon codicon-lightbulb",
+  fetch: "codicon codicon-globe",
+  switch_mode: "codicon codicon-sync",
+  other: "codicon codicon-gear",
 };
 
 export function getToolKindIcon(kind?: string): string {
@@ -515,7 +515,7 @@ export function renderDiff(
   if (path) {
     const filename = path.split("/").pop() || path;
     html += `<div class="diff-header" title="${escapeHtml(path)}">
-      <span class="icon icon-document"></span>
+      <span class="codicon codicon-document"></span>
       <span class="diff-path">${escapeHtml(filename)}</span>
     </div>`;
   }
@@ -571,10 +571,10 @@ export function getToolsHtml(
         : "";
       const statusIcon =
         tool.status === "completed"
-          ? '<span class="icon icon-checkmark"></span>'
+          ? '<span class="codicon codicon-check"></span>'
           : tool.status === "failed"
-            ? '<span class="icon icon-dismiss"></span>'
-            : '<span class="icon icon-sparkle animate-spin"></span>';
+            ? '<span class="codicon codicon-close"></span>'
+            : '<span class="codicon codicon-loading animate-spin"></span>';
       const statusClass = tool.status === "running" ? "running" : "";
       let detailsContent = "";
       if (tool.input) {
@@ -950,7 +950,7 @@ export class WebviewController {
 
     const header = this.doc.createElement("div");
     header.className = "embedded-permission-header";
-    header.innerHTML = `<span class="permission-icon">🔐</span> <span>Permission Required</span>`;
+    header.innerHTML = `<span class="permission-icon codicon codicon-lock"></span> <span>Permission Required</span>`;
 
     const body = this.doc.createElement("div");
     body.className = "embedded-permission-body";
@@ -980,8 +980,8 @@ export class WebviewController {
       const icon = this.doc.createElement("span");
       icon.className = "embedded-permission-option-icon";
       icon.innerHTML = isAllow
-        ? `<div class="icon-checkmark"></div>`
-        : `<div class="icon-dismiss"></div>`;
+        ? `<div class="codicon codicon-check"></div>`
+        : `<div class="codicon codicon-close"></div>`;
 
       const text = this.doc.createElement("span");
       const label = this.getOptionLabel(opt.kind);
@@ -1025,7 +1025,7 @@ export class WebviewController {
     const header = this.doc.createElement("div");
     header.className = "permission-dialog-header";
     header.innerHTML = `
-      <span class="permission-icon">🔐</span>
+      <span class="permission-icon codicon codicon-lock"></span>
       <span>Permission Required</span>
     `;
 
@@ -1471,7 +1471,7 @@ export class WebviewController {
       details.setAttribute("aria-label", "Assistant is thinking");
       details.innerHTML = `
         <summary class="thought-header">
-          <span class="thought-icon"><span class="icon icon-sparkle-ai"></span></span>
+          <span class="thought-icon"><span class="codicon codicon-lightbulb"></span></span>
           <span class="thought-title">Thinking...</span>
         </summary>
         <div class="thought-content"></div>
@@ -1484,7 +1484,7 @@ export class WebviewController {
       details.setAttribute("open", "");
       details.innerHTML = `
         <summary class="tool-summary">
-          <span class="tool-status running"><span class="icon icon-sparkle animate-spin"></span></span>
+          <span class="tool-status running"><span class="codicon codicon-loading animate-spin"></span></span>
           <span class="tool-name">Initializing...</span>
         </summary>
         <div class="tool-details-content"></div>
@@ -1771,12 +1771,12 @@ export class WebviewController {
   private getPlanStatusHtml(status: string): string {
     switch (status) {
       case "completed":
-        return '<span class="icon icon-checkmark"></span>';
+        return '<span class="codicon codicon-check"></span>';
       case "in_progress":
-        return '<span class="icon icon-sparkle animate-spin"></span>';
+        return '<span class="codicon codicon-loading animate-spin"></span>';
       case "pending":
       default:
-        return '<span class="icon icon-circle"></span>';
+        return '<span class="codicon codicon-circle-outline"></span>';
     }
   }
 
@@ -1945,7 +1945,7 @@ export class WebviewController {
       : "";
     return `
       <div class="command-item ${i === this.selectedIndex ? "selected" : ""}" data-index="${i}" role="option" aria-selected="${i === this.selectedIndex}">
-        <div class="command-icon icon-slash">⌘</div>
+        <div class="command-icon codicon codicon-symbol-misc"></div>
         <div class="command-content">
           <div class="command-name"><span class="trigger-char">/</span>${escapeHtml(cmd.name)}</div>
           ${cmd.description ? '<div class="command-description">' + escapeHtml(cmd.description) + "</div>" : ""}
@@ -1967,16 +1967,15 @@ export class WebviewController {
   ): string {
     const isFolder = file.type === "folder";
     const iconClass = isFolder
-      ? "icon-folder"
+      ? "codicon codicon-folder"
       : this.getFileIconClass(file.name);
-    const icon = isFolder ? "📁" : this.getFileIcon(file.name);
 
     // 单行显示：文件名 + 路径
     const displayPath = file.dir ? escapeHtml(file.dir + "/") : "";
 
     return `
       <div class="command-item ${i === this.selectedIndex ? "selected" : ""}" data-index="${i}" role="option" aria-selected="${i === this.selectedIndex}" data-fspath="${escapeHtml(file.fsPath)}">
-        <div class="command-icon ${iconClass}">${icon}</div>
+        <div class="command-icon ${iconClass}"></div>
         <div class="command-content">
           <div class="command-name">
             <span class="file-name">${escapeHtml(file.name)}</span>
@@ -1990,41 +1989,41 @@ export class WebviewController {
   private getFileIconClass(fileName: string): string {
     const extension = fileName.split(".").pop()?.toLowerCase() || "";
     const iconMap: Record<string, string> = {
-      ts: "icon-file",
-      tsx: "icon-file",
-      js: "icon-file",
-      jsx: "icon-file",
-      json: "icon-file",
-      md: "icon-file",
-      css: "icon-file",
-      html: "icon-file",
-      png: "icon-image",
-      jpg: "icon-image",
-      jpeg: "icon-image",
-      gif: "icon-image",
-      svg: "icon-image",
+      ts: "codicon codicon-file-code",
+      tsx: "codicon codicon-file-code",
+      js: "codicon codicon-file-code",
+      jsx: "codicon codicon-file-code",
+      json: "codicon codicon-json",
+      md: "codicon codicon-markdown",
+      css: "codicon codicon-file-code",
+      html: "codicon codicon-file-code",
+      png: "codicon codicon-image",
+      jpg: "codicon codicon-image",
+      jpeg: "codicon codicon-image",
+      gif: "codicon codicon-image",
+      svg: "codicon codicon-file-media",
     };
-    return iconMap[extension] || "icon-file";
+    return iconMap[extension] || "codicon codicon-file";
   }
 
   private getFileIcon(fileName: string): string {
     const extension = fileName.split(".").pop()?.toLowerCase() || "";
     const iconMap: Record<string, string> = {
-      ts: "📘",
-      tsx: "⚛️",
-      js: "📜",
-      jsx: "⚛️",
-      json: "📋",
-      md: "📝",
-      css: "🎨",
-      html: "🌐",
-      png: "🖼️",
-      jpg: "🖼️",
-      jpeg: "🖼️",
-      gif: "🖼️",
-      svg: "🎭",
+      ts: "codicon codicon-file-code",
+      tsx: "codicon codicon-file-code",
+      js: "codicon codicon-file-code",
+      jsx: "codicon codicon-file-code",
+      json: "codicon codicon-json",
+      md: "codicon codicon-markdown",
+      css: "codicon codicon-file-code",
+      html: "codicon codicon-file-code",
+      png: "codicon codicon-image",
+      jpg: "codicon codicon-image",
+      jpeg: "codicon codicon-image",
+      gif: "codicon codicon-image",
+      svg: "codicon codicon-file-media",
     };
-    return iconMap[extension] || "📄";
+    return iconMap[extension] || "codicon codicon-file";
   }
 
   private scrollSelectedIntoView(): void {
@@ -2106,7 +2105,7 @@ export class WebviewController {
       }
     > = {
       file: {
-        icon: "icon-document",
+        icon: "codicon codicon-document",
         onClick: (e) => {
           if (mention.path) {
             e.stopPropagation();
@@ -2115,13 +2114,13 @@ export class WebviewController {
         },
       },
       selection: {
-        icon: "icon-document",
+        icon: "codicon codicon-document",
       },
       terminal: {
-        icon: "icon-terminal",
+        icon: "codicon codicon-terminal",
       },
       image: {
-        icon: "icon-image",
+        icon: "codicon codicon-image",
         onHover: (e) => {
           if (mention.dataUrl) {
             if (!readonly) this.hoveredImageChip = chip;
@@ -2136,7 +2135,7 @@ export class WebviewController {
     let innerHTML = `<span class="chip-icon ${config.icon}"></span><span class="chip-label">${escapeHtml(mention.name)}</span>`;
 
     if (!readonly) {
-      innerHTML += `<div class="chip-delete" title="Remove attachment"><span class="icon-dismiss"></span></div>`;
+      innerHTML += `<div class="chip-delete" title="Remove attachment"><span class="codicon codicon-close"></span></div>`;
     }
 
     chip.innerHTML = innerHTML;
@@ -2266,20 +2265,20 @@ export class WebviewController {
     let html = `
       <div class="diff-summary-header">
         <div class="diff-summary-info">
-          <span class="icon icon-sync"></span>
+          <span class="codicon codicon-sync"></span>
           <span class="diff-summary-title">${this.diffChanges.length} files modified</span>
           <span class="diff-stat-added">+${totalAdded}</span>
           <span class="diff-stat-removed">-${totalRemoved}</span>
         </div>
         <div class="diff-summary-actions">
           <button class="diff-action-btn accept-all" title="Accept All">
-            <span class="icon icon-checkmark"></span>
+            <span class="codicon codicon-check"></span>
           </button>
           <button class="diff-action-btn rollback-all" title="Rollback All">
-            <span class="icon icon-trash"></span>
+            <span class="codicon codicon-trash"></span>
           </button>
           <button class="diff-action-btn toggle-expand ${this.diffSummaryExpanded ? "expanded" : ""}" title="${this.diffSummaryExpanded ? "Collapse" : "Expand"}">
-            <span class="icon icon-chevron-down"></span>
+            <span class="codicon codicon-chevron-down"></span>
           </button>
         </div>
       </div>
@@ -2295,20 +2294,20 @@ export class WebviewController {
         html += `
           <div class="diff-summary-item">
             <div class="diff-item-info" title="${escapeHtml(change.path)}">
-              <span class="icon icon-document"></span>
+      <span class="codicon codicon-document"></span>
               <span class="diff-item-path">${escapeHtml(change.relativePath)}</span>
               <span class="diff-stat-added">+${added}</span>
               <span class="diff-stat-removed">-${removed}</span>
             </div>
             <div class="diff-item-actions">
               <button class="diff-item-btn review" data-path="${escapeHtml(change.path)}" title="Review">
-                <span class="icon icon-search"></span>
+                <span class="codicon codicon-search"></span>
               </button>
               <button class="diff-item-btn accept" data-path="${escapeHtml(change.path)}" title="Accept">
-                <span class="icon icon-checkmark"></span>
+                <span class="codicon codicon-check"></span>
               </button>
               <button class="diff-item-btn rollback" data-path="${escapeHtml(change.path)}" title="Rollback">
-                <span class="icon icon-trash"></span>
+                <span class="codicon codicon-trash"></span>
               </button>
             </div>
           </div>
