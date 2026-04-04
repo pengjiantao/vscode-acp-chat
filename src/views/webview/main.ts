@@ -1189,11 +1189,13 @@ export class WebviewController {
           e.preventDefault();
           this.selectedIndex = Math.min(this.selectedIndex + 1, count - 1);
           this.renderAutocomplete();
+          this.scrollSelectedIntoView();
           return;
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
           this.selectedIndex = Math.max(this.selectedIndex - 1, 0);
           this.renderAutocomplete();
+          this.scrollSelectedIntoView();
           return;
         } else if (
           e.key === "Tab" ||
@@ -1845,9 +1847,12 @@ export class WebviewController {
       : "";
     return `
       <div class="command-item ${i === this.selectedIndex ? "selected" : ""}" data-index="${i}" role="option" aria-selected="${i === this.selectedIndex}">
-        <div class="command-name">${escapeHtml(cmd.name)}</div>
-        <div class="command-description">${escapeHtml(cmd.description || "")}</div>
-        ${hint}
+        <div class="command-icon icon-slash">⌘</div>
+        <div class="command-content">
+          <div class="command-name"><span class="trigger-char">/</span>${escapeHtml(cmd.name)}</div>
+          ${cmd.description ? '<div class="command-description">' + escapeHtml(cmd.description) + "</div>" : ""}
+          ${hint}
+        </div>
       </div>
     `;
   }
@@ -1856,12 +1861,65 @@ export class WebviewController {
     file: { name: string; path: string },
     i: number
   ): string {
+    const extension = file.name.split(".").pop()?.toLowerCase() || "";
+    const iconClass = this.getFileIconClass(extension);
     return `
       <div class="command-item ${i === this.selectedIndex ? "selected" : ""}" data-index="${i}" role="option" aria-selected="${i === this.selectedIndex}">
-        <div class="command-name">${escapeHtml(file.name)}</div>
-        <div class="command-description">${escapeHtml(file.path)}</div>
+        <div class="command-icon ${iconClass}">${this.getFileIcon(extension)}</div>
+        <div class="command-content">
+          <div class="command-name">${escapeHtml(file.name)}</div>
+          <div class="command-path">${escapeHtml(file.path)}</div>
+        </div>
       </div>
     `;
+  }
+
+  private getFileIconClass(extension: string): string {
+    const iconMap: Record<string, string> = {
+      ts: "icon-file",
+      tsx: "icon-file",
+      js: "icon-file",
+      jsx: "icon-file",
+      json: "icon-file",
+      md: "icon-file",
+      css: "icon-file",
+      html: "icon-file",
+      png: "icon-image",
+      jpg: "icon-image",
+      jpeg: "icon-image",
+      gif: "icon-image",
+      svg: "icon-image",
+    };
+    return iconMap[extension] || "icon-file";
+  }
+
+  private getFileIcon(extension: string): string {
+    const iconMap: Record<string, string> = {
+      ts: "📘",
+      tsx: "⚛️",
+      js: "📜",
+      jsx: "⚛️",
+      json: "📋",
+      md: "📝",
+      css: "🎨",
+      html: "🌐",
+      png: "🖼️",
+      jpg: "🖼️",
+      jpeg: "🖼️",
+      gif: "🖼️",
+      svg: "🎭",
+    };
+    return iconMap[extension] || "📄";
+  }
+
+  private scrollSelectedIntoView(): void {
+    const { commandAutocomplete } = this.elements;
+    const selectedItem = commandAutocomplete.querySelector(
+      ".command-item.selected"
+    );
+    if (selectedItem) {
+      selectedItem.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
   }
 
   hideAutocomplete(): void {
