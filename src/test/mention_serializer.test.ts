@@ -54,7 +54,9 @@ suite("Mention Serializer", () => {
       );
     });
 
-    test("should serialize an image mention with dataUrl", () => {
+    test("should serialize an image mention without dataUrl", () => {
+      // Image mentions should NOT include dataUrl to avoid sending image data twice
+      // (once as {type: "image"} prompt item, once as text attribute)
       const mention: Mention = {
         name: "screenshot.png",
         type: "image",
@@ -63,7 +65,10 @@ suite("Mention Serializer", () => {
       const result = serializeMention(mention);
       assert.ok(result.includes('type="image"'));
       assert.ok(result.includes('name="screenshot.png"'));
-      assert.ok(result.includes('dataUrl="data:image/png;base64,abc123"'));
+      assert.ok(
+        !result.includes("dataUrl="),
+        "Image should not include dataUrl to avoid duplication"
+      );
     });
 
     test("should escape special characters in attributes", () => {
@@ -112,6 +117,8 @@ suite("Mention Serializer", () => {
     });
 
     test("should parse an image mention with dataUrl", () => {
+      // Note: serializeMention no longer includes dataUrl for images (to avoid sending twice)
+      // but parseMention can still parse it if agent includes it in history
       const serialized =
         '<mention type="image" name="screenshot.png" dataUrl="data:image/png;base64,abc123" />';
       const result = parseMention(serialized);
@@ -119,6 +126,23 @@ suite("Mention Serializer", () => {
       assert.strictEqual(result?.type, "image");
       assert.strictEqual(result?.name, "screenshot.png");
       assert.strictEqual(result?.dataUrl, "data:image/png;base64,abc123");
+    });
+
+    test("should not include dataUrl when serializing image mentions", () => {
+      // Images should not include dataUrl in serialization - the image data
+      // is already sent as a separate prompt item {type: "image"}
+      const mention: Mention = {
+        name: "screenshot.png",
+        type: "image",
+        dataUrl: "data:image/png;base64,abc123",
+      };
+      const result = serializeMention(mention);
+      assert.ok(result.includes('type="image"'));
+      assert.ok(result.includes('name="screenshot.png"'));
+      assert.ok(
+        !result.includes("dataUrl="),
+        "Image should not include dataUrl attribute"
+      );
     });
 
     test("should unescape special characters in attributes", () => {
@@ -291,6 +315,9 @@ After`;
     });
 
     test("should preserve image mention through serialize -> parse cycle", () => {
+      // Note: serializeMention no longer includes dataUrl for images
+      // The image content is sent as separate prompt item, so we only verify
+      // that name and type are preserved
       const original: Mention = {
         name: "screenshot.png",
         type: "image",
@@ -299,7 +326,11 @@ After`;
       };
       const serialized = serializeMention(original);
       const parsed = parseMention(serialized);
-      assert.deepStrictEqual(parsed, original);
+      assert.ok(parsed);
+      assert.strictEqual(parsed?.name, original.name);
+      assert.strictEqual(parsed?.type, original.type);
+      // dataUrl is intentionally not included in serialization to avoid sending twice
+      assert.strictEqual(parsed?.dataUrl, undefined);
     });
 
     test("should handle complex message with multiple mentions", () => {

@@ -100,6 +100,8 @@ export class ChatViewProvider
   private hasRestoredModeModel = false;
   private sessionManager: AgentSessionManager;
   private userMessageBuffer: string = "";
+  /** Stores image dataUrl for current user message being reconstructed during history load */
+  private userMessageImages: string[] = [];
   private terminals: Map<string, ManagedTerminal> = new Map();
   private toolCallStartTimes: Map<string, number> = new Map();
   private toolCallRawInputs: Map<string, any> = new Map();
@@ -439,6 +441,7 @@ export class ChatViewProvider
    */
   public async loadHistorySession(sessionId: string): Promise<void> {
     this.userMessageBuffer = "";
+    this.userMessageImages = [];
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const cwd = workspaceFolder?.uri.fsPath || process.cwd();
 
@@ -898,6 +901,13 @@ export class ChatViewProvider
     if (update.sessionUpdate === "user_message_chunk") {
       if (update.content.type === "text") {
         this.userMessageBuffer += update.content.text;
+      } else if (update.content.type === "image") {
+        // Store image dataUrl for later reconstruction during history load
+        // This allows us to restore image preview chips if agent supports it
+        if (update.content.data && update.content.mimeType) {
+          const dataUrl = `data:${update.content.mimeType};base64,${update.content.data}`;
+          this.userMessageImages.push(dataUrl);
+        }
       }
     } else if (update.sessionUpdate === "agent_message_chunk") {
       if (update.content.type === "text") {
@@ -1130,12 +1140,31 @@ export class ChatViewProvider
   private flushUserMessageBuffer(): void {
     if (this.userMessageBuffer) {
       const { text, mentions } = extractMentions(this.userMessageBuffer);
+
+      // Merge collected image dataUrls into their corresponding mentions
+      // This enables image preview chips during history restoration
+      if (this.userMessageImages.length > 0) {
+        let imageIdx = 0;
+        for (const mention of mentions) {
+          if (mention.type === "image" && !mention.dataUrl) {
+            // Agent provided image chunk - use it for preview
+            if (imageIdx < this.userMessageImages.length) {
+              mention.dataUrl = this.userMessageImages[imageIdx];
+              imageIdx++;
+            }
+            // If agent didn't provide image chunk, mention.dataUrl stays undefined
+            // and the chip will gracefully not show preview (fallback to option C)
+          }
+        }
+      }
+
       this.postMessage({
         type: "userMessage",
         text,
         mentions,
       });
       this.userMessageBuffer = "";
+      this.userMessageImages = [];
       // Ensure thinking block for the next response is properly separated
       this.postMessage({ type: "streamEnd", stopReason: "end_turn" });
     }
@@ -1230,6 +1259,7 @@ export class ChatViewProvider
   ): Promise<void> {
     // Clear history restoration buffer on new user interaction
     this.userMessageBuffer = "";
+    this.userMessageImages = [];
     this.postMessage({ type: "userMessage", text, images, mentions });
 
     try {

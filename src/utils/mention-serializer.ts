@@ -91,7 +91,10 @@ export function serializeMention(mention: Mention): string {
     parts.push(` range="${mention.range.startLine}-${mention.range.endLine}"`);
   }
 
-  if (mention.dataUrl) {
+  // Skip dataUrl for images - the image content is already sent as a separate prompt item
+  // {type: "image", data, mimeType}. Including dataUrl here would waste tokens
+  // by sending the base64 data twice (once as image, once as text attribute)
+  if (mention.dataUrl && type !== "image") {
     parts.push(` dataUrl="${escapeAttr(mention.dataUrl)}"`);
   }
 

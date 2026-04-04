@@ -84,7 +84,7 @@ export const AGENTS: AgentConfig[] = [
     id: "qwen-code",
     name: "Qwen Code",
     command: "qwen",
-    args: ["--experimental-acp"],
+    args: ["--acp"],
   },
   {
     id: "kiro",
