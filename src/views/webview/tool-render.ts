@@ -373,7 +373,7 @@ const Renderers: Partial<Record<ToolKind, ToolRenderer>> = {
         : "";
       return `
         <span class="tool-status ${info.status === "failed" ? "failed" : info.status === "in_progress" ? "running" : "completed"}">${statusIcon}</span>
-        <span class="tool-kind-icon"><span class="codicon codicon-document"></span></span>
+        <span class="tool-kind-icon"><span class="codicon codicon-file-text"></span></span>
         <span class="tool-name"><strong>Read:</strong> ${escapeHtml(path)}${suffix}${durationStr}</span>
       `;
     },

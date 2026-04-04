@@ -475,7 +475,7 @@ suite("Webview", () => {
           "Chip name should match"
         );
         assert.ok(
-          mentionChip.querySelector(".codicon-image"),
+          mentionChip.querySelector(".codicon-file-media"),
           "Image icon should exist"
         );
       });
@@ -1334,7 +1334,7 @@ suite("Webview", () => {
 
   suite("getToolKindIcon", () => {
     test("returns read icon for read kind", () => {
-      assert.strictEqual(getToolKindIcon("read"), "codicon codicon-document");
+      assert.strictEqual(getToolKindIcon("read"), "codicon codicon-file-text");
     });
 
     test("returns edit icon for edit kind", () => {
@@ -1398,7 +1398,7 @@ suite("Webview", () => {
       };
       const html = getToolsHtml(tools);
       assert.ok(
-        html.includes('class="tool-kind-icon codicon codicon-document"')
+        html.includes('class="tool-kind-icon codicon codicon-file-text"')
       );
     });
 

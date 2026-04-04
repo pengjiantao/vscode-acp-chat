@@ -1477,13 +1477,7 @@ export class ChatViewProvider
       vscode.Uri.joinPath(this.extensionUri, "assets", "icon.svg")
     );
     const codiconsUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(
-        this.extensionUri,
-        "node_modules",
-        "@vscode/codicons",
-        "dist",
-        "codicon.css"
-      )
+      vscode.Uri.joinPath(this.extensionUri, "media", "codicon.css")
     );
 
     return `<!DOCTYPE html>
@@ -1537,7 +1531,7 @@ export class ChatViewProvider
     <div id="options-bar" role="toolbar" aria-label="Session options">
       <div id="left-options">
         <button id="attach-image" class="icon-button" aria-label="Attach image" title="Attach image">
-          <span class="dropdown-icon codicon codicon-image"></span>
+          <span class="dropdown-icon codicon codicon-file-media"></span>
         </button>
         <div class="custom-dropdown" id="mode-dropdown" style="display: none;">
           <div class="dropdown-trigger">
@@ -1551,7 +1545,7 @@ export class ChatViewProvider
         </div>
         <div class="custom-dropdown" id="model-dropdown" style="display: none;">
           <div class="dropdown-trigger">
-            <span class="dropdown-icon codicon codicon-bot"></span>
+            <span class="dropdown-icon codicon codicon-robot"></span>
             <span class="selected-label">Model</span>
             <span class="dropdown-chevron">
               <span class="codicon codicon-chevron-down" style="width: 10px; height: 10px; display: block;"></span>

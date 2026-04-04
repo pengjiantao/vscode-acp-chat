@@ -191,7 +191,7 @@ export function escapeHtml(str: string): string {
 }
 
 const TOOL_KIND_ICONS: Record<ToolKind, string> = {
-  read: "codicon codicon-document",
+  read: "codicon codicon-file-text",
   edit: "codicon codicon-edit",
   write: "codicon codicon-edit",
   delete: "codicon codicon-trash",
@@ -515,7 +515,7 @@ export function renderDiff(
   if (path) {
     const filename = path.split("/").pop() || path;
     html += `<div class="diff-header" title="${escapeHtml(path)}">
-      <span class="codicon codicon-document"></span>
+      <span class="codicon codicon-file-text"></span>
       <span class="diff-path">${escapeHtml(filename)}</span>
     </div>`;
   }
@@ -1997,10 +1997,10 @@ export class WebviewController {
       md: "codicon codicon-markdown",
       css: "codicon codicon-file-code",
       html: "codicon codicon-file-code",
-      png: "codicon codicon-image",
-      jpg: "codicon codicon-image",
-      jpeg: "codicon codicon-image",
-      gif: "codicon codicon-image",
+      png: "codicon codicon-file-media",
+      jpg: "codicon codicon-file-media",
+      jpeg: "codicon codicon-file-media",
+      gif: "codicon codicon-file-media",
       svg: "codicon codicon-file-media",
     };
     return iconMap[extension] || "codicon codicon-file";
@@ -2017,10 +2017,10 @@ export class WebviewController {
       md: "codicon codicon-markdown",
       css: "codicon codicon-file-code",
       html: "codicon codicon-file-code",
-      png: "codicon codicon-image",
-      jpg: "codicon codicon-image",
-      jpeg: "codicon codicon-image",
-      gif: "codicon codicon-image",
+      png: "codicon codicon-file-media",
+      jpg: "codicon codicon-file-media",
+      jpeg: "codicon codicon-file-media",
+      gif: "codicon codicon-file-media",
       svg: "codicon codicon-file-media",
     };
     return iconMap[extension] || "codicon codicon-file";
@@ -2105,7 +2105,7 @@ export class WebviewController {
       }
     > = {
       file: {
-        icon: "codicon codicon-document",
+        icon: "codicon codicon-file-text",
         onClick: (e) => {
           if (mention.path) {
             e.stopPropagation();
@@ -2114,13 +2114,13 @@ export class WebviewController {
         },
       },
       selection: {
-        icon: "codicon codicon-document",
+        icon: "codicon codicon-file-text",
       },
       terminal: {
         icon: "codicon codicon-terminal",
       },
       image: {
-        icon: "codicon codicon-image",
+        icon: "codicon codicon-file-media",
         onHover: (e) => {
           if (mention.dataUrl) {
             if (!readonly) this.hoveredImageChip = chip;
@@ -2294,7 +2294,7 @@ export class WebviewController {
         html += `
           <div class="diff-summary-item">
             <div class="diff-item-info" title="${escapeHtml(change.path)}">
-      <span class="codicon codicon-document"></span>
+      <span class="codicon codicon-file-text"></span>
               <span class="diff-item-path">${escapeHtml(change.relativePath)}</span>
               <span class="diff-stat-added">+${added}</span>
               <span class="diff-stat-removed">-${removed}</span>

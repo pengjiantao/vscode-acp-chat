@@ -961,7 +961,7 @@ body {
 }
 
 /* Document icon */
-.codicon-document {
+.codicon-file-text {
   color: var(--vscode-icon-foreground);
 }
 
@@ -996,8 +996,8 @@ body {
   color: var(--vscode-icon-foreground);
 }
 
-/* Bot/robot icon */
-.codicon-bot {
+/* Robot icon */
+.codicon-robot {
   color: var(--vscode-icon-foreground);
 }
 
