@@ -1286,9 +1286,17 @@ body {
   align-items: center;
   justify-content: center;
   opacity: 0.5;
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
+  line-height: 1;
+}
+
+.dropdown-chevron .codicon {
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dropdown-popover {
