@@ -918,12 +918,34 @@ body {
   text-overflow: ellipsis;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .command-name .trigger-char {
   opacity: 0.5;
   font-weight: 400;
+}
+
+/* File name and path inline display */
+.command-name .file-name {
+  flex-shrink: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.command-name .file-path {
+  flex-shrink: 1;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+
+.command-item.selected .file-path {
+  color: var(--vscode-list-activeSelectionForeground);
+  opacity: 0.7;
 }
 
 .command-description {
@@ -952,22 +974,6 @@ body {
 .command-item.selected .command-hint {
   color: var(--vscode-list-activeSelectionForeground);
   opacity: 0.5;
-}
-
-/* File path styling */
-.command-path {
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-  opacity: 0.7;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-family: var(--vscode-editor-font-family), monospace;
-}
-
-.command-item.selected .command-path {
-  color: var(--vscode-list-activeSelectionForeground);
-  opacity: 0.6;
 }
 
 /* Keyboard shortcut hint */

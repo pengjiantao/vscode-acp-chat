@@ -139,7 +139,13 @@ export interface ExtensionMessage {
   rawOutput?: { output?: string };
   status?: string;
   terminalOutput?: string;
-  results?: Array<{ name: string; path: string }>;
+  results?: Array<{
+    name: string;
+    path: string;
+    dir: string;
+    type: "file" | "folder";
+    fsPath: string;
+  }>;
   mention?: Mention;
   plan?: { entries: PlanEntry[] };
   requestId?: string;
@@ -169,7 +175,7 @@ export interface ExtensionMessage {
 export interface Mention {
   name: string;
   path?: string;
-  type?: "file" | "selection" | "terminal" | "image";
+  type?: "file" | "folder" | "selection" | "terminal" | "image";
   content?: string;
   range?: { startLine: number; endLine: number };
   dataUrl?: string; // For images
@@ -816,7 +822,13 @@ export class WebviewController {
   private isConnected = false;
   private messageTexts = new Map<HTMLElement, string>();
   private availableCommands: AvailableCommand[] = [];
-  private fileResults: Array<{ name: string; path: string }> = [];
+  private fileResults: Array<{
+    name: string;
+    path: string;
+    dir: string;
+    type: "file" | "folder";
+    fsPath: string;
+  }> = [];
   private selectedIndex = -1;
   private autocompleteMode: "none" | "command" | "file" = "none";
   private autocompleteTriggerPos = -1;
@@ -1858,23 +1870,39 @@ export class WebviewController {
   }
 
   private renderFileItem(
-    file: { name: string; path: string },
+    file: {
+      name: string;
+      path: string;
+      dir: string;
+      type: "file" | "folder";
+      fsPath: string;
+    },
     i: number
   ): string {
-    const extension = file.name.split(".").pop()?.toLowerCase() || "";
-    const iconClass = this.getFileIconClass(extension);
+    const isFolder = file.type === "folder";
+    const iconClass = isFolder
+      ? "icon-folder"
+      : this.getFileIconClass(file.name);
+    const icon = isFolder ? "📁" : this.getFileIcon(file.name);
+
+    // 单行显示：文件名 + 路径
+    const displayPath = file.dir ? escapeHtml(file.dir + "/") : "";
+
     return `
-      <div class="command-item ${i === this.selectedIndex ? "selected" : ""}" data-index="${i}" role="option" aria-selected="${i === this.selectedIndex}">
-        <div class="command-icon ${iconClass}">${this.getFileIcon(extension)}</div>
+      <div class="command-item ${i === this.selectedIndex ? "selected" : ""}" data-index="${i}" role="option" aria-selected="${i === this.selectedIndex}" data-fspath="${escapeHtml(file.fsPath)}">
+        <div class="command-icon ${iconClass}">${icon}</div>
         <div class="command-content">
-          <div class="command-name">${escapeHtml(file.name)}</div>
-          <div class="command-path">${escapeHtml(file.path)}</div>
+          <div class="command-name">
+            <span class="file-name">${escapeHtml(file.name)}</span>
+            ${displayPath ? '<span class="file-path">' + displayPath + "</span>" : ""}
+          </div>
         </div>
       </div>
     `;
   }
 
-  private getFileIconClass(extension: string): string {
+  private getFileIconClass(fileName: string): string {
+    const extension = fileName.split(".").pop()?.toLowerCase() || "";
     const iconMap: Record<string, string> = {
       ts: "icon-file",
       tsx: "icon-file",
@@ -1893,7 +1921,8 @@ export class WebviewController {
     return iconMap[extension] || "icon-file";
   }
 
-  private getFileIcon(extension: string): string {
+  private getFileIcon(fileName: string): string {
+    const extension = fileName.split(".").pop()?.toLowerCase() || "";
     const iconMap: Record<string, string> = {
       ts: "📘",
       tsx: "⚛️",
@@ -1945,8 +1974,8 @@ export class WebviewController {
         const file = this.fileResults[index];
         this.insertMentionChip({
           name: file.name,
-          path: file.path,
-          type: "file",
+          path: file.fsPath,
+          type: file.type,
         });
       }
     }

@@ -303,17 +303,66 @@ export class ChatViewProvider
           break;
         case "searchFiles":
           if (message.text !== undefined) {
-            const files = await vscode.workspace.findFiles(
-              `**/*${message.text}*`,
-              "**/node_modules/**",
-              10
-            );
+            const query = message.text;
+            // 搜索文件和文件夹
+            const [files, folders] = await Promise.all([
+              vscode.workspace.findFiles(
+                `**/*${query}*`,
+                "**/node_modules/**",
+                50
+              ),
+              vscode.workspace.findFiles(
+                `**/*${query}*/`,
+                "**/node_modules/**",
+                50
+              ),
+            ]);
+
+            const results = [];
+
+            // 处理文件
+            for (const f of files) {
+              const relativePath = vscode.workspace.asRelativePath(f);
+              const pathParts = relativePath.split("/");
+              const fileName = pathParts[pathParts.length - 1];
+              const dirPath = pathParts.slice(0, -1).join("/");
+
+              results.push({
+                name: fileName,
+                path: relativePath,
+                dir: dirPath || "",
+                type: "file" as const,
+                fsPath: f.fsPath,
+              });
+            }
+
+            // 处理文件夹
+            for (const folder of folders) {
+              const relativePath = vscode.workspace.asRelativePath(folder);
+              const pathParts = relativePath.split("/");
+              const folderName = pathParts[pathParts.length - 1];
+              const dirPath = pathParts.slice(0, -1).join("/");
+
+              results.push({
+                name: folderName,
+                path: relativePath,
+                dir: dirPath || "",
+                type: "folder" as const,
+                fsPath: folder.fsPath,
+              });
+            }
+
+            // 去重并限制结果数量
+            const uniqueResults = results
+              .filter(
+                (result, index, self) =>
+                  index === self.findIndex((r) => r.path === result.path)
+              )
+              .slice(0, 20);
+
             this.postMessage({
               type: "fileSearchResults",
-              results: files.map((f) => ({
-                name: vscode.workspace.asRelativePath(f),
-                path: f.fsPath,
-              })),
+              results: uniqueResults,
             });
           }
           break;
