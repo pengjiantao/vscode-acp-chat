@@ -115,8 +115,13 @@ export function serializeMention(mention: Mention): string {
  */
 export function parseMention(serialized: string): Mention | null {
   try {
-    const mentionRegex = /<mention\s+([^>]*?)(?:\/>|>([\s\S]*?)<\/mention>)/;
-    const match = serialized.match(mentionRegex);
+    // Unescape XML entities if present (in case the ACP agent escaped them)
+    // Only decode structural tags, do not decode &quot; here to avoid breaking attribute regexes.
+    const decoded = serialized.replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+
+    const mentionRegex =
+      /<mention\s+([\s\S]*?)(?:\/>|>([\s\S]*?)<\/mention\s*>)/i;
+    const match = decoded.match(mentionRegex);
     if (!match) return null;
 
     const attrs = match[1];
@@ -127,31 +132,31 @@ export function parseMention(serialized: string): Mention | null {
       type: "file",
     };
 
-    // Parse attributes
-    const typeMatch = attrs.match(/type="([^"]*)"/);
-    if (typeMatch) mention.type = typeMatch[1] as Mention["type"];
+    // Parse attributes allowing both single and double quotes
+    const typeMatch = attrs.match(/type=(["'])(.*?)\1/i);
+    if (typeMatch) mention.type = typeMatch[2] as Mention["type"];
 
-    const nameMatch = attrs.match(/name="([^"]*)"/);
-    if (nameMatch) mention.name = unescapeAttr(nameMatch[1]);
+    const nameMatch = attrs.match(/name=(["'])(.*?)\1/i);
+    if (nameMatch) mention.name = unescapeAttr(nameMatch[2]);
 
-    const pathMatch = attrs.match(/path="([^"]*)"/);
-    if (pathMatch) mention.path = unescapeAttr(pathMatch[1]);
+    const pathMatch = attrs.match(/path=(["'])(.*?)\1/i);
+    if (pathMatch) mention.path = unescapeAttr(pathMatch[2]);
 
-    const rangeMatch = attrs.match(/range="(\d+)-(\d+)"/);
+    const rangeMatch = attrs.match(/range=(["'])(\d+)-(\d+)\1/i);
     if (rangeMatch) {
       mention.range = {
-        startLine: parseInt(rangeMatch[1], 10),
-        endLine: parseInt(rangeMatch[2], 10),
+        startLine: parseInt(rangeMatch[2], 10),
+        endLine: parseInt(rangeMatch[3], 10),
       };
     }
 
-    const dataUrlMatch = attrs.match(/dataUrl="([^"]*)"/);
-    if (dataUrlMatch) mention.dataUrl = unescapeAttr(dataUrlMatch[1]);
+    const dataUrlMatch = attrs.match(/dataUrl=(["'])(.*?)\1/i);
+    if (dataUrlMatch) mention.dataUrl = unescapeAttr(dataUrlMatch[2]);
 
     // Parse content for non-self-closing mentions
     if (content) {
       // Remove CDATA wrapper if present
-      const cdataMatch = content.match(/<!\[CDATA\[([\s\S]*?)\]\]>/);
+      const cdataMatch = content.match(/<!\[CDATA\[([\s\S]*?)\]\]>/i);
       mention.content = cdataMatch ? cdataMatch[1] : content.trim();
     }
 
@@ -234,19 +239,21 @@ export function serializeMentionsWithContext(
 }
 
 /**
- * Parse serialized mentions from message text
- * Extracts mention objects from structured mention tags in text
+ * Extract mentions from text and replace their tags with placeholders
  *
- * @param text - Text that may contain serialized mention tags
- * @returns Array of parsed Mention objects
+ * @param text - Text containing structured mention tags
+ * @returns Object with processed text and extracted mentions
  */
-export function parseMentionsFromText(text: string): Mention[] {
+export function extractMentions(text: string): {
+  text: string;
+  mentions: Mention[];
+} {
   const mentions: Mention[] = [];
+  const mentionRegex =
+    /(?:<|&lt;)mention\s+[\s\S]*?(?:\/&gt;|\/>|&gt;[\s\S]*?&lt;\/mention\s*&gt;|>[\s\S]*?<\/mention\s*>)/gi;
 
-  // Match all mention tags (both self-closing and with content)
-  const mentionRegex = /<mention\s[^>]*?(?:\/>|>[\s\S]*?<\/mention>)/g;
+  // 1. First extract all structured mentions from tags
   let match;
-
   while ((match = mentionRegex.exec(text)) !== null) {
     const mention = parseMention(match[0]);
     if (mention) {
@@ -254,6 +261,76 @@ export function parseMentionsFromText(text: string): Mention[] {
     }
   }
 
+  // 2. Remove all mention tags and referenced-items wrappers to get the "clean" text
+  let processedText = text.replace(mentionRegex, "");
+  processedText = processedText.replace(
+    /(?:<|&lt;)\/?referenced-items\s*(?:>|&gt;)/gi,
+    ""
+  );
+
+  // Clean up extra whitespace
+  processedText = processedText.replace(/\n{3,}/g, "\n\n").trim();
+
+  // 3. For each extracted mention, try to find its name in the text and replace it with a placeholder.
+  // This handles mentions that were originally typed as @name.
+  // If not found in text, we append it to the end (it was a context-only mention).
+  for (let i = 0; i < mentions.length; i++) {
+    const mentionName = mentions[i].name;
+    const placeholder = `__MENTION_${i}__`;
+
+    const nameIndex = processedText.indexOf(mentionName);
+    if (nameIndex !== -1) {
+      processedText =
+        processedText.slice(0, nameIndex) +
+        placeholder +
+        processedText.slice(nameIndex + mentionName.length);
+    } else {
+      // If not found in text, append to the end
+      processedText = processedText + "\n\n" + placeholder;
+    }
+  }
+
+  return { text: processedText, mentions };
+}
+
+/**
+ * Parse serialized mentions from message text
+ * Extracts mention objects from structured mention tags in text
+ *
+ * @param text - Text that may contain serialized mention tags
+ * @returns Array of parsed Mention objects
+ */
+export function parseMentionsFromText(text: string): Mention[] {
+  console.log(
+    "[MentionSerializer Debug] parseMentionsFromText called. Text length:",
+    text.length
+  );
+  const mentions: Mention[] = [];
+
+  // Match all mention tags (both self-closing and with content), handling potential HTML escaping
+  const mentionRegex =
+    /(?:<|&lt;)mention\s+[\s\S]*?(?:\/&gt;|\/>|&gt;[\s\S]*?&lt;\/mention\s*&gt;|>[\s\S]*?<\/mention\s*>)/gi;
+  let match;
+
+  while ((match = mentionRegex.exec(text)) !== null) {
+    console.log("[MentionSerializer Debug] Found match:\n", match[0]);
+    const mention = parseMention(match[0]);
+    if (mention) {
+      console.log(
+        "[MentionSerializer Debug] Parsed mention object:",
+        JSON.stringify(mention)
+      );
+      mentions.push(mention);
+    } else {
+      console.log(
+        "[MentionSerializer Debug] parseMention returned null for the match."
+      );
+    }
+  }
+
+  console.log(
+    `[MentionSerializer Debug] parseMentionsFromText returning ${mentions.length} mentions`
+  );
   return mentions;
 }
 
@@ -265,16 +342,19 @@ export function parseMentionsFromText(text: string): Mention[] {
  * @returns Cleaned text with mention names
  */
 export function cleanMentionTags(text: string): string {
+  // Decode first to ensure regex matches
+  let decoded = text.replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+
   // Replace self-closing tags
-  let result = text.replace(
-    /<mention\s+[^>]*?name="([^"]*?)"[^>]*?\/>/g,
-    (_, name) => unescapeAttr(name)
+  let result = decoded.replace(
+    /<mention\s+[^>]*?name=(["'])(.*?)\1[^>]*?\/>/gi,
+    (_, quote, name) => unescapeAttr(name)
   );
 
   // Replace tags with content
   result = result.replace(
-    /<mention\s+[^>]*?name="([^"]*?)"[^>]*?>[\s\S]*?<\/mention>/g,
-    (_, name) => unescapeAttr(name)
+    /<mention\s+[^>]*?name=(["'])(.*?)\1[^>]*?>[\s\S]*?<\/mention\s*>/gi,
+    (_, quote, name) => unescapeAttr(name)
   );
 
   return result;
@@ -288,11 +368,14 @@ export function cleanMentionTags(text: string): string {
  * @returns Text with all mention markup removed
  */
 export function stripMentionMarkup(text: string): string {
-  // Remove referenced-items wrapper
-  let result = text.replace(/<\/?referenced-items>/g, "");
+  // Remove referenced-items wrapper (handling escaped ones too)
+  let result = text.replace(/(?:<|&lt;)\/?referenced-items\s*(?:>|&gt;)/gi, "");
 
   // Remove all mention tags
-  result = result.replace(/<mention\s[^>]*?(?:\/>|>[\s\S]*?<\/mention>)/g, "");
+  result = result.replace(
+    /(?:<|&lt;)mention\s+[\s\S]*?(?:\/&gt;|\/>|&gt;[\s\S]*?&lt;\/mention\s*&gt;|>[\s\S]*?<\/mention\s*>)/gi,
+    ""
+  );
 
   // Clean up extra whitespace
   result = result.replace(/\n{3,}/g, "\n\n").trim();

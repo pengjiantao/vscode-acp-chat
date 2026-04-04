@@ -5,8 +5,8 @@ import { getAgent, getFirstAvailableAgent } from "../acp/agents";
 import { DiffManager } from "../acp/diff-manager";
 import { AgentSessionManager, type SessionInfo } from "../acp/session-manager";
 import {
+  extractMentions,
   parseMentionsFromText,
-  stripMentionMarkup,
 } from "../utils/mention-serializer";
 import type {
   SessionNotification,
@@ -99,6 +99,7 @@ export class ChatViewProvider
   private globalState: vscode.Memento;
   private hasRestoredModeModel = false;
   private sessionManager: AgentSessionManager;
+  private userMessageBuffer: string = "";
   private terminals: Map<string, ManagedTerminal> = new Map();
   private toolCallStartTimes: Map<string, number> = new Map();
   private toolCallRawInputs: Map<string, any> = new Map();
@@ -437,6 +438,7 @@ export class ChatViewProvider
    * The agent will stream the full conversation history back.
    */
   public async loadHistorySession(sessionId: string): Promise<void> {
+    this.userMessageBuffer = "";
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const cwd = workspaceFolder?.uri.fsPath || process.cwd();
 
@@ -455,6 +457,7 @@ export class ChatViewProvider
       this.sessionManager.syncCapabilities();
 
       await this.sessionManager.loadSession(sessionId, cwd);
+      this.flushUserMessageBuffer();
       this.hasSession = true;
       this.sendSessionMetadata();
     } catch (error) {
@@ -886,39 +889,17 @@ export class ChatViewProvider
     const update = notification.update;
     console.log("[Chat] Session update received:", update.sessionUpdate);
 
+    // Any non-user chunk should trigger a flush of the user message buffer
+    if (update.sessionUpdate !== "user_message_chunk") {
+      this.flushUserMessageBuffer();
+    }
+
     // Handle user message chunks (for history session restoration)
     if (update.sessionUpdate === "user_message_chunk") {
-      console.log("[Chat] User message chunk:", JSON.stringify(update.content));
       if (update.content.type === "text") {
-        // Parse mentions from the structured text format
-        const rawText = update.content.text;
-        const mentions = parseMentionsFromText(rawText);
-
-        // Reconstruct text with __MENTION_N__ placeholders for webview rendering
-        let textWithPlaceholders = stripMentionMarkup(rawText);
-        for (let i = 0; i < mentions.length; i++) {
-          // Replace first occurrence of mention name with placeholder
-          const mentionName = mentions[i].name;
-          const placeholder = `__MENTION_${i}__`;
-          const nameIndex = textWithPlaceholders.indexOf(mentionName);
-          if (nameIndex !== -1) {
-            textWithPlaceholders =
-              textWithPlaceholders.slice(0, nameIndex) +
-              placeholder +
-              textWithPlaceholders.slice(nameIndex + mentionName.length);
-          }
-        }
-
-        this.postMessage({
-          type: "userMessage",
-          text: textWithPlaceholders,
-          mentions,
-        });
-      } else {
-        console.log("[Chat] Non-text user chunk type:", update.content.type);
+        this.userMessageBuffer += update.content.text;
       }
     } else if (update.sessionUpdate === "agent_message_chunk") {
-      console.log("[Chat] Chunk content:", JSON.stringify(update.content));
       if (update.content.type === "text") {
         this.postMessage({ type: "streamChunk", text: update.content.text });
       } else {
@@ -1146,6 +1127,20 @@ export class ChatViewProvider
     }
   }
 
+  private flushUserMessageBuffer(): void {
+    if (this.userMessageBuffer) {
+      const { text, mentions } = extractMentions(this.userMessageBuffer);
+      this.postMessage({
+        type: "userMessage",
+        text,
+        mentions,
+      });
+      this.userMessageBuffer = "";
+      // Ensure thinking block for the next response is properly separated
+      this.postMessage({ type: "streamEnd", stopReason: "end_turn" });
+    }
+  }
+
   /**
    * Extract mentions from user message content during history session restoration.
    * Parses the structured XML-like mention format to restore mention objects.
@@ -1233,6 +1228,8 @@ export class ChatViewProvider
       dataUrl?: string;
     }> = []
   ): Promise<void> {
+    // Clear history restoration buffer on new user interaction
+    this.userMessageBuffer = "";
     this.postMessage({ type: "userMessage", text, images, mentions });
 
     try {
@@ -1346,6 +1343,7 @@ export class ChatViewProvider
   }
 
   private async handleNewChat(): Promise<void> {
+    this.userMessageBuffer = "";
     this.hasSession = false;
     this.hasRestoredModeModel = false;
     this.clearToolCallMetadata();
