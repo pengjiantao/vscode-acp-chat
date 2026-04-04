@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { spawn } from "child_process";
+import { searchWorkspaceFiles } from "../utils/file-search";
 import { ACPClient } from "../acp/client";
 import { getAgent, getFirstAvailableAgent } from "../acp/agents";
 import { DiffManager } from "../acp/diff-manager";
@@ -304,65 +305,14 @@ export class ChatViewProvider
         case "searchFiles":
           if (message.text !== undefined) {
             const query = message.text;
-            // 搜索文件和文件夹
-            const [files, folders] = await Promise.all([
-              vscode.workspace.findFiles(
-                `**/*${query}*`,
-                "**/node_modules/**",
-                50
-              ),
-              vscode.workspace.findFiles(
-                `**/*${query}*/`,
-                "**/node_modules/**",
-                50
-              ),
-            ]);
-
-            const results = [];
-
-            // 处理文件
-            for (const f of files) {
-              const relativePath = vscode.workspace.asRelativePath(f);
-              const pathParts = relativePath.split("/");
-              const fileName = pathParts[pathParts.length - 1];
-              const dirPath = pathParts.slice(0, -1).join("/");
-
-              results.push({
-                name: fileName,
-                path: relativePath,
-                dir: dirPath || "",
-                type: "file" as const,
-                fsPath: f.fsPath,
-              });
-            }
-
-            // 处理文件夹
-            for (const folder of folders) {
-              const relativePath = vscode.workspace.asRelativePath(folder);
-              const pathParts = relativePath.split("/");
-              const folderName = pathParts[pathParts.length - 1];
-              const dirPath = pathParts.slice(0, -1).join("/");
-
-              results.push({
-                name: folderName,
-                path: relativePath,
-                dir: dirPath || "",
-                type: "folder" as const,
-                fsPath: folder.fsPath,
-              });
-            }
-
-            // 去重并限制结果数量
-            const uniqueResults = results
-              .filter(
-                (result, index, self) =>
-                  index === self.findIndex((r) => r.path === result.path)
-              )
-              .slice(0, 20);
+            // 使用新的搜索工具函数，支持文件和文件夹搜索
+            const results = await searchWorkspaceFiles(query, {
+              maxResults: 20,
+            });
 
             this.postMessage({
               type: "fileSearchResults",
-              results: uniqueResults,
+              results,
             });
           }
           break;
