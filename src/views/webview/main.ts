@@ -819,6 +819,8 @@ export class WebviewController {
   private activeBlock: Block | null = null;
   private blocks: Block[] = [];
   private planEl: HTMLElement | null = null;
+  private planEntries: PlanEntry[] = [];
+  private isPlanExpanded = false;
   private isConnected = false;
   private messageTexts = new Map<HTMLElement, string>();
   private availableCommands: AvailableCommand[] = [];
@@ -1649,6 +1651,8 @@ export class WebviewController {
       return;
     }
 
+    this.planEntries = entries;
+
     if (!this.planEl) {
       this.planEl = this.doc.createElement("div");
       this.planEl.className = "agent-plan-sticky";
@@ -1662,14 +1666,24 @@ export class WebviewController {
       (e) => e.status === "completed"
     ).length;
     const totalCount = entries.length;
+    const inProgressCount = entries.filter(
+      (e) => e.status === "in_progress"
+    ).length;
+
+    // Get the label text based on current state
+    const planLabel = this.getPlanLabel(
+      completedCount,
+      totalCount,
+      inProgressCount
+    );
 
     this.planEl.innerHTML = `
-      <div class="plan-header">
-        <span class="plan-icon icon-clipboard"></span>
-        <span class="plan-title">Agent Plan</span>
+      <div class="plan-header" role="button" tabindex="0" aria-expanded="${this.isPlanExpanded}">
+        <span class="plan-toggle-icon ${this.isPlanExpanded ? "expanded" : "collapsed"}"></span>
+        <span class="plan-title">${planLabel}</span>
         <span class="plan-progress">${completedCount}/${totalCount}</span>
       </div>
-      <div class="plan-entries">
+      <div class="plan-entries ${this.isPlanExpanded ? "" : "collapsed"}">
         ${entries
           .map(
             (entry) => `
@@ -1682,6 +1696,76 @@ export class WebviewController {
           .join("")}
       </div>
     `;
+
+    // Add click handler for toggle - always re-bind since innerHTML recreates elements
+    const headerEl = this.planEl.querySelector(".plan-header");
+    if (headerEl) {
+      // Use onclick to avoid duplicate bindings
+      (headerEl as HTMLElement).onclick = () => this.togglePlan();
+      headerEl.addEventListener("keydown", (e: Event) => {
+        const keyboardEvent = e as KeyboardEvent;
+        if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+          e.preventDefault();
+          this.togglePlan();
+        }
+      });
+    }
+  }
+
+  private getPlanLabel(
+    completedCount: number,
+    totalCount: number,
+    inProgressCount: number
+  ): string {
+    if (this.isPlanExpanded) {
+      return "Plan";
+    }
+
+    // When collapsed, show "Plan(Current): xxxx" format
+    if (inProgressCount > 0) {
+      const currentEntry = this.planEntries.find(
+        (e) => e.status === "in_progress"
+      );
+      if (currentEntry) {
+        // Truncate long content
+        const content =
+          currentEntry.content.length > 50
+            ? currentEntry.content.substring(0, 50) + "..."
+            : currentEntry.content;
+        return `Plan(Current): ${content}`;
+      }
+    }
+
+    // If no in-progress, show the last completed item or first pending
+    if (completedCount > 0) {
+      const lastCompleted = [...this.planEntries]
+        .reverse()
+        .find((e) => e.status === "completed");
+      if (lastCompleted) {
+        const content =
+          lastCompleted.content.length > 50
+            ? lastCompleted.content.substring(0, 50) + "..."
+            : lastCompleted.content;
+        return `Plan(Current): ${content}`;
+      }
+    }
+
+    // Default: show first pending item
+    const firstPending = this.planEntries.find((e) => e.status === "pending");
+    if (firstPending) {
+      const content =
+        firstPending.content.length > 50
+          ? firstPending.content.substring(0, 50) + "..."
+          : firstPending.content;
+      return `Plan(Current): ${content}`;
+    }
+
+    return "Plan(Current)";
+  }
+
+  private togglePlan(): void {
+    this.isPlanExpanded = !this.isPlanExpanded;
+    this.showPlan(this.planEntries);
   }
 
   private getPlanStatusHtml(status: string): string {
@@ -1701,6 +1785,8 @@ export class WebviewController {
       this.planEl.remove();
       this.planEl = null;
     }
+    this.planEntries = [];
+    this.isPlanExpanded = false;
   }
 
   private send(): void {

@@ -928,6 +928,44 @@ suite("Webview", () => {
         assert.ok(low);
       });
 
+      test("showPlan is collapsed by default", () => {
+        controller.showPlan(testPlan.entries);
+        const planEntries =
+          elements.planContainer.querySelector(".plan-entries");
+        assert.ok(planEntries?.classList.contains("collapsed"));
+      });
+
+      test("showPlan header is clickable", () => {
+        controller.showPlan(testPlan.entries);
+        const header = elements.planContainer.querySelector(".plan-header");
+        assert.ok(header);
+        // Verify it has the collapsed state initially
+        const toggleIcon = header?.querySelector(".plan-toggle-icon");
+        assert.ok(toggleIcon?.classList.contains("collapsed"));
+      });
+
+      test("plan header click toggles expand/collapse", () => {
+        controller.showPlan(testPlan.entries);
+        let header = elements.planContainer.querySelector(
+          ".plan-header"
+        ) as HTMLElement;
+        let planEntries = elements.planContainer.querySelector(".plan-entries");
+
+        // Initially collapsed
+        assert.ok(planEntries?.classList.contains("collapsed"));
+
+        // Click to expand
+        if (header) {
+          header.click();
+        }
+
+        // Re-query after click since DOM is re-rendered
+        planEntries = elements.planContainer.querySelector(".plan-entries");
+
+        // Should now be expanded
+        assert.ok(!planEntries?.classList.contains("collapsed"));
+      });
+
       test("hidePlan removes plan element", () => {
         controller.showPlan(testPlan.entries);
         controller.hidePlan();
