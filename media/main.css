@@ -488,17 +488,21 @@ body {
 /* Input Container Area */
 #chat-input-area {
   margin: 0 12px 12px 12px;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 8px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
   background: var(--vscode-input-background);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   position: relative;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
 #chat-input-area:focus-within {
   border-color: var(--vscode-focusBorder);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder);
 }
 
 /* Rich Text Input Support */
@@ -1198,23 +1202,24 @@ body {
 #input:empty::before {
   content: attr(data-placeholder);
   color: var(--vscode-input-placeholderForeground);
-  opacity: 0.6;
   pointer-events: none;
 }
 
 .input-hint {
-  font-size: 10px;
+  font-size: 0.85em;
   color: var(--vscode-descriptionForeground);
   padding: 4px 8px;
-  opacity: 0.7;
+  opacity: 0.8;
 }
 
 /* Options Bar */
 #options-bar {
-  padding: 4px 8px 8px 8px;
+  padding: 8px 8px 8px 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  border-top: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.1));
+  margin-top: 2px;
 }
 
 #left-options {
