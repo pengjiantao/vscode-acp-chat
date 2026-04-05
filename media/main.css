@@ -1443,6 +1443,53 @@ body {
   line-height: 1;
 }
 
+.dropdown-header {
+  padding: 6px 12px;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.8;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: var(
+    --vscode-menu-separatorBackground,
+    var(--vscode-dropdown-border)
+  );
+  margin: 4px 0;
+}
+
+.dropdown-item-star {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 14px;
+  color: var(--vscode-icon-foreground);
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  cursor: pointer;
+}
+
+.dropdown-item:hover .dropdown-item-star {
+  opacity: 0.6;
+}
+
+.dropdown-item-star:hover {
+  opacity: 1 !important;
+  color: var(--vscode-charts-yellow, #e5b567);
+}
+
+.dropdown-item-star.codicon-star-full {
+  opacity: 1;
+  color: var(--vscode-charts-yellow, #e5b567);
+}
+
 /* Send Button */
 #send {
   background: transparent;

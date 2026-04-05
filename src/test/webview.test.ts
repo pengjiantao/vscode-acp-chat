@@ -617,6 +617,82 @@ suite("Webview", () => {
       });
     });
 
+    suite("model selection with starring and grouping", () => {
+      const testModels = {
+        availableModels: [
+          { modelId: "model-1", name: "Model 1" },
+          { modelId: "model-2", name: "Model 2" },
+        ],
+        currentModelId: "model-1",
+      };
+
+      test("handles sessionMetadata with models", () => {
+        controller.handleMessage({
+          type: "sessionMetadata",
+          models: testModels,
+          modes: null,
+        });
+        assert.strictEqual(elements.modelDropdown.style.display, "flex");
+        const label = elements.modelDropdown.querySelector(".selected-label");
+        assert.strictEqual(label?.textContent, "Model 1");
+      });
+
+      test("renders models in dropdown", () => {
+        controller.handleMessage({
+          type: "sessionMetadata",
+          models: testModels,
+          modes: null,
+        });
+
+        // Open dropdown
+        elements.modelDropdown
+          .querySelector(".dropdown-trigger")
+          ?.dispatchEvent(new window.MouseEvent("click"));
+
+        const popover =
+          elements.modelDropdown.querySelector(".dropdown-popover")!;
+        const items = popover.querySelectorAll(".dropdown-item");
+        assert.strictEqual(items.length, 2);
+      });
+
+      test("starring a model creates 'Starred' and 'All Models' groups", () => {
+        controller.handleMessage({
+          type: "sessionMetadata",
+          models: testModels,
+          modes: null,
+        });
+
+        // Open dropdown
+        elements.modelDropdown
+          .querySelector(".dropdown-trigger")
+          ?.dispatchEvent(new window.MouseEvent("click"));
+        const popover =
+          elements.modelDropdown.querySelector(".dropdown-popover")!;
+
+        // Find star icon for model-2 and click it
+        const model2Item = popover.querySelector('[data-id="model-2"]')!;
+        const starIcon = model2Item.querySelector(
+          ".dropdown-item-star"
+        ) as HTMLElement;
+        assert.ok(starIcon);
+        starIcon.click();
+
+        // Dropdown should re-render with headers
+        const headers = popover.querySelectorAll(".dropdown-header");
+        assert.strictEqual(headers.length, 2);
+        assert.strictEqual(headers[0].textContent, "Starred");
+        assert.strictEqual(headers[1].textContent, "All Models");
+
+        // Should have model-2 in Starred group and both in All Models group
+        const allItems = popover.querySelectorAll(".dropdown-item");
+        assert.strictEqual(allItems.length, 3); // 1 starred + 2 all
+
+        assert.strictEqual(allItems[0].getAttribute("data-id"), "model-2");
+        assert.strictEqual(allItems[1].getAttribute("data-id"), "model-1");
+        assert.strictEqual(allItems[2].getAttribute("data-id"), "model-2");
+      });
+    });
+
     suite("input handling", () => {
       test("Enter key sends message", () => {
         mockVsCode._clearMessages();

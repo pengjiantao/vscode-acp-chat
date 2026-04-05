@@ -54,6 +54,7 @@ export interface Block {
 export interface WebviewState {
   isConnected: boolean;
   inputValue: string;
+  starredModels?: string[];
   diffChanges?: Array<{
     path: string;
     relativePath: string;
@@ -664,6 +665,9 @@ export function updateSelectLabel(select: HTMLSelectElement): void {
 export interface DropdownOption {
   id: string;
   name: string;
+  type?: "item" | "header" | "divider";
+  isStarred?: boolean;
+  canStar?: boolean;
 }
 
 export class Dropdown {
@@ -674,11 +678,17 @@ export class Dropdown {
   private options: DropdownOption[] = [];
   private selectedId: string | null = null;
   private onChange?: (id: string) => void;
+  private onStarToggle?: (id: string, isStarred: boolean) => void;
   private isOpen = false;
 
-  constructor(element: HTMLElement, onChange?: (id: string) => void) {
+  constructor(
+    element: HTMLElement,
+    onChange?: (id: string) => void,
+    onStarToggle?: (id: string, isStarred: boolean) => void
+  ) {
     this.element = element;
     this.onChange = onChange;
+    this.onStarToggle = onStarToggle;
     this.trigger = element.querySelector(".dropdown-trigger")!;
     this.popover = element.querySelector(".dropdown-popover")!;
     this.labelEl = element.querySelector(".selected-label")!;
@@ -704,7 +714,9 @@ export class Dropdown {
   }
 
   select(id: string, triggerChange = true): void {
-    const option = this.options.find((o) => o.id === id);
+    const option = this.options.find(
+      (o) => o.id === id && o.type !== "header" && o.type !== "divider"
+    );
     if (!option) return;
 
     this.selectedId = id;
@@ -758,17 +770,49 @@ export class Dropdown {
   private renderOptions(): void {
     this.popover.innerHTML = "";
     this.options.forEach((opt) => {
+      if (opt.type === "divider") {
+        const divider = this.element.ownerDocument.createElement("div");
+        divider.className = "dropdown-divider";
+        this.popover.appendChild(divider);
+        return;
+      }
+
+      if (opt.type === "header") {
+        const header = this.element.ownerDocument.createElement("div");
+        header.className = "dropdown-header";
+        header.textContent = opt.name;
+        this.popover.appendChild(header);
+        return;
+      }
+
       const item = this.element.ownerDocument.createElement("div");
       item.className = "dropdown-item";
       if (opt.id === this.selectedId) item.classList.add("selected");
       item.setAttribute("data-id", opt.id);
 
+      let starHtml = "";
+      if (opt.canStar) {
+        const starIcon = opt.isStarred ? "star-full" : "star-empty";
+        starHtml = `<span class="dropdown-item-star codicon codicon-${starIcon}" title="${
+          opt.isStarred ? "Unstar" : "Star"
+        }"></span>`;
+      }
+
       item.innerHTML = `
         <span class="dropdown-item-check codicon codicon-check"></span>
         <span class="dropdown-item-label">${escapeHtml(opt.name)}</span>
+        ${starHtml}
       `;
 
-      item.addEventListener("click", () => {
+      item.addEventListener("click", (e) => {
+        const target = e.target as HTMLElement;
+        if (target.classList.contains("dropdown-item-star")) {
+          e.stopPropagation();
+          if (this.onStarToggle) {
+            this.onStarToggle(opt.id, !opt.isStarred);
+          }
+          return;
+        }
         this.select(opt.id);
         this.close();
       });
@@ -842,6 +886,8 @@ export class WebviewController {
   private modelDropdown: Dropdown;
   private isGenerating = false;
   private hoveredImageChip: HTMLElement | null = null;
+  private starredModels = new Set<string>();
+  private lastModelsMsg: any = null;
   private diffChanges: Array<{
     path: string;
     relativePath: string;
@@ -866,9 +912,23 @@ export class WebviewController {
       this.vscode.postMessage({ type: "selectMode", modeId: id });
     });
 
-    this.modelDropdown = new Dropdown(this.elements.modelDropdown, (id) => {
-      this.vscode.postMessage({ type: "selectModel", modelId: id });
-    });
+    this.modelDropdown = new Dropdown(
+      this.elements.modelDropdown,
+      (id) => {
+        this.vscode.postMessage({ type: "selectModel", modelId: id });
+      },
+      (id, isStarred) => {
+        if (isStarred) {
+          this.starredModels.add(id);
+        } else {
+          this.starredModels.delete(id);
+        }
+        this.saveState();
+        if (this.lastModelsMsg) {
+          this.updateModelDropdown(this.lastModelsMsg);
+        }
+      }
+    );
 
     this.restoreState();
     this.setupEventListeners();
@@ -1143,6 +1203,9 @@ export class WebviewController {
     const previousState = this.vscode.getState<WebviewState>();
     if (previousState) {
       this.isConnected = previousState.isConnected;
+      if (previousState.starredModels) {
+        this.starredModels = new Set(previousState.starredModels);
+      }
       if (previousState.inputValue) {
         this.elements.inputEl.innerHTML = previousState.inputValue;
         // Re-attach listeners to mention chips
@@ -1175,6 +1238,7 @@ export class WebviewController {
     this.vscode.setState<WebviewState>({
       isConnected: this.isConnected,
       inputValue: this.elements.inputEl.innerHTML || "",
+      starredModels: Array.from(this.starredModels),
       diffChanges: this.diffChanges,
     });
   }
@@ -2580,15 +2644,11 @@ export class WebviewController {
 
         if (hasModels && msg.models) {
           this.elements.modelDropdown.style.display = "flex";
-          this.modelDropdown.setOptions(
-            msg.models.availableModels.map((m) => ({
-              id: m.modelId,
-              name: m.name || m.modelId,
-            })),
-            msg.models.currentModelId
-          );
+          this.lastModelsMsg = msg.models;
+          this.updateModelDropdown(msg.models);
         } else {
           this.elements.modelDropdown.style.display = "none";
+          this.lastModelsMsg = null;
         }
 
         if (msg.commands && Array.isArray(msg.commands)) {
@@ -2599,6 +2659,11 @@ export class WebviewController {
       case "modeUpdate":
         if (msg.modeId) {
           this.modeDropdown.setValue(msg.modeId);
+        }
+        break;
+      case "modelUpdate":
+        if (msg.modelId) {
+          this.modelDropdown.setValue(msg.modelId);
         }
         break;
       case "availableCommands":
@@ -2632,6 +2697,40 @@ export class WebviewController {
         }
         break;
     }
+  }
+
+  private updateModelDropdown(modelsMsg: any): void {
+    const options: DropdownOption[] = [];
+    const availableModels = modelsMsg.availableModels || [];
+
+    const starred = availableModels.filter((m: any) =>
+      this.starredModels.has(m.modelId)
+    );
+
+    if (starred.length > 0) {
+      options.push({ id: "header-starred", name: "Starred", type: "header" });
+      starred.forEach((m: any) => {
+        options.push({
+          id: m.modelId,
+          name: m.name || m.modelId,
+          isStarred: true,
+          canStar: true,
+        });
+      });
+      options.push({ id: "divider-1", name: "", type: "divider" });
+      options.push({ id: "header-all", name: "All Models", type: "header" });
+    }
+
+    availableModels.forEach((m: any) => {
+      options.push({
+        id: m.modelId,
+        name: m.name || m.modelId,
+        isStarred: this.starredModels.has(m.modelId),
+        canStar: true,
+      });
+    });
+
+    this.modelDropdown.setOptions(options, modelsMsg.currentModelId);
   }
 
   getIsConnected(): boolean {
