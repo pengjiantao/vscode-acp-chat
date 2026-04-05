@@ -1070,7 +1070,7 @@ export class WebviewController {
     wrapper.appendChild(body);
 
     container.appendChild(wrapper);
-    this.elements.messagesEl.scrollTop = this.elements.messagesEl.scrollHeight;
+    this.scrollToBottom();
   }
 
   private renderPermissionOverlay(
@@ -1414,6 +1414,16 @@ export class WebviewController {
     this.elements.imagePreviewPopover.style.display = "none";
   }
 
+  private scrollToBottom(force = false): void {
+    const { messagesEl } = this.elements;
+    const isNearBottom =
+      messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <
+      100;
+    if (force || isNearBottom) {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+  }
+
   public addMessage(
     text: string,
     type: "user" | "assistant" | "error" | "system",
@@ -1482,7 +1492,7 @@ export class WebviewController {
     }
 
     this.elements.messagesEl.appendChild(div);
-    this.elements.messagesEl.scrollTop = this.elements.messagesEl.scrollHeight;
+    this.scrollToBottom(type === "user");
 
     if (text) {
       this.announceToScreenReader(label + ": " + text.substring(0, 100));
@@ -1644,7 +1654,7 @@ export class WebviewController {
     const block = this.ensureBlock("thought");
     block.content += text;
     block.contentEl.innerHTML = marked.parse(block.content) as string;
-    this.elements.messagesEl.scrollTop = this.elements.messagesEl.scrollHeight;
+    this.scrollToBottom();
   }
 
   public hideThought(): void {
@@ -2101,7 +2111,7 @@ export class WebviewController {
     const selectedItem = commandAutocomplete.querySelector(
       ".command-item.selected"
     );
-    if (selectedItem) {
+    if (selectedItem && typeof selectedItem.scrollIntoView === "function") {
       selectedItem.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   }
@@ -2305,6 +2315,7 @@ export class WebviewController {
       } else {
         messagesEl.appendChild(typingIndicatorEl);
       }
+      this.scrollToBottom(true);
     } else {
       sendBtn.style.display = "flex";
       stopBtn.style.display = "none";
@@ -2489,8 +2500,7 @@ export class WebviewController {
           block.content += msg.text;
           block.contentEl.innerHTML = marked.parse(block.content) as string;
           this.updateAssistantMessageText();
-          this.elements.messagesEl.scrollTop =
-            this.elements.messagesEl.scrollHeight;
+          this.scrollToBottom();
         }
         break;
       case "thoughtChunk":
@@ -2498,8 +2508,7 @@ export class WebviewController {
           const block = this.ensureBlock("thought");
           block.content += msg.text;
           block.contentEl.innerHTML = marked.parse(block.content) as string;
-          this.elements.messagesEl.scrollTop =
-            this.elements.messagesEl.scrollHeight;
+          this.scrollToBottom();
         }
         break;
       case "streamEnd":
@@ -2531,8 +2540,7 @@ export class WebviewController {
               summary.innerHTML = summaryHtml;
             }
           }
-          this.elements.messagesEl.scrollTop =
-            this.elements.messagesEl.scrollHeight;
+          this.scrollToBottom();
         }
         break;
       case "toolCallComplete":

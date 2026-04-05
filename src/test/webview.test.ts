@@ -971,7 +971,7 @@ suite("Webview", () => {
 
       test("showPlan shows progress count", () => {
         controller.showPlan(testPlan.entries);
-        const progress = elements.planContainer.querySelector(".plan-progress");
+        const progress = elements.planContainer.querySelector(".plan-counter");
         assert.ok(progress);
         assert.strictEqual(progress?.textContent, "1/3");
       });

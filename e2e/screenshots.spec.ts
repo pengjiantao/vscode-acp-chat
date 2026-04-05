@@ -177,7 +177,7 @@ const PLAN_DISPLAY_SETUP = `
     <div class="plan-header">
       <span class="plan-icon">📋</span>
       <span class="plan-title">Agent Plan</span>
-      <span class="plan-progress">1/4</span>
+      <span class="plan-counter">1/4</span>
     </div>
     <div class="plan-entries">
       <div class="plan-entry plan-entry-completed plan-priority-medium">

@@ -1505,7 +1505,7 @@ export class ChatViewProvider
 
   <div id="typing-indicator" class="typing-indicator" aria-hidden="true">
     <div class="zed-loader">
-      <div></div><div></div><div></div><div></div>
+      <div></div><div></div><div></div>
     </div>
   </div>
 

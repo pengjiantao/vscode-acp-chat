@@ -150,12 +150,12 @@ body {
 }
 
 .message.assistant p {
-  margin: 6px 0;
+  margin: 12px 0;
 }
 
 .message.assistant ul,
 .message.assistant ol {
-  margin: 6px 0;
+  margin: 12px 0;
   padding-left: 20px;
   list-style: disc;
 }
@@ -165,7 +165,15 @@ body {
 }
 
 .message.assistant li {
-  margin: 3px 0;
+  margin: 6px 0;
+}
+
+.message.assistant code {
+  background-color: var(--vscode-textCodeBlock-background);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: var(--vscode-editor-font-family), monospace;
+  font-size: 0.9em;
 }
 
 .message.assistant a {
@@ -209,7 +217,7 @@ body {
 
 /* Typing/Loading Indicator */
 .typing-indicator {
-  padding: 6px 0;
+  padding: 12px 0;
   display: none;
   align-items: center;
   gap: 8px;
@@ -219,7 +227,7 @@ body {
 
 .message .typing-indicator {
   padding: 8px 0 0 0;
-  margin-top: 4px;
+  margin-top: 8px;
   border-top: 1px solid var(--vscode-panel-border);
   opacity: 0.8;
 }
@@ -229,12 +237,10 @@ body {
 }
 
 .zed-loader {
-  display: grid;
-  grid-template-columns: repeat(2, 4px);
-  grid-template-rows: repeat(2, 4px);
-  gap: 2px;
-  animation: zed-rotate 1.5s linear infinite;
-  opacity: 0.7;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 12px;
 }
 
 .zed-loader div {
@@ -242,6 +248,29 @@ body {
   height: 4px;
   background-color: currentColor;
   border-radius: 50%;
+  opacity: 0.3;
+  animation: zed-flash 1.4s infinite both;
+}
+
+.zed-loader div:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.zed-loader div:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes zed-flash {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes zed-rotate {
@@ -256,7 +285,7 @@ body {
 
 /* Tool Calls */
 .tool-details {
-  margin-top: 8px;
+  margin-top: 16px;
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
 }
@@ -292,12 +321,12 @@ body {
 }
 
 .tool-list {
-  margin: 4px 0 0 14px;
+  margin: 8px 0 0 14px;
   padding: 0;
 }
 
 .tool-list li {
-  padding: 2px 0;
+  padding: 4px 0;
   font-family: var(--vscode-editor-font-family), monospace;
 }
 
@@ -1718,10 +1747,10 @@ kbd {
 
 /* Agent Thought Display */
 .agent-thought {
-  margin: 2px 0;
+  margin: 12px 0 12px 6px;
   padding: 0;
   border-radius: 4px;
-  border: none;
+  border-left: 2px solid var(--vscode-editorIndentGuide-background);
   font-size: 12px;
   overflow: hidden;
   width: 100%;
@@ -1738,7 +1767,7 @@ kbd {
   align-items: center;
   gap: 8px;
   transition: background 0.1s ease;
-  border-radius: 4px;
+  border-radius: 0 4px 4px 0;
 }
 
 .agent-thought summary:hover {
@@ -1794,8 +1823,9 @@ kbd {
 
 /* Tool Calls */
 .tool-item {
-  margin: 2px 0;
+  margin: 12px 0 12px 6px;
   border: none;
+  border-left: 2px solid var(--vscode-editorIndentGuide-background);
   border-radius: 4px;
   overflow: hidden;
   width: 100%;
@@ -1814,7 +1844,7 @@ kbd {
   font-family: var(--vscode-editor-font-family), monospace;
   font-size: 11px;
   transition: background 0.1s ease;
-  border-radius: 4px;
+  border-radius: 0 4px 4px 0;
   min-width: 0;
   /* Important for ellipsis in flexbox */
 }
