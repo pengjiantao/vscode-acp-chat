@@ -1243,6 +1243,55 @@ export class WebviewController {
     });
   }
 
+  /**
+   * Handle paste events from the input element.
+   * Public so tests can invoke it directly without JSDOM ClipboardEvent constraints.
+   *
+   * For image clipboard items: extracts the image and creates a mention chip.
+   * For all other content: prevents default HTML paste behavior and inserts only
+   * plain text, avoiding UI misalignment and XSS injection from rich HTML.
+   */
+  public onPaste(e: {
+    clipboardData?: {
+      items: Array<{ type: string; getAsFile?: () => File | null }>;
+      getData: (type: string) => string;
+    };
+    preventDefault: () => void;
+  }): void {
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const blob = item.getAsFile?.();
+          if (blob) this.handleImageAttachment(blob);
+          return;
+        }
+      }
+    }
+    // For text content, extract plain text only to avoid:
+    // 1. UI misalignment from rich HTML formatting
+    // 2. XSS injection from malicious HTML/scripts
+    e.preventDefault();
+    const plainText = e.clipboardData?.getData("text/plain") ?? "";
+    const selection = this.win.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    const textNode = this.doc.createTextNode(plainText);
+    range.insertNode(textNode);
+    range.setStartAfter(textNode);
+    range.setEndAfter(textNode);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    this.adjustHeight();
+    this.updateAutocomplete();
+    this.saveState();
+    this.updateInputState();
+  }
+
   private setupEventListeners(): void {
     const { sendBtn, stopBtn, inputEl, messagesEl, attachImageBtn } =
       this.elements;
@@ -1309,16 +1358,7 @@ export class WebviewController {
     });
 
     inputEl.addEventListener("paste", (e) => {
-      const items = e.clipboardData?.items;
-      if (items) {
-        for (const item of items) {
-          if (item.type.startsWith("image/")) {
-            e.preventDefault();
-            const blob = item.getAsFile();
-            if (blob) this.handleImageAttachment(blob);
-          }
-        }
-      }
+      this.onPaste(e as unknown as Parameters<typeof this.onPaste>[0]);
     });
 
     attachImageBtn.addEventListener("click", () => {

@@ -336,6 +336,97 @@ suite("Webview", () => {
       mockVsCode = createMockVsCodeApi();
       elements = getElements(document);
       (global as any).Node = window.Node;
+
+      // Polyfill DataTransfer and ClipboardEvent for JSDOM clipboard testing
+      if (!(window as any).DataTransfer) {
+        (window as any).DataTransfer = class DataTransfer {
+          dropEffect: string = "copy";
+          effectAllowed: string = "all";
+          files: FileList = {
+            length: 0,
+            item: () => null,
+            [Symbol.iterator]: () => [][Symbol.iterator](),
+          } as FileList;
+          items: DataTransferItemList = {
+            length: 0,
+            add: () => {},
+            remove: () => {},
+            clear: () => {},
+            0: {
+              type: "",
+              kind: "string",
+              getAsFile: () => null,
+              getAsString: () => {},
+            },
+            [Symbol.iterator]: () => [][Symbol.iterator](),
+          } as any;
+          types: string[] = [];
+          constructor() {
+            this.items = [] as any;
+            this.types = [];
+          }
+          setData(_format: string, _data: string): void {}
+          getData(format: string): string {
+            return (this as any)._getData?.(format) ?? "";
+          }
+          clearData(_format?: string): void {}
+          getAsFile(): File | null {
+            return null;
+          }
+        };
+      }
+      if (!(window as any).ClipboardEvent) {
+        (window as any).ClipboardEvent = class ClipboardEvent extends Event {
+          clipboardData: DataTransfer;
+          constructor(
+            type: string,
+            props?: {
+              bubbles?: boolean;
+              cancelable?: boolean;
+              clipboardData?: DataTransfer;
+            }
+          ) {
+            super(type, {
+              bubbles: props?.bubbles ?? false,
+              cancelable: props?.cancelable ?? false,
+            });
+            this.clipboardData =
+              props?.clipboardData ?? new (window as any).DataTransfer();
+          }
+        };
+      }
+
+      // Polyfill FileReader for JSDOM image paste tests
+      // Uses a minimal sync-like implementation that fires onload immediately
+      const frClass = class FileReader {
+        readyState: number = 0;
+        result: string | ArrayBuffer | null = null;
+        error: Error | null = null;
+        onload: ((event: ProgressEvent) => void) | null = null;
+        onerror: ((event: ProgressEvent) => void) | null = null;
+        onloadend: ((event: ProgressEvent) => void) | null = null;
+        readAsDataURL(_blob: Blob): void {
+          // Synchronously call onload with a minimal valid data URL
+          // This is sufficient for tests that only verify the image handling path
+          this.result = "data:image/png;base64,";
+          this.readyState = 2;
+          if (this.onload) this.onload({} as ProgressEvent);
+          if (this.onloadend) this.onloadend({} as ProgressEvent);
+        }
+        readAsText(_blob: Blob): void {
+          this.result = "";
+          this.readyState = 2;
+          if (this.onload) this.onload({} as ProgressEvent);
+          if (this.onloadend) this.onloadend({} as ProgressEvent);
+        }
+        abort(): void {}
+        addEventListener(_type: string, _listener: EventListener): void {}
+        removeEventListener(_type: string, _listener: EventListener): void {}
+      };
+      // Set on both window and globalThis so compiled code can access it either way
+      (window as any).FileReader = frClass;
+      (globalThis as any).FileReader = frClass;
+
       controller = new WebviewController(
         mockVsCode,
         elements,
@@ -752,6 +843,166 @@ suite("Webview", () => {
         const event = new window.KeyboardEvent("keydown", { key: "Escape" });
         elements.inputEl.dispatchEvent(event);
         assert.strictEqual(elements.inputEl.textContent, "");
+      });
+    });
+
+    suite("paste handling", () => {
+      /**
+       * Helper that calls the public onPaste method with a mock event object.
+       * The mock clipboardData matches the shape the handler expects.
+       */
+      function simulatePaste(clipboardData: {
+        items: Array<{ type: string; getAsFile?: () => File | null }>;
+        getData: (type: string) => string;
+      }): void {
+        controller.onPaste({
+          clipboardData,
+          preventDefault: () => {},
+        });
+      }
+
+      test("paste plain text inserts text content only", () => {
+        mockVsCode._clearMessages();
+        elements.inputEl.focus();
+
+        const plainText = "Hello world from paste";
+        simulatePaste({
+          items: [],
+          getData: (type: string) => (type === "text/plain" ? plainText : ""),
+        });
+
+        // Verify plain text was inserted
+        assert.strictEqual(elements.inputEl.textContent, plainText);
+        // Ensure no HTML tags were inserted
+        assert.strictEqual(
+          elements.inputEl.querySelectorAll("div, span, p, b, i").length,
+          0
+        );
+      });
+
+      test("paste rich HTML from web page extracts plain text only", () => {
+        mockVsCode._clearMessages();
+        elements.inputEl.focus();
+
+        // Simulate pasting from a webpage with rich formatting
+        const richHtml =
+          "<p>Hello <b>world</b> with <i>formatting</i></p>" +
+          '<a href="http://example.com">a link</a>' +
+          "<script>alert('xss')</script>";
+        const plainTextFromHtml = "Hello world with formatting";
+
+        simulatePaste({
+          items: [{ type: "text/html" }],
+          getData: (type: string) => {
+            if (type === "text/plain") return plainTextFromHtml;
+            if (type === "text/html") return richHtml;
+            return "";
+          },
+        });
+
+        // Should have extracted only the plain text, no HTML tags
+        assert.strictEqual(elements.inputEl.textContent, plainTextFromHtml);
+        // Verify no dangerous HTML elements were inserted
+        assert.strictEqual(
+          elements.inputEl.querySelectorAll("p, b, i, a, script").length,
+          0
+        );
+      });
+
+      test("paste XSS attempt does not inject script elements", () => {
+        mockVsCode._clearMessages();
+        elements.inputEl.focus();
+
+        // Attempt XSS via script injection
+        const xssHtml =
+          '<div>Hello</div><script>document.body.innerHTML="hacked"</script>';
+        const safeText = "Hello";
+
+        simulatePaste({
+          items: [{ type: "text/html" }],
+          getData: (type: string) => {
+            if (type === "text/plain") return safeText;
+            if (type === "text/html") return xssHtml;
+            return "";
+          },
+        });
+
+        // Should have extracted plain text, no script tags
+        assert.strictEqual(elements.inputEl.textContent, safeText);
+        assert.strictEqual(
+          elements.inputEl.querySelectorAll("script").length,
+          0,
+          "script element should not be present after paste"
+        );
+        assert.strictEqual(
+          elements.inputEl.querySelectorAll("div").length,
+          0,
+          "no div elements should be present"
+        );
+      });
+
+      test("paste image triggers image attachment", () => {
+        mockVsCode._clearMessages();
+        elements.inputEl.focus();
+
+        // Create a fake image blob
+        const fakeImageBlob = new Blob(["fake-image-data"], {
+          type: "image/png",
+        });
+        const fakeFile = new File([fakeImageBlob], "screenshot.png", {
+          type: "image/png",
+        });
+
+        // Spy on insertMentionChip to detect image handling
+        const originalInsertMentionChip = (controller as any).insertMentionChip;
+        let imageInserted = false;
+        (controller as any).insertMentionChip = function (mention: any) {
+          if (mention.type === "image") {
+            imageInserted = true;
+          }
+          return originalInsertMentionChip.call(this, mention);
+        };
+
+        simulatePaste({
+          items: [{ type: "image/png", getAsFile: () => fakeFile }],
+          getData: () => "",
+        });
+
+        // Restore original method
+        (controller as any).insertMentionChip = originalInsertMentionChip;
+
+        assert.strictEqual(
+          imageInserted,
+          true,
+          "image attachment should have been triggered"
+        );
+      });
+
+      test("paste updates input state after paste", () => {
+        mockVsCode._clearMessages();
+        elements.inputEl.focus();
+
+        const plainText = "state update test";
+        simulatePaste({
+          items: [],
+          getData: (type: string) => (type === "text/plain" ? plainText : ""),
+        });
+
+        // Send button should be enabled after pasting non-empty text
+        assert.strictEqual(elements.sendBtn.disabled, false);
+      });
+
+      test("paste with no matching listener does not throw", () => {
+        mockVsCode._clearMessages();
+        elements.inputEl.focus();
+
+        // Empty clipboard data - should be handled gracefully
+        assert.doesNotThrow(() => {
+          simulatePaste({
+            items: [],
+            getData: () => "",
+          });
+        });
       });
     });
 
