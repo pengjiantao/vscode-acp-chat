@@ -319,7 +319,17 @@ export class ChatViewProvider
         case "openFile":
           if (message.path) {
             const uri = vscode.Uri.file(message.path);
-            await vscode.window.showTextDocument(uri);
+            try {
+              const stat = await vscode.workspace.fs.stat(uri);
+              if (stat.type === vscode.FileType.Directory) {
+                await vscode.commands.executeCommand("revealInExplorer", uri);
+              } else {
+                await vscode.window.showTextDocument(uri);
+              }
+            } catch {
+              // Fallback to showTextDocument if stat fails or path is not local
+              await vscode.window.showTextDocument(uri);
+            }
           }
           break;
         case "stop":

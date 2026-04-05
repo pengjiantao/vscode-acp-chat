@@ -584,18 +584,20 @@ body {
   align-items: center;
   gap: 4px;
   background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.12));
-  color: var(--vscode-foreground);
-  padding: 2px 6px;
-  border-radius: 6px;
-  font-size: 12px;
-  margin: 2px;
-  vertical-align: middle;
+  color: inherit;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: inherit;
+  margin: 0 2px;
+  vertical-align: baseline;
   cursor: pointer;
   user-select: none;
   border: 1px solid transparent;
   transition:
     background 0.1s,
     border-color 0.1s;
+  position: relative;
+  top: 1px;
 }
 
 .mention-chip:hover {
@@ -604,12 +606,16 @@ body {
 }
 
 .mention-chip.readonly {
-  padding: 2px 8px;
+  padding: 1px 8px;
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  vertical-align: middle;
+  top: 0;
 }
 
 .mention-chip .chip-icon {
-  width: 14px;
-  height: 14px;
+  width: 1em;
+  height: 1em;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -2233,6 +2233,15 @@ export class WebviewController {
           }
         },
       },
+      folder: {
+        icon: "codicon codicon-folder",
+        onClick: (e) => {
+          if (mention.path) {
+            e.stopPropagation();
+            this.vscode.postMessage({ type: "openFile", path: mention.path });
+          }
+        },
+      },
       selection: {
         icon: "codicon codicon-file-text",
       },
@@ -2322,7 +2331,7 @@ export class WebviewController {
     range.insertNode(chip);
 
     // After inserting the chip, insert a space and move the cursor
-    const space = this.doc.createTextNode("\u00A0");
+    const space = this.doc.createTextNode(" ");
     range.setStartAfter(chip);
     range.insertNode(space);
 
