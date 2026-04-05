@@ -29,9 +29,9 @@ import type {
   RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
 
-const SELECTED_AGENT_KEY = "vscode-acp.selectedAgent";
-const SELECTED_MODE_KEY = "vscode-acp.selectedMode";
-const SELECTED_MODEL_KEY = "vscode-acp.selectedModel";
+const SELECTED_AGENT_KEY = "vscode-acp-chat.selectedAgent";
+const SELECTED_MODE_KEY = "vscode-acp-chat.selectedMode";
+const SELECTED_MODEL_KEY = "vscode-acp-chat.selectedModel";
 
 interface WebviewMessage {
   type:
@@ -93,7 +93,7 @@ interface ManagedTerminal {
 export class ChatViewProvider
   implements vscode.WebviewViewProvider, vscode.TextDocumentContentProvider
 {
-  public static readonly viewType = "vscode-acp.chatView";
+  public static readonly viewType = "vscode-acp-chat.chatView";
 
   private view?: vscode.WebviewView;
   private hasSession = false;
@@ -221,7 +221,7 @@ export class ChatViewProvider
     );
 
     this.diffManager.onDidChange((changes) => {
-      const config = vscode.workspace.getConfiguration("vscode-acp");
+      const config = vscode.workspace.getConfiguration("vscode-acp-chat");
       const enabled = config.get<boolean>("enableDiffSummary", true);
       if (enabled) {
         this.postMessage({

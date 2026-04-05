@@ -378,7 +378,7 @@ export class ACPClient {
           permissions: true,
         } as any,
         clientInfo: {
-          name: "vscode-acp",
+          name: "vscode-acp-chat",
           version: "0.0.1",
         },
       });

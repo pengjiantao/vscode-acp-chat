@@ -1,9 +1,9 @@
 {
-  "name": "vscode-acp",
-  "displayName": "VSCode ACP",
+  "name": "vscode-acp-chat",
+  "displayName": "VSCode ACP Chat",
   "description": "AI coding agents in VS Code via Agent Client Protocol (ACP). Chat with Claude, OpenCode, and other ACP-compatible agents directly in your editor.",
-  "version": "1.4.0",
-  "publisher": "omercnet",
+  "version": "1.0.0",
+  "publisher": "",
   "license": "MIT",
   "icon": "assets/icon.png",
   "preview": true,
@@ -15,12 +15,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/omercnet/vscode-acp"
+    "url": ""
   },
   "bugs": {
-    "url": "https://github.com/omercnet/vscode-acp/issues"
+    "url": ""
   },
-  "homepage": "https://github.com/omercnet/vscode-acp#readme",
+  "homepage": "",
   "engines": {
     "vscode": "^1.74.0",
     "node": "^22"

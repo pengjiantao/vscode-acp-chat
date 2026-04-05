@@ -139,7 +139,7 @@ suite("ChatViewProvider", () => {
 
   suite("Mode/Model Persistence with Validation", () => {
     test("should validate and restore saved mode against available modes", async () => {
-      await memento.update("vscode-acp.selectedMode", "test-mode");
+      await memento.update("vscode-acp-chat.selectedMode", "test-mode");
 
       class ACPClientWithModes extends TestACPClient {
         getSessionMetadata() {
@@ -172,7 +172,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should validate and restore saved model against available models", async () => {
-      await memento.update("vscode-acp.selectedModel", "gpt-4");
+      await memento.update("vscode-acp-chat.selectedModel", "gpt-4");
 
       class ACPClientWithModels extends TestACPClient {
         getSessionMetadata() {
@@ -205,7 +205,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should skip invalid mode IDs not in available modes", async () => {
-      await memento.update("vscode-acp.selectedMode", "removed-mode");
+      await memento.update("vscode-acp-chat.selectedMode", "removed-mode");
 
       class ACPClientWithModes extends TestACPClient {
         getSessionMetadata() {
@@ -237,7 +237,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should skip invalid model IDs not in available models", async () => {
-      await memento.update("vscode-acp.selectedModel", "removed-model");
+      await memento.update("vscode-acp-chat.selectedModel", "removed-model");
 
       class ACPClientWithModels extends TestACPClient {
         getSessionMetadata() {
@@ -283,7 +283,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should throw but be caught by caller if restoration fails", async () => {
-      await memento.update("vscode-acp.selectedMode", "test-mode");
+      await memento.update("vscode-acp-chat.selectedMode", "test-mode");
 
       class FailingACPClient extends TestACPClient {
         getSessionMetadata() {
@@ -326,7 +326,7 @@ suite("ChatViewProvider", () => {
       const handleModeChange = (provider as any).handleModeChange;
       await handleModeChange.call(provider, "new-mode");
 
-      const savedMode = memento.get<string>("vscode-acp.selectedMode");
+      const savedMode = memento.get<string>("vscode-acp-chat.selectedMode");
       assert.strictEqual(savedMode, "new-mode");
     });
 
@@ -340,7 +340,7 @@ suite("ChatViewProvider", () => {
       const handleModelChange = (provider as any).handleModelChange;
       await handleModelChange.call(provider, "new-model");
 
-      const savedModel = memento.get<string>("vscode-acp.selectedModel");
+      const savedModel = memento.get<string>("vscode-acp-chat.selectedModel");
       assert.strictEqual(savedModel, "new-model");
     });
 
@@ -358,7 +358,7 @@ suite("ChatViewProvider", () => {
       assert.strictEqual(acpClient.lastSetModeId, "new-mode");
       assert.ok(acpClient.getSetModeCallCount() >= 1);
       assert.strictEqual(
-        memento.get<string>("vscode-acp.selectedMode"),
+        memento.get<string>("vscode-acp-chat.selectedMode"),
         "new-mode"
       );
     });
@@ -377,7 +377,7 @@ suite("ChatViewProvider", () => {
       assert.strictEqual(acpClient.lastSetModelId, "new-model");
       assert.ok(acpClient.getSetModelCallCount() >= 1);
       assert.strictEqual(
-        memento.get<string>("vscode-acp.selectedModel"),
+        memento.get<string>("vscode-acp-chat.selectedModel"),
         "new-model"
       );
     });
@@ -401,7 +401,10 @@ suite("ChatViewProvider", () => {
 
       await handleModeChange.call(provider, "new-mode");
 
-      assert.strictEqual(memento.get("vscode-acp.selectedMode"), undefined);
+      assert.strictEqual(
+        memento.get("vscode-acp-chat.selectedMode"),
+        undefined
+      );
     });
 
     test("should handle model change errors gracefully", async () => {
@@ -423,7 +426,10 @@ suite("ChatViewProvider", () => {
 
       await handleModelChange.call(provider, "new-model");
 
-      assert.strictEqual(memento.get("vscode-acp.selectedModel"), undefined);
+      assert.strictEqual(
+        memento.get("vscode-acp-chat.selectedModel"),
+        undefined
+      );
     });
 
     test("should update memento with new values when changed multiple times", async () => {
@@ -436,12 +442,12 @@ suite("ChatViewProvider", () => {
       const handleModeChange = (provider as any).handleModeChange;
 
       await handleModeChange.call(provider, "mode-1");
-      assert.strictEqual(memento.get("vscode-acp.selectedMode"), "mode-1");
+      assert.strictEqual(memento.get("vscode-acp-chat.selectedMode"), "mode-1");
 
       acpClient.resetCallCounts();
 
       await handleModeChange.call(provider, "mode-2");
-      assert.strictEqual(memento.get("vscode-acp.selectedMode"), "mode-2");
+      assert.strictEqual(memento.get("vscode-acp-chat.selectedMode"), "mode-2");
     });
   });
 });

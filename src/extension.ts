@@ -11,7 +11,7 @@ export function activate(context: vscode.ExtensionContext) {
   console.log("VSCode ACP extension is now active");
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("vscode-acp.openDevTools", () => {
+    vscode.commands.registerCommand("vscode-acp-chat.openDevTools", () => {
       vscode.commands.executeCommand(
         "workbench.action.webview.openDeveloperTools"
       );
@@ -29,7 +29,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.StatusBarAlignment.Left,
     100
   );
-  statusBarItem.command = "vscode-acp.startChat";
+  statusBarItem.command = "vscode-acp-chat.startChat";
   statusBarItem.tooltip = "VSCode ACP - Click to open chat";
   updateStatusBar("disconnected");
   statusBarItem.show();
@@ -52,8 +52,8 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("vscode-acp.startChat", async () => {
-      await vscode.commands.executeCommand("vscode-acp.chatView.focus");
+    vscode.commands.registerCommand("vscode-acp-chat.startChat", async () => {
+      await vscode.commands.executeCommand("vscode-acp-chat.chatView.focus");
 
       if (!acpClient?.isConnected()) {
         try {
@@ -67,19 +67,19 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("vscode-acp.newChat", () => {
+    vscode.commands.registerCommand("vscode-acp-chat.newChat", () => {
       chatProvider?.newChat();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("vscode-acp.clearChat", () => {
+    vscode.commands.registerCommand("vscode-acp-chat.clearChat", () => {
       chatProvider?.clearChat();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("vscode-acp.loadHistory", async () => {
+    vscode.commands.registerCommand("vscode-acp-chat.loadHistory", async () => {
       if (!chatProvider) return;
 
       if (!chatProvider.getSupportsLoadSession()) {
@@ -122,7 +122,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("vscode-acp.selectAgent", async () => {
+    vscode.commands.registerCommand("vscode-acp-chat.selectAgent", async () => {
       const agents = getAgentsWithStatus();
       const availableAgents = agents.filter((a) => a.available);
       const currentAgentId = acpClient?.getAgentId();
@@ -148,7 +148,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
-      "vscode-acp.sendSelectionToChat",
+      "vscode-acp-chat.sendSelectionToChat",
       async () => {
         const activeEditor = vscode.window.activeTextEditor;
         const activeTerminal = vscode.window.activeTerminal;
@@ -172,7 +172,9 @@ export function activate(context: vscode.ExtensionContext) {
             },
           });
 
-          await vscode.commands.executeCommand("vscode-acp.chatView.focus");
+          await vscode.commands.executeCommand(
+            "vscode-acp-chat.chatView.focus"
+          );
           return;
         }
 
@@ -191,7 +193,9 @@ export function activate(context: vscode.ExtensionContext) {
               name: `Terminal: ${activeTerminal.name}`,
               content: selection,
             });
-            await vscode.commands.executeCommand("vscode-acp.chatView.focus");
+            await vscode.commands.executeCommand(
+              "vscode-acp-chat.chatView.focus"
+            );
           } else {
             vscode.window.showInformationMessage(
               "No text selected in editor or terminal."
@@ -204,7 +208,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
-      "vscode-acp.sendTerminalSelectionToChat",
+      "vscode-acp-chat.sendTerminalSelectionToChat",
       async (args?: any) => {
         let selection = "";
         let terminalName = "Terminal";
@@ -240,7 +244,9 @@ export function activate(context: vscode.ExtensionContext) {
             name: `Terminal: ${terminalName}`,
             content: selection,
           });
-          await vscode.commands.executeCommand("vscode-acp.chatView.focus");
+          await vscode.commands.executeCommand(
+            "vscode-acp-chat.chatView.focus"
+          );
         } else {
           vscode.window.showInformationMessage("No text selected in terminal.");
         }
