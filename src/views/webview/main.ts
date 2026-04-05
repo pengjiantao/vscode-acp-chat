@@ -1748,7 +1748,10 @@ export class WebviewController {
       <div class="plan-header" role="button" tabindex="0" aria-expanded="${this.isPlanExpanded}">
         <span class="plan-toggle-icon ${this.isPlanExpanded ? "expanded" : "collapsed"}"></span>
         <span class="plan-title">${planLabel}</span>
-        <span class="plan-progress">${completedCount}/${totalCount}</span>
+        <span class="plan-counter">${completedCount}/${totalCount}</span>
+        <div class="plan-mini-progress-bar">
+          <div class="plan-mini-progress-fill" style="width: ${(completedCount / totalCount) * 100}%"></div>
+        </div>
       </div>
       <div class="plan-entries ${this.isPlanExpanded ? "" : "collapsed"}">
         ${entries
@@ -1840,10 +1843,10 @@ export class WebviewController {
       case "completed":
         return '<span class="codicon codicon-check"></span>';
       case "in_progress":
-        return '<span class="codicon codicon-loading animate-spin"></span>';
+        return '<span class="codicon codicon-loading codicon-modifier-spin"></span>';
       case "pending":
       default:
-        return '<span class="codicon codicon-circle-outline"></span>';
+        return '<span class="codicon codicon-circle-large"></span>';
     }
   }
 

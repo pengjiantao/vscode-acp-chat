@@ -1557,23 +1557,30 @@ kbd {
 }
 
 /* Agent Plan Display */
-.agent-plan {
-  margin: 8px 0;
-  padding: 12px;
-  background: var(--vscode-editor-inactiveSelectionBackground);
-  border-radius: 8px;
-  border-left: 3px solid var(--vscode-activityBarBadge-background);
+.agent-plan-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 0;
+  padding: 0;
+  background: var(--vscode-sideBar-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  border-radius: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .plan-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  margin-bottom: 0;
+  padding: 8px 12px;
+  border-bottom: none;
   cursor: pointer;
   user-select: none;
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border-radius: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .plan-header:hover {
@@ -1609,13 +1616,9 @@ kbd {
   margin-top: 2px;
 }
 
-.plan-icon {
-  font-size: 14px;
-}
-
 .plan-title {
   font-weight: 600;
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--vscode-foreground);
@@ -1625,20 +1628,35 @@ kbd {
   white-space: nowrap;
 }
 
-.plan-progress {
+.plan-counter {
   margin-left: auto;
-  font-size: 11px;
+  font-size: 0.85em;
   background: var(--vscode-badge-background);
   color: var(--vscode-badge-foreground);
-  padding: 2px 8px;
+  padding: 2px 6px;
   border-radius: 10px;
   flex-shrink: 0;
+}
+
+.plan-mini-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--vscode-editor-inactiveSelectionBackground);
+}
+
+.plan-mini-progress-fill {
+  height: 100%;
+  background: var(--vscode-charts-green);
+  transition: width 0.3s ease;
 }
 
 .plan-entries {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  padding: 4px 0;
 }
 
 .plan-entries.collapsed {
@@ -1648,36 +1666,45 @@ kbd {
 .plan-entry {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   font-size: 13px;
   line-height: 1.4;
-  padding: 4px 0;
+  padding: 6px 14px;
+  transition: background 0.1s ease;
+}
+
+.plan-entry:hover {
+  background: var(--vscode-list-hoverBackground);
 }
 
 .plan-status-icon {
   flex-shrink: 0;
   width: 16px;
   text-align: center;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .plan-entry-pending .plan-status-icon {
   color: var(--vscode-descriptionForeground);
+  opacity: 0.6;
 }
 
 .plan-entry-in_progress .plan-status-icon {
-  color: var(--vscode-progressBar-background);
-  animation: pulse 1.5s ease-in-out infinite;
+  color: var(--vscode-foreground);
+}
+
+.plan-entry-in_progress .plan-content {
+  color: var(--vscode-foreground);
+  font-weight: 600;
 }
 
 .plan-entry-completed .plan-status-icon {
-  color: var(--vscode-testing-iconPassed);
+  color: var(--vscode-charts-green);
 }
 
 .plan-entry-completed .plan-content {
   color: var(--vscode-descriptionForeground);
-  text-decoration: line-through;
-  text-decoration-color: var(--vscode-descriptionForeground);
+  opacity: 0.6;
 }
 
 .plan-content {
@@ -1685,151 +1712,7 @@ kbd {
   color: var(--vscode-foreground);
 }
 
-.plan-priority-high .plan-content {
-  font-weight: 500;
-}
-
 .plan-priority-low {
-  opacity: 0.8;
-}
-
-/* Agent Plan Sticky (Pinned at Top) */
-.agent-plan-sticky {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  margin: 0;
-  padding: 12px;
-  background: var(--vscode-sideBar-background);
-  border-bottom: 2px solid var(--vscode-activityBarBadge-background);
-  border-radius: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.agent-plan-sticky .plan-header {
-  margin-bottom: 0;
-  padding: 8px 12px;
-  border-bottom: none;
-  cursor: pointer;
-  user-select: none;
-  background: var(--vscode-editor-inactiveSelectionBackground);
-  border-radius: 8px;
-}
-
-.agent-plan-sticky .plan-header:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-.agent-plan-sticky .plan-toggle-icon {
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.agent-plan-sticky .plan-toggle-icon::before {
-  content: "";
-  display: block;
-  width: 0;
-  height: 0;
-  border-style: solid;
-}
-
-.agent-plan-sticky .plan-toggle-icon.collapsed::before {
-  border-width: 5px 0 5px 7px;
-  border-color: transparent transparent transparent var(--vscode-foreground);
-  margin-left: 2px;
-}
-
-.agent-plan-sticky .plan-toggle-icon.expanded::before {
-  border-width: 7px 5px 0 5px;
-  border-color: var(--vscode-foreground) transparent transparent transparent;
-  margin-top: 2px;
-}
-
-.agent-plan-sticky .plan-icon {
-  font-size: 14px;
-}
-
-.agent-plan-sticky .plan-title {
-  font-weight: 600;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--vscode-foreground);
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-plan-sticky .plan-progress {
-  margin-left: auto;
-  font-size: 11px;
-  background: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
-  padding: 2px 8px;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-
-.agent-plan-sticky .plan-entries {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.agent-plan-sticky .plan-entries.collapsed {
-  display: none;
-}
-
-.agent-plan-sticky .plan-entry {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 13px;
-  line-height: 1.4;
-  padding: 4px 0;
-}
-
-.agent-plan-sticky .plan-status-icon {
-  flex-shrink: 0;
-  width: 16px;
-  text-align: center;
-  font-size: 12px;
-}
-
-.agent-plan-sticky .plan-entry-pending .plan-status-icon {
-  color: var(--vscode-descriptionForeground);
-}
-
-.agent-plan-sticky .plan-entry-in_progress .plan-status-icon {
-  color: var(--vscode-progressBar-background);
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-.agent-plan-sticky .plan-entry-completed .plan-status-icon {
-  color: var(--vscode-testing-iconPassed);
-}
-
-.agent-plan-sticky .plan-entry-completed .plan-content {
-  color: var(--vscode-descriptionForeground);
-  text-decoration: line-through;
-  text-decoration-color: var(--vscode-descriptionForeground);
-}
-
-.agent-plan-sticky .plan-content {
-  flex: 1;
-  color: var(--vscode-foreground);
-}
-
-.agent-plan-sticky .plan-priority-high .plan-content {
-  font-weight: 500;
-}
-
-.agent-plan-sticky .plan-priority-low {
   opacity: 0.8;
 }
 
