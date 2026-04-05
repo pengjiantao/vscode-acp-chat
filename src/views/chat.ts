@@ -1538,7 +1538,7 @@ export class ChatViewProvider
             <span class="dropdown-icon codicon codicon-sparkle"></span>
             <span class="selected-label">Mode</span>
             <span class="dropdown-chevron">
-              <span class="codicon codicon-chevron-down" style="width: 10px; height: 10px; display: block;"></span>
+              <span class="codicon codicon-chevron-down"></span>
             </span>
           </div>
           <div class="dropdown-popover"></div>
@@ -1548,7 +1548,7 @@ export class ChatViewProvider
             <span class="dropdown-icon codicon codicon-robot"></span>
             <span class="selected-label">Model</span>
             <span class="dropdown-chevron">
-              <span class="codicon codicon-chevron-down" style="width: 10px; height: 10px; display: block;"></span>
+              <span class="codicon codicon-chevron-down"></span>
             </span>
           </div>
           <div class="dropdown-popover"></div>

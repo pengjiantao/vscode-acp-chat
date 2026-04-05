@@ -70,6 +70,7 @@ body {
     opacity: 0;
     transform: translateY(4px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -139,9 +140,11 @@ body {
 .message.assistant h1 {
   font-size: 1.3em;
 }
+
 .message.assistant h2 {
   font-size: 1.15em;
 }
+
 .message.assistant h3 {
   font-size: 1.05em;
 }
@@ -189,12 +192,15 @@ body {
   20% {
     content: "";
   }
+
   40% {
     content: ".";
   }
+
   60% {
     content: "..";
   }
+
   80%,
   100% {
     content: "...";
@@ -242,6 +248,7 @@ body {
   0% {
     transform: rotate(0deg);
   }
+
   100% {
     transform: rotate(360deg);
   }
@@ -315,6 +322,7 @@ body {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -375,24 +383,31 @@ body {
 .ansi-black {
   color: var(--vscode-terminal-ansiBlack);
 }
+
 .ansi-red {
   color: var(--vscode-terminal-ansiRed);
 }
+
 .ansi-green {
   color: var(--vscode-terminal-ansiGreen);
 }
+
 .ansi-yellow {
   color: var(--vscode-terminal-ansiYellow);
 }
+
 .ansi-blue {
   color: var(--vscode-terminal-ansiBlue);
 }
+
 .ansi-magenta {
   color: var(--vscode-terminal-ansiMagenta);
 }
+
 .ansi-cyan {
   color: var(--vscode-terminal-ansiCyan);
 }
+
 .ansi-white {
   color: var(--vscode-terminal-ansiWhite);
 }
@@ -400,24 +415,31 @@ body {
 .ansi-bright-black {
   color: var(--vscode-terminal-ansiBrightBlack);
 }
+
 .ansi-bright-red {
   color: var(--vscode-terminal-ansiBrightRed);
 }
+
 .ansi-bright-green {
   color: var(--vscode-terminal-ansiBrightGreen);
 }
+
 .ansi-bright-yellow {
   color: var(--vscode-terminal-ansiBrightYellow);
 }
+
 .ansi-bright-blue {
   color: var(--vscode-terminal-ansiBrightBlue);
 }
+
 .ansi-bright-magenta {
   color: var(--vscode-terminal-ansiBrightMagenta);
 }
+
 .ansi-bright-cyan {
   color: var(--vscode-terminal-ansiBrightCyan);
 }
+
 .ansi-bright-white {
   color: var(--vscode-terminal-ansiBrightWhite);
 }
@@ -425,24 +447,31 @@ body {
 .ansi-bg-black {
   background-color: var(--vscode-terminal-ansiBlack);
 }
+
 .ansi-bg-red {
   background-color: var(--vscode-terminal-ansiRed);
 }
+
 .ansi-bg-green {
   background-color: var(--vscode-terminal-ansiGreen);
 }
+
 .ansi-bg-yellow {
   background-color: var(--vscode-terminal-ansiYellow);
 }
+
 .ansi-bg-blue {
   background-color: var(--vscode-terminal-ansiBlue);
 }
+
 .ansi-bg-magenta {
   background-color: var(--vscode-terminal-ansiMagenta);
 }
+
 .ansi-bg-cyan {
   background-color: var(--vscode-terminal-ansiCyan);
 }
+
 .ansi-bg-white {
   background-color: var(--vscode-terminal-ansiWhite);
 }
@@ -450,24 +479,31 @@ body {
 .ansi-bg-bright-black {
   background-color: var(--vscode-terminal-ansiBrightBlack);
 }
+
 .ansi-bg-bright-red {
   background-color: var(--vscode-terminal-ansiBrightRed);
 }
+
 .ansi-bg-bright-green {
   background-color: var(--vscode-terminal-ansiBrightGreen);
 }
+
 .ansi-bg-bright-yellow {
   background-color: var(--vscode-terminal-ansiBrightYellow);
 }
+
 .ansi-bg-bright-blue {
   background-color: var(--vscode-terminal-ansiBrightBlue);
 }
+
 .ansi-bg-bright-magenta {
   background-color: var(--vscode-terminal-ansiBrightMagenta);
 }
+
 .ansi-bg-bright-cyan {
   background-color: var(--vscode-terminal-ansiBrightCyan);
 }
+
 .ansi-bg-bright-white {
   background-color: var(--vscode-terminal-ansiBrightWhite);
 }
@@ -475,12 +511,15 @@ body {
 .ansi-bold {
   font-weight: bold;
 }
+
 .ansi-dim {
   opacity: 0.7;
 }
+
 .ansi-italic {
   font-style: italic;
 }
+
 .ansi-underline {
   text-decoration: underline;
 }
@@ -741,10 +780,13 @@ body {
 
 .tool-name {
   font-weight: 500;
-  line-height: 16px; /* 匹配图标高度 */
+  line-height: 16px;
+  /* 匹配图标高度 */
   display: inline-block;
-  margin-top: 1px; /* 视觉补偿，下移 1px */
+  margin-top: 1px;
+  /* 视觉补偿，下移 1px */
 }
+
 .image-preview-popover {
   position: fixed;
   z-index: 2000;
@@ -797,6 +839,7 @@ body {
     opacity: 0;
     transform: translateY(4px) scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -1240,10 +1283,10 @@ body {
   align-items: center;
   font-size: 11px;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 4px;
   height: 24px;
   background: var(--vscode-dropdown-background, rgba(255, 255, 255, 0.03));
-  border: none;
+  border: 1px solid transparent;
   transition:
     background 0.1s,
     border-color 0.1s;
@@ -1263,7 +1306,7 @@ body {
   gap: 6px;
   width: 100%;
   height: 100%;
-  padding: 0 4px;
+  padding: 0 6px;
   overflow: hidden;
 }
 
@@ -1273,6 +1316,7 @@ body {
   white-space: nowrap;
   font-weight: 500;
   flex: 1;
+  line-height: 1.2;
 }
 
 .dropdown-icon {
@@ -1281,8 +1325,8 @@ body {
   justify-content: center;
   opacity: 0.8;
   color: var(--vscode-foreground);
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
 }
 
@@ -1298,7 +1342,7 @@ body {
 }
 
 .dropdown-chevron .codicon {
-  font-size: 14px;
+  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1310,21 +1354,24 @@ body {
   left: 0;
   min-width: 100%;
   margin-bottom: 4px;
-  background: var(--vscode-dropdown-background);
-  border: 1px solid var(--vscode-dropdown-border);
-  border-radius: 8px;
+  background: var(--vscode-menu-background, var(--vscode-dropdown-background));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-dropdown-border));
+  border-radius: 4px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   z-index: 1000;
   display: none;
   max-height: 300px;
   overflow: auto;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
-  padding: 4px;
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  padding: 4px 0;
 }
 
 .dropdown-popover::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
+  display: none;
+  /* Chrome, Safari, Opera */
 }
 
 .custom-dropdown.open .dropdown-popover {
@@ -1337,6 +1384,7 @@ body {
     opacity: 0;
     transform: translateY(4px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1350,17 +1398,20 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--vscode-dropdown-foreground);
-  border-radius: 8px;
+  color: var(--vscode-menu-foreground, var(--vscode-dropdown-foreground));
+  border-radius: 0;
+  transition: background-color 0.1s ease;
 }
 
 .dropdown-item:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-.dropdown-item.selected {
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
+  background: var(
+    --vscode-menu-selectionBackground,
+    var(--vscode-list-hoverBackground)
+  );
+  color: var(
+    --vscode-menu-selectionForeground,
+    var(--vscode-list-hoverForeground)
+  );
 }
 
 .dropdown-item.disabled {
@@ -1369,10 +1420,27 @@ body {
   color: var(--vscode-disabledForeground);
 }
 
-.dropdown-item-icon {
-  width: 14px;
-  text-align: center;
+.dropdown-item-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
+  visibility: hidden;
+  font-size: 14px;
+}
+
+/* No special background for selected item in VS Code menus, just a checkmark */
+.dropdown-item.selected .dropdown-item-check {
+  visibility: visible;
+}
+
+.dropdown-item-label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  line-height: 1;
 }
 
 /* Send Button */
@@ -1810,7 +1878,8 @@ kbd {
   font-size: 11px;
   transition: background 0.1s ease;
   border-radius: 4px;
-  min-width: 0; /* Important for ellipsis in flexbox */
+  min-width: 0;
+  /* Important for ellipsis in flexbox */
 }
 
 .tool-item summary:hover {
@@ -1883,7 +1952,8 @@ kbd {
 }
 
 .block {
-  margin-bottom: 0; /* Let child margins handle it */
+  margin-bottom: 0;
+  /* Let child margins handle it */
 }
 
 .block-text {
@@ -2291,6 +2361,7 @@ kbd {
     transform: translateY(100%);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;

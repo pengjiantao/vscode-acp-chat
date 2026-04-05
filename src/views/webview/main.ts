@@ -763,7 +763,10 @@ export class Dropdown {
       if (opt.id === this.selectedId) item.classList.add("selected");
       item.setAttribute("data-id", opt.id);
 
-      item.innerHTML = `<span>${escapeHtml(opt.name)}</span>`;
+      item.innerHTML = `
+        <span class="dropdown-item-check codicon codicon-check"></span>
+        <span class="dropdown-item-label">${escapeHtml(opt.name)}</span>
+      `;
 
       item.addEventListener("click", () => {
         this.select(opt.id);
