@@ -2271,11 +2271,11 @@ export class WebviewController {
           <span class="diff-stat-removed">-${totalRemoved}</span>
         </div>
         <div class="diff-summary-actions">
-          <button class="diff-action-btn accept-all" title="Accept All">
+          <button class="diff-action-btn accept-all" title="Accept All Changes">
             <span class="codicon codicon-check"></span>
           </button>
-          <button class="diff-action-btn rollback-all" title="Rollback All">
-            <span class="codicon codicon-trash"></span>
+          <button class="diff-action-btn rollback-all" title="Discard All Changes">
+            <span class="codicon codicon-discard"></span>
           </button>
           <button class="diff-action-btn toggle-expand ${this.diffSummaryExpanded ? "expanded" : ""}" title="${this.diffSummaryExpanded ? "Collapse" : "Expand"}">
             <span class="codicon codicon-chevron-down"></span>
@@ -2291,23 +2291,30 @@ export class WebviewController {
         const added = diff.filter((l) => l.type === "add").length;
         const removed = diff.filter((l) => l.type === "remove").length;
 
+        const parts = change.relativePath.split(/[/\\]/);
+        const filename = parts.pop() || change.relativePath;
+        const dirpath = parts.length > 0 ? parts.join("/") + "/" : "";
+
         html += `
           <div class="diff-summary-item">
             <div class="diff-item-info" title="${escapeHtml(change.path)}">
       <span class="codicon codicon-file-text"></span>
-              <span class="diff-item-path">${escapeHtml(change.relativePath)}</span>
+              <span class="diff-item-path">
+                <span style="font-weight: bold;">${escapeHtml(filename)}</span>
+                ${dirpath ? `<span style="color: var(--vscode-descriptionForeground); font-size: 0.9em; margin-left: 4px;">${escapeHtml(dirpath)}</span>` : ""}
+              </span>
               <span class="diff-stat-added">+${added}</span>
               <span class="diff-stat-removed">-${removed}</span>
             </div>
             <div class="diff-item-actions">
-              <button class="diff-item-btn review" data-path="${escapeHtml(change.path)}" title="Review">
-                <span class="codicon codicon-search"></span>
+              <button class="diff-item-btn review" data-path="${escapeHtml(change.path)}" title="Review Diff">
+                <span class="codicon codicon-diff"></span>
               </button>
-              <button class="diff-item-btn accept" data-path="${escapeHtml(change.path)}" title="Accept">
+              <button class="diff-item-btn accept" data-path="${escapeHtml(change.path)}" title="Accept Change">
                 <span class="codicon codicon-check"></span>
               </button>
-              <button class="diff-item-btn rollback" data-path="${escapeHtml(change.path)}" title="Rollback">
-                <span class="codicon codicon-trash"></span>
+              <button class="diff-item-btn rollback" data-path="${escapeHtml(change.path)}" title="Discard Change">
+                <span class="codicon codicon-discard"></span>
               </button>
             </div>
           </div>

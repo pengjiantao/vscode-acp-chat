@@ -2276,11 +2276,12 @@ kbd {
 
 /* Diff Summary Area */
 .diff-summary-container {
-  background-color: var(--vscode-sideBar-background);
-  border-top: 1px solid var(--vscode-panel-border);
+  background-color: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  box-shadow: 0 -4px 6px rgba(0, 0, 0, 0.1);
   padding: 8px;
-  max-height: 200px;
-  overflow-y: auto;
+  margin: 0 12px 8px 12px;
   display: none;
   animation: slide-up 0.2s ease-out;
 }
@@ -2359,14 +2360,21 @@ kbd {
   margin-top: 8px;
   border-top: 1px solid var(--vscode-panel-border);
   padding-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .diff-summary-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 0;
+  padding: 6px 8px;
   font-size: 11px;
+  border-radius: 4px;
+}
+
+.diff-summary-item:hover {
+  background-color: var(--vscode-list-hoverBackground);
 }
 
 .diff-item-info {
