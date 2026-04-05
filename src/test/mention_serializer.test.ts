@@ -307,7 +307,7 @@ After`;
         name: "Terminal: bash",
         type: "terminal",
         content:
-          "Done in 8.4s using pnpm v10.33.0\n[fiyqkrc@fiyqkrc-msi vscode-acp]$",
+          "Done in 8.4s using pnpm v10.33.0\n[fiyqkrc@fiyqkrc-msi vscode-acp-chat]$",
       };
       const serialized = serializeMention(original);
       const parsed = parseMention(serialized);

@@ -99,14 +99,14 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "vscode-acp",
+          "id": "vscode-acp-chat",
           "title": "VSCode ACP",
           "icon": "assets/icon.svg"
         }
       ]
     },
     "views": {
-      "vscode-acp": [
+      "vscode-acp-chat": [
         {
           "type": "webview",
           "id": "vscode-acp-chat.chatView",
