@@ -538,8 +538,29 @@ export class ChatViewProvider
       if (openDoc) {
         content = openDoc.getText();
       } else {
-        const fileContent = await vscode.workspace.fs.readFile(uri);
-        content = this.textDecoder.decode(fileContent);
+        try {
+          const fileContent = await vscode.workspace.fs.readFile(uri);
+          content = this.textDecoder.decode(fileContent);
+        } catch (readError) {
+          // Return empty string when file doesn't exist, instead of throwing error
+          // This prevents gemini-cli from showing "Internal error" when checking new files
+          // VSCode filesystem errors typically contain ENOENT or "File not found"
+          const errorMessage =
+            readError instanceof Error ? readError.message : String(readError);
+          if (
+            errorMessage.includes("ENOENT") ||
+            errorMessage.includes("File not found") ||
+            errorMessage.includes("no such file")
+          ) {
+            console.log(
+              "[Chat] File does not exist, returning empty content:",
+              params.path
+            );
+            content = "";
+          } else {
+            throw readError;
+          }
+        }
       }
 
       if (params.line !== undefined || params.limit !== undefined) {
