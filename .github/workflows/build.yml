@@ -61,3 +61,4 @@ jobs:
         with:
           files: vscode-acp-chat.vsix
           generate_release_notes: true
+          token: ${{ secrets.PAT_TOKEN }}
