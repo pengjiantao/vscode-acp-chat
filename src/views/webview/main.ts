@@ -515,12 +515,11 @@ export function renderDiff(
 
   if (path) {
     const filename = path.split("/").pop() || path;
-    html += `<div class="diff-header" title="${escapeHtml(path)}">
-      <span class="codicon codicon-file-text"></span>
-      <span class="diff-path">${escapeHtml(filename)}</span>
-    </div>`;
+    html += `<div class="diff-header" acp-title="${escapeHtml(path)}">
+    <span class="codicon codicon-file-text"></span>
+    <span class="diff-path">${escapeHtml(filename)}</span>
+  </div>`;
   }
-
   html += '<pre class="diff-content">';
 
   let lastIndex = -1;
@@ -568,7 +567,7 @@ export function getToolsHtml(
       const tool = tools[id];
       const iconClass = getToolKindIcon(tool.kind);
       const kindSpan = iconClass
-        ? `<span class="tool-kind-icon ${iconClass}" title="${escapeHtml(tool.kind || "other")}"></span> `
+        ? `<span class="tool-kind-icon ${iconClass}" acp-title="${escapeHtml(tool.kind || "other")}"></span> `
         : "";
       const statusIcon =
         tool.status === "completed"
@@ -721,7 +720,7 @@ export class Dropdown {
 
     this.selectedId = id;
     this.labelEl.textContent = option.name;
-    this.labelEl.title = option.name;
+    this.labelEl.setAttribute("acp-title", option.name);
 
     const items = this.popover.querySelectorAll(".dropdown-item");
     items.forEach((item) => {
@@ -793,7 +792,7 @@ export class Dropdown {
       let starHtml = "";
       if (opt.canStar) {
         const starIcon = opt.isStarred ? "star-full" : "star-empty";
-        starHtml = `<span class="dropdown-item-star codicon codicon-${starIcon}" title="${
+        starHtml = `<span class="dropdown-item-star codicon codicon-${starIcon}" acp-title="${
           opt.isStarred ? "Unstar" : "Star"
         }"></span>`;
       }
@@ -938,6 +937,67 @@ export class WebviewController {
     this.adjustHeight();
     this.updateInputState();
     this.vscode.postMessage({ type: "ready" });
+    this.setupTooltip();
+  }
+
+  private setupTooltip(): void {
+    const tooltipElement = this.doc.createElement("div");
+    tooltipElement.className = "acp-tooltip";
+    this.doc.body.appendChild(tooltipElement);
+
+    let tooltipTimeout: any;
+
+    this.doc.addEventListener("mouseover", (e) => {
+      const target = (e.target as HTMLElement).closest(
+        "[acp-title]"
+      ) as HTMLElement;
+      if (target) {
+        const title = target.getAttribute("acp-title");
+        if (title) {
+          clearTimeout(tooltipTimeout);
+          tooltipTimeout = setTimeout(() => {
+            tooltipElement.textContent = title;
+            tooltipElement.classList.add("visible");
+            this.updateTooltipPosition(target, tooltipElement);
+          }, 400); // VSCode native hover delay
+        }
+      }
+    });
+
+    this.doc.addEventListener("mouseout", (e) => {
+      const target = (e.target as HTMLElement).closest("[acp-title]");
+      if (target) {
+        clearTimeout(tooltipTimeout);
+        tooltipElement.classList.remove("visible");
+      }
+    });
+  }
+
+  private updateTooltipPosition(
+    target: HTMLElement,
+    tooltip: HTMLElement
+  ): void {
+    const rect = target.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+
+    // Default position: below the element
+    let top = rect.bottom + 4;
+    let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+
+    // Boundary check: if too close to the bottom, show above
+    if (top + tooltipRect.height > this.win.innerHeight - 10) {
+      top = rect.top - tooltipRect.height - 4;
+    }
+
+    // Boundary check: horizontal overflow
+    if (left < 4) {
+      left = 4;
+    } else if (left + tooltipRect.width > this.win.innerWidth - 4) {
+      left = this.win.innerWidth - tooltipRect.width - 4;
+    }
+
+    tooltip.style.top = `${top}px`;
+    tooltip.style.left = `${left}px`;
   }
 
   private showPermissionDialog(
@@ -2290,7 +2350,7 @@ export class WebviewController {
     let innerHTML = `<span class="chip-icon ${config.icon}"></span><span class="chip-label">${escapeHtml(displayLabel)}</span>`;
 
     if (!readonly) {
-      innerHTML += `<div class="chip-delete" title="Remove attachment"><span class="codicon codicon-close"></span></div>`;
+      innerHTML += `<div class="chip-delete" acp-title="Remove attachment"><span class="codicon codicon-close"></span></div>`;
     }
 
     chip.innerHTML = innerHTML;
@@ -2427,13 +2487,13 @@ export class WebviewController {
           <span class="diff-stat-removed">-${totalRemoved}</span>
         </div>
         <div class="diff-summary-actions">
-          <button class="diff-action-btn accept-all" title="Accept All Changes">
+          <button class="diff-action-btn accept-all" acp-title="Accept All Changes">
             <span class="codicon codicon-check"></span>
           </button>
-          <button class="diff-action-btn rollback-all" title="Discard All Changes">
+          <button class="diff-action-btn rollback-all" acp-title="Discard All Changes">
             <span class="codicon codicon-discard"></span>
           </button>
-          <button class="diff-action-btn toggle-expand ${this.diffSummaryExpanded ? "expanded" : ""}" title="${this.diffSummaryExpanded ? "Collapse" : "Expand"}">
+          <button class="diff-action-btn toggle-expand ${this.diffSummaryExpanded ? "expanded" : ""}" acp-title="${this.diffSummaryExpanded ? "Collapse" : "Expand"}">
             <span class="codicon codicon-chevron-down"></span>
           </button>
         </div>
@@ -2453,7 +2513,7 @@ export class WebviewController {
 
         html += `
           <div class="diff-summary-item">
-            <div class="diff-item-info" title="${escapeHtml(change.path)}">
+            <div class="diff-item-info" acp-title="${escapeHtml(change.path)}">
       <span class="codicon codicon-file-text"></span>
               <span class="diff-item-path">
                 <span style="font-weight: bold;">${escapeHtml(filename)}</span>
@@ -2463,13 +2523,13 @@ export class WebviewController {
               <span class="diff-stat-removed">-${removed}</span>
             </div>
             <div class="diff-item-actions">
-              <button class="diff-item-btn review" data-path="${escapeHtml(change.path)}" title="Review Diff">
+              <button class="diff-item-btn review" data-path="${escapeHtml(change.path)}" acp-title="Review Diff">
                 <span class="codicon codicon-diff"></span>
               </button>
-              <button class="diff-item-btn accept" data-path="${escapeHtml(change.path)}" title="Accept Change">
+              <button class="diff-item-btn accept" data-path="${escapeHtml(change.path)}" acp-title="Accept Change">
                 <span class="codicon codicon-check"></span>
               </button>
-              <button class="diff-item-btn rollback" data-path="${escapeHtml(change.path)}" title="Discard Change">
+              <button class="diff-item-btn rollback" data-path="${escapeHtml(change.path)}" acp-title="Discard Change">
                 <span class="codicon codicon-discard"></span>
               </button>
             </div>

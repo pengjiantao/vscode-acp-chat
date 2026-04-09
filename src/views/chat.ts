@@ -1602,7 +1602,7 @@ export class ChatViewProvider
 
     <div id="options-bar" role="toolbar" aria-label="Session options">
       <div id="left-options">
-        <button id="attach-image" class="icon-button" aria-label="Attach image" title="Attach image">
+        <button id="attach-image" class="icon-button" aria-label="Attach image" acp-title="Attach image">
           <span class="dropdown-icon codicon codicon-file-media"></span>
         </button>
         <div class="custom-dropdown" id="mode-dropdown" style="display: none;">
@@ -1627,10 +1627,10 @@ export class ChatViewProvider
         </div>
       </div>
       <div id="right-options">
-        <button id="send" class="icon-button" aria-label="Send message" title="Send (Enter)" disabled>
+        <button id="send" class="icon-button" aria-label="Send message" acp-title="Send (Enter)" disabled>
           <span class="dropdown-icon codicon codicon-send"></span>
         </button>
-        <button id="stop" class="icon-button" aria-label="Stop generation" title="Stop" style="display: none;">
+        <button id="stop" class="icon-button" aria-label="Stop generation" acp-title="Stop" style="display: none;">
           <span class="dropdown-icon codicon codicon-debug-stop"></span>
         </button>
       </div>
