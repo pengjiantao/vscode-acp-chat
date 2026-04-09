@@ -79,6 +79,11 @@ suite("History Restoration Order Integration", () => {
     const mockView = new MockWebviewView();
     provider.resolveWebviewView(mockView, {} as any, {} as any);
 
+    // Simulate history loading scenario
+    // We need to set isLoadingHistory to true so that user_message_chunk is not ignored
+    // (During normal conversation, opencode echoes back user messages which should be ignored)
+    (provider as any).isLoadingHistory = true;
+
     // Simulate history chunks
     const handler = mockAcpClient.sessionUpdateHandler;
 

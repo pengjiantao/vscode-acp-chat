@@ -123,6 +123,9 @@ export class ChatViewProvider
   private sessionUpdateQueue: SessionNotification[] = [];
   private isProcessingQueue = false;
 
+  // Flag to track if we're currently loading history via loadSession
+  private isLoadingHistory = false;
+
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly acpClient: ACPClient,
@@ -468,12 +471,18 @@ export class ChatViewProvider
       }
       this.sessionManager.syncCapabilities();
 
+      // Set flag to indicate we're loading history
+      this.isLoadingHistory = true;
       await this.sessionManager.loadSession(sessionId, cwd);
+      // Flush buffer and send streamEnd to separate thinking blocks
       this.flushUserMessageBuffer();
+      this.isLoadingHistory = false;
+
       this.hasSession = true;
       this.sendSessionMetadata();
     } catch (error) {
       console.error("[Chat] Failed to load history session:", error);
+      this.isLoadingHistory = false;
       const errorMessage =
         error instanceof Error ? error.message : JSON.stringify(error);
       this.postMessage({
@@ -921,6 +930,19 @@ export class ChatViewProvider
   ): Promise<void> {
     const update = notification.update;
     console.log("[Chat] Session update received:", update.sessionUpdate);
+
+    // During normal conversation (not loading history), ignore user_message_chunk
+    // because opencode echoes back user messages, which would cause duplicate display
+    // and trigger premature streamEnd via flushUserMessageBuffer
+    if (
+      update.sessionUpdate === "user_message_chunk" &&
+      !this.isLoadingHistory
+    ) {
+      console.log(
+        "[Chat] Ignoring user_message_chunk during normal conversation (opencode echo)"
+      );
+      return;
+    }
 
     // Any non-user chunk should trigger a flush of the user message buffer
     if (update.sessionUpdate !== "user_message_chunk") {
