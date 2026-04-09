@@ -65,6 +65,7 @@ interface WebviewMessage {
     dataUrl?: string;
   }>;
   path?: string;
+  range?: { startLine: number; endLine: number };
   requestId?: string;
   outcome?: { outcome: "selected" | "cancelled"; optionId?: string };
 }
@@ -327,7 +328,21 @@ export class ChatViewProvider
               if (stat.type === vscode.FileType.Directory) {
                 await vscode.commands.executeCommand("revealInExplorer", uri);
               } else {
-                await vscode.window.showTextDocument(uri);
+                const options: vscode.TextDocumentShowOptions = {
+                  preview: true,
+                };
+                if (message.range) {
+                  const start = new vscode.Position(
+                    Math.max(0, message.range.startLine - 1),
+                    0
+                  );
+                  const end = new vscode.Position(
+                    Math.max(0, message.range.endLine - 1),
+                    0
+                  );
+                  options.selection = new vscode.Range(start, end);
+                }
+                await vscode.window.showTextDocument(uri, options);
               }
             } catch {
               // Fallback to showTextDocument if stat fails or path is not local

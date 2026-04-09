@@ -2215,6 +2215,14 @@ export class WebviewController {
     if (mention.dataUrl) chip.dataset.dataUrl = mention.dataUrl;
 
     const mentionType = mention.type || "file";
+    const filename = mention.path
+      ? mention.path.split(/[/\\]/).pop() || mention.name
+      : mention.name.split(/[/\\]/).pop() || mention.name;
+
+    let displayLabel = filename;
+    if (mention.range) {
+      displayLabel += `:${mention.range.startLine}-${mention.range.endLine}`;
+    }
 
     const typeConfigs: Record<
       string,
@@ -2229,7 +2237,11 @@ export class WebviewController {
         onClick: (e) => {
           if (mention.path) {
             e.stopPropagation();
-            this.vscode.postMessage({ type: "openFile", path: mention.path });
+            this.vscode.postMessage({
+              type: "openFile",
+              path: mention.path,
+              range: mention.range,
+            });
           }
         },
       },
@@ -2244,6 +2256,16 @@ export class WebviewController {
       },
       selection: {
         icon: "codicon codicon-file-text",
+        onClick: (e) => {
+          if (mention.path) {
+            e.stopPropagation();
+            this.vscode.postMessage({
+              type: "openFile",
+              path: mention.path,
+              range: mention.range,
+            });
+          }
+        },
       },
       terminal: {
         icon: "codicon codicon-terminal",
@@ -2261,7 +2283,7 @@ export class WebviewController {
 
     const config = typeConfigs[mentionType] || typeConfigs.file;
 
-    let innerHTML = `<span class="chip-icon ${config.icon}"></span><span class="chip-label">${escapeHtml(mention.name)}</span>`;
+    let innerHTML = `<span class="chip-icon ${config.icon}"></span><span class="chip-label">${escapeHtml(displayLabel)}</span>`;
 
     if (!readonly) {
       innerHTML += `<div class="chip-delete" title="Remove attachment"><span class="codicon codicon-close"></span></div>`;
