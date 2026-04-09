@@ -53,7 +53,11 @@ function createWebviewHTML(): string {
 
   <div id="agent-plan-container"></div>
 
-  <div id="messages"></div>
+  <div id="messages-container">
+    <div class="messages-fade-top"></div>
+    <div id="messages"></div>
+    <div class="messages-fade-bottom"></div>
+  </div>
 
   <div id="typing-indicator">
     <div class="zed-loader">
