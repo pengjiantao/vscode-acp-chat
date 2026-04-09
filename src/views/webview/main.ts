@@ -823,6 +823,7 @@ export class Dropdown {
 }
 
 export interface WebviewElements {
+  messagesContainerEl: HTMLElement;
   messagesEl: HTMLElement;
   inputEl: HTMLElement;
   attachImageBtn: HTMLButtonElement;
@@ -840,6 +841,7 @@ export interface WebviewElements {
 
 export function getElements(doc: Document): WebviewElements {
   return {
+    messagesContainerEl: doc.getElementById("messages-container")!,
     messagesEl: doc.getElementById("messages")!,
     inputEl: doc.getElementById("input")!,
     attachImageBtn: doc.getElementById("attach-image") as HTMLButtonElement,
@@ -1759,7 +1761,9 @@ export class WebviewController {
   updateViewState(): void {
     const hasMessages = this.elements.messagesEl.children.length > 0;
     this.elements.welcomeView.style.display = !hasMessages ? "flex" : "none";
-    this.elements.messagesEl.style.display = hasMessages ? "flex" : "none";
+    this.elements.messagesContainerEl.style.display = hasMessages
+      ? "flex"
+      : "none";
   }
 
   showPlan(entries: PlanEntry[]): void {
