@@ -1,5 +1,6 @@
 import { marked } from "marked";
 import { renderToolSummary, renderToolDetails } from "./tool-render";
+import { computeLineDiff } from "../../utils/diff";
 
 export interface VsCodeApi {
   postMessage(message: unknown): void;
@@ -355,129 +356,6 @@ export function ansiToHtml(text: string): string {
 
 export function hasAnsiCodes(text: string): boolean {
   return /\x1b\[[0-9;]*m/.test(text);
-}
-
-export interface DiffLine {
-  type: "add" | "remove" | "context";
-  line: string;
-  oldLineNumber?: number;
-  newLineNumber?: number;
-}
-
-/**
- * Compute a simple line-by-line diff between old and new text.
- * Returns an array of diff lines marked as add/remove/context.
- */
-export function computeLineDiff(
-  oldText: string | null | undefined,
-  newText: string | null | undefined
-): DiffLine[] {
-  // Handle edge cases
-  if (!oldText && !newText) {
-    return [];
-  }
-  if (!oldText) {
-    // New file - all lines are additions
-    return newText!.split("\n").map((line, idx) => ({
-      type: "add" as const,
-      line,
-      newLineNumber: idx + 1,
-    }));
-  }
-  if (!newText) {
-    // Deleted file - all lines are deletions
-    return oldText!.split("\n").map((line, idx) => ({
-      type: "remove" as const,
-      line,
-      oldLineNumber: idx + 1,
-    }));
-  }
-
-  const oldLines = oldText.split("\n");
-  const newLines = newText.split("\n");
-  const result: DiffLine[] = [];
-
-  let i = 0,
-    j = 0;
-  let oldLineNum = 1;
-  let newLineNum = 1;
-
-  while (i < oldLines.length && j < newLines.length) {
-    if (oldLines[i] === newLines[j]) {
-      result.push({
-        type: "context",
-        line: oldLines[i],
-        oldLineNumber: oldLineNum++,
-        newLineNumber: newLineNum++,
-      });
-      i++;
-      j++;
-    } else {
-      // Look ahead to find a match
-      let found = false;
-      const lookahead = 10;
-      for (let k = 1; k < lookahead; k++) {
-        if (i + k < oldLines.length && oldLines[i + k] === newLines[j]) {
-          // Found a match by skipping lines in old text (deletions)
-          for (let l = 0; l < k; l++) {
-            result.push({
-              type: "remove",
-              line: oldLines[i + l],
-              oldLineNumber: oldLineNum++,
-            });
-          }
-          i += k;
-          found = true;
-          break;
-        }
-        if (j + k < newLines.length && oldLines[i] === newLines[j + k]) {
-          // Found a match by skipping lines in new text (additions)
-          for (let l = 0; l < k; l++) {
-            result.push({
-              type: "add",
-              line: newLines[j + l],
-              newLineNumber: newLineNum++,
-            });
-          }
-          j += k;
-          found = true;
-          break;
-        }
-      }
-
-      if (!found) {
-        // No match found in lookahead, treat as a replacement
-        result.push({
-          type: "remove",
-          line: oldLines[i++],
-          oldLineNumber: oldLineNum++,
-        });
-        result.push({
-          type: "add",
-          line: newLines[j++],
-          newLineNumber: newLineNum++,
-        });
-      }
-    }
-  }
-
-  // Add remaining lines
-  while (i < oldLines.length) {
-    result.push({
-      type: "remove",
-      line: oldLines[i++],
-      oldLineNumber: oldLineNum++,
-    });
-  }
-  while (j < newLines.length) {
-    result.push({
-      type: "add",
-      line: newLines[j++],
-      newLineNumber: newLineNum++,
-    });
-  }
-
-  return result;
 }
 
 export function renderDiff(

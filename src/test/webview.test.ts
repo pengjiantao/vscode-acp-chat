@@ -9,12 +9,12 @@ import {
   ansiToHtml,
   hasAnsiCodes,
   getToolKindIcon,
-  computeLineDiff,
   renderDiff,
   type VsCodeApi,
   type Tool,
   type WebviewElements,
 } from "../views/webview/main";
+import { computeLineDiff } from "../utils/diff";
 
 function createMockVsCodeApi(): VsCodeApi & {
   _getMessages: () => unknown[];
@@ -1874,6 +1874,24 @@ suite("Webview", () => {
       assert.strictEqual(result[0].line, "old");
       assert.strictEqual(result[1].type, "add");
       assert.strictEqual(result[1].line, "new");
+    });
+
+    test("groups consecutive replacements instead of interleaving", () => {
+      const oldText = "Line 1\nLine 2";
+      const newText = "New 1\nNew 2";
+      const result = computeLineDiff(oldText, newText);
+
+      // Should be: [-Line 1, -Line 2, +New 1, +New 2]
+      // instead of: [-Line 1, +New 1, -Line 2, +New 2]
+      assert.strictEqual(result.length, 4);
+      assert.strictEqual(result[0].type, "remove");
+      assert.strictEqual(result[0].line, "Line 1");
+      assert.strictEqual(result[1].type, "remove");
+      assert.strictEqual(result[1].line, "Line 2");
+      assert.strictEqual(result[2].type, "add");
+      assert.strictEqual(result[2].line, "New 1");
+      assert.strictEqual(result[3].type, "add");
+      assert.strictEqual(result[3].line, "New 2");
     });
   });
 
