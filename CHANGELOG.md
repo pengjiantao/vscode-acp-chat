@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v0.10.0...v0.11.0) (2026-04-11)
+
+
+### Features
+
+* add file path search with ranking and slash trigger fix ([6981f26](https://github.com/pengjiantao/vscode-acp-chat/commit/6981f26d7340f43be135793db021f39f4c5bdfc8))
+
 ## [0.10.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v0.9.2...v0.10.0) (2026-04-09)
 
 
