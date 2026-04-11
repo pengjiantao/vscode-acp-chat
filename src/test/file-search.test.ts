@@ -1,3 +1,4 @@
+import * as vscode from "vscode";
 import * as assert from "assert";
 import { searchWorkspaceFiles, type SearchResult } from "../utils/file-search";
 
@@ -160,6 +161,57 @@ suite("File Search Utility Test Suite", () => {
       nodeModulesResults.length,
       0,
       "即使没有 .gitignore，也应该排除 node_modules"
+    );
+  });
+
+  test("精确匹配应该排在最前面", async () => {
+    // 搜索 "src"，第一个结果应该是名字为 "src" 的文件夹
+    const results = await searchWorkspaceFiles("src");
+
+    if (results.length > 0) {
+      assert.strictEqual(
+        results[0].name.toLowerCase(),
+        "src",
+        "搜索 'src' 时，第一个结果的名字应该是 'src'"
+      );
+    }
+  });
+
+  test("不包含斜杠时，不应该因为路径匹配而返回", async () => {
+    // 搜索 "src"，第一个结果的名字应该是 "src"
+    // 而不是路径中有 "src" 的其他文件（如 "extension.ts" 在 "src" 目录下）
+    const results = await searchWorkspaceFiles("src");
+
+    for (const result of results) {
+      assert.ok(
+        result.name.toLowerCase().includes("src"),
+        `结果 ${result.name} (路径 ${result.path}) 名字本身应该包含 "src"`
+      );
+    }
+  });
+
+  test("应该支持路径搜索", async () => {
+    // 检查是否有工作区文件夹，如果没有则跳过此测试（某些测试环境限制）
+    if (
+      !vscode.workspace.workspaceFolders ||
+      vscode.workspace.workspaceFolders.length === 0
+    ) {
+      return;
+    }
+
+    // 搜索 "src/utils"，应该能搜到
+    const results = await searchWorkspaceFiles("src/utils", {
+      maxResults: 100,
+    });
+
+    const found = results.some((r: SearchResult) =>
+      r.path.replace(/\\/g, "/").includes("src/utils")
+    );
+
+    assert.ok(
+      found,
+      "搜索 'src/utils' 应该能找到对应的结果, 实际搜到: " +
+        JSON.stringify(results.map((r) => r.path))
     );
   });
 });

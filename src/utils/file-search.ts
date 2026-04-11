@@ -108,7 +108,8 @@ export async function searchWorkspaceFiles(
 
   // 遍历所有工作区文件夹
   for (const workspaceFolder of workspaceFolders) {
-    if (results.length >= maxResults) {
+    if (results.length >= maxResults * 2) {
+      // 稍微多搜一点以便排序
       break;
     }
 
@@ -118,18 +119,58 @@ export async function searchWorkspaceFiles(
       query,
       results,
       {
-        maxResults,
+        maxResults: maxResults * 2, // 搜索更多结果以保证排序质量
         excludeFolders,
         includeHidden,
       }
     );
   }
 
-  // 去重并限制结果数量
+  // 去重
   const uniqueResults = results.filter(
     (result, index, self) =>
       index === self.findIndex((r) => r.path === result.path)
   );
+
+  // 排序逻辑
+  const normalizedQuery = query.replace(/\\/g, "/").toLowerCase();
+  uniqueResults.sort((a, b) => {
+    const aLowerName = a.name.toLowerCase();
+    const bLowerName = b.name.toLowerCase();
+    const aLowerPath = a.path.toLowerCase();
+    const bLowerPath = b.path.toLowerCase();
+
+    // 1. 精确匹配文件名/文件夹名
+    if (aLowerName === normalizedQuery && bLowerName !== normalizedQuery)
+      return -1;
+    if (bLowerName === normalizedQuery && aLowerName !== normalizedQuery)
+      return 1;
+
+    // 2. 前缀匹配文件名
+    if (
+      aLowerName.startsWith(normalizedQuery) &&
+      !bLowerName.startsWith(normalizedQuery)
+    )
+      return -1;
+    if (
+      bLowerName.startsWith(normalizedQuery) &&
+      !aLowerName.startsWith(normalizedQuery)
+    )
+      return 1;
+
+    // 3. 路径包含匹配
+    const aPathScore = aLowerPath.includes(normalizedQuery) ? 1 : 0;
+    const bPathScore = bLowerPath.includes(normalizedQuery) ? 1 : 0;
+    if (aPathScore !== bPathScore) return bPathScore - aPathScore;
+
+    // 4. 深度排序（路径短的优先）
+    const aDepth = a.path.split("/").length;
+    const bDepth = b.path.split("/").length;
+    if (aDepth !== bDepth) return aDepth - bDepth;
+
+    // 5. 字母顺序
+    return a.path.localeCompare(b.path);
+  });
 
   return uniqueResults.slice(0, maxResults);
 }
@@ -161,13 +202,36 @@ async function searchDirectory(
         continue;
       }
 
+      const uri = vscode.Uri.joinPath(dirUri, name);
+      // 手动计算相对路径以确保一致性
+      const rootPath = workspaceRootUri.fsPath;
+      const entryPath = uri.fsPath;
+      let relativePath = entryPath.startsWith(rootPath)
+        ? entryPath.slice(rootPath.length)
+        : entryPath;
+
+      // 移除开头的斜杠并统一使用正斜杠
+      relativePath = relativePath.replace(/^[/\\]+/, "").replace(/\\/g, "/");
+
       // 检查是否匹配查询（空查询匹配所有）
-      const isMatch =
-        !query || name.toLowerCase().includes(query.toLowerCase());
+      let isMatch = false;
+      if (!query) {
+        isMatch = true;
+      } else {
+        const normalizedQuery = query.replace(/\\/g, "/").toLowerCase();
+        const lowerName = name.toLowerCase();
+        const lowerRelativePath = relativePath.toLowerCase();
+
+        if (normalizedQuery.includes("/")) {
+          // 如果查询包含路径分隔符，匹配相对路径
+          isMatch = lowerRelativePath.includes(normalizedQuery);
+        } else {
+          // 否则只匹配文件名/文件夹名
+          isMatch = lowerName.includes(normalizedQuery);
+        }
+      }
 
       if (isMatch) {
-        const uri = vscode.Uri.joinPath(dirUri, name);
-        const relativePath = vscode.workspace.asRelativePath(uri);
         const pathParts = relativePath.split("/");
         const dirPath = pathParts.slice(0, -1).join("/");
 

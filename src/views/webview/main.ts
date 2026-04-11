@@ -2063,8 +2063,15 @@ export class WebviewController {
     const lastSlashIdx = textBefore.lastIndexOf("/");
     const lastAtIdx = textBefore.lastIndexOf("@");
 
-    if (
+    // 触发条件：必须是起始位置或者前面是空格
+    const isSlashTrigger =
       lastSlashIdx >= 0 &&
+      (lastSlashIdx === 0 || textBefore[lastSlashIdx - 1] === " ");
+    const isAtTrigger =
+      lastAtIdx >= 0 && (lastAtIdx === 0 || textBefore[lastAtIdx - 1] === " ");
+
+    if (
+      isSlashTrigger &&
       lastSlashIdx >= lastAtIdx &&
       !textBefore.slice(lastSlashIdx).includes(" ")
     ) {
@@ -2074,11 +2081,7 @@ export class WebviewController {
       const filtered = this.getFilteredCommands(query);
       this.selectedIndex = filtered.length > 0 ? 0 : -1;
       this.renderAutocomplete();
-    } else if (
-      lastAtIdx >= 0 &&
-      lastAtIdx >= lastSlashIdx &&
-      !textBefore.slice(lastAtIdx).includes(" ")
-    ) {
+    } else if (isAtTrigger && !textBefore.slice(lastAtIdx).includes(" ")) {
       this.autocompleteMode = "file";
       this.autocompleteTriggerPos = lastAtIdx;
       const query = textBefore.slice(lastAtIdx + 1);
