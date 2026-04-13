@@ -824,16 +824,41 @@ export class WebviewController {
     this.doc.body.appendChild(tooltipElement);
 
     let tooltipTimeout: any;
+    let currentTarget: HTMLElement | null = null;
+
+    const hide = () => {
+      clearTimeout(tooltipTimeout);
+      tooltipElement.classList.remove("visible");
+      currentTarget = null;
+    };
+
+    const observer = new MutationObserver(() => {
+      if (currentTarget && !currentTarget.isConnected) {
+        hide();
+      }
+    });
+    observer.observe(this.doc.body, { childList: true, subtree: true });
 
     this.doc.addEventListener("mouseover", (e) => {
       const target = (e.target as HTMLElement).closest(
         "[acp-title]"
       ) as HTMLElement;
+
+      if (target === currentTarget) {
+        return;
+      }
+
+      hide();
+
       if (target) {
         const title = target.getAttribute("acp-title");
         if (title) {
-          clearTimeout(tooltipTimeout);
+          currentTarget = target;
           tooltipTimeout = setTimeout(() => {
+            if (!target.isConnected) {
+              currentTarget = null;
+              return;
+            }
             tooltipElement.textContent = title;
             tooltipElement.classList.add("visible");
             this.updateTooltipPosition(target, tooltipElement);
@@ -843,12 +868,15 @@ export class WebviewController {
     });
 
     this.doc.addEventListener("mouseout", (e) => {
-      const target = (e.target as HTMLElement).closest("[acp-title]");
-      if (target) {
-        clearTimeout(tooltipTimeout);
-        tooltipElement.classList.remove("visible");
+      if (currentTarget) {
+        const relatedTarget = e.relatedTarget as HTMLElement;
+        if (!relatedTarget || !currentTarget.contains(relatedTarget)) {
+          hide();
+        }
       }
     });
+
+    this.win.addEventListener("blur", hide);
   }
 
   private updateTooltipPosition(
