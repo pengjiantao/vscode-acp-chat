@@ -951,22 +951,9 @@ body {
   }
 }
 
-/* Scrollbar styling */
-#command-autocomplete::-webkit-scrollbar {
-  width: 8px;
-}
-
-#command-autocomplete::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-#command-autocomplete::-webkit-scrollbar-thumb {
-  background: var(--vscode-scrollbarSlider-background);
-  border-radius: 4px;
-}
-
-#command-autocomplete::-webkit-scrollbar-thumb:hover {
-  background: var(--vscode-scrollbarSlider-hoverBackground);
+/* Scrollbar styling - now handled globally in vscode.css */
+#command-autocomplete {
+  scrollbar-gutter: stable;
 }
 
 /* Autocomplete items container */
@@ -1471,16 +1458,8 @@ body {
   max-height: 300px;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: none;
-  /* Firefox */
-  -ms-overflow-style: none;
-  /* IE and Edge */
+  scrollbar-gutter: stable;
   padding: 4px 0;
-}
-
-.dropdown-popover::-webkit-scrollbar {
-  display: none;
-  /* Chrome, Safari, Opera */
 }
 
 .custom-dropdown.open .dropdown-popover {
