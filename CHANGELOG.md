@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v0.11.0...v0.11.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* improve tooltip handling for detached elements ([c61abe6](https://github.com/pengjiantao/vscode-acp-chat/commit/c61abe632ef33c829788200545378e827159bce2))
+* remove input max-height constraint and adjust overflow detection ([62612b6](https://github.com/pengjiantao/vscode-acp-chat/commit/62612b665925251496019452f4f25cf51c15e108))
+* **webview:** check MutationObserver presence for test compatibility ([ec7fe6d](https://github.com/pengjiantao/vscode-acp-chat/commit/ec7fe6d10255ea9ada5c1359712f231b0f8063cf))
+
 ## [0.11.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v0.10.0...v0.11.0) (2026-04-11)
 
 
