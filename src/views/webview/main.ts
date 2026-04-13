@@ -832,12 +832,14 @@ export class WebviewController {
       currentTarget = null;
     };
 
-    const observer = new MutationObserver(() => {
-      if (currentTarget && !currentTarget.isConnected) {
-        hide();
-      }
-    });
-    observer.observe(this.doc.body, { childList: true, subtree: true });
+    if (typeof MutationObserver !== "undefined") {
+      const observer = new MutationObserver(() => {
+        if (currentTarget && !currentTarget.isConnected) {
+          hide();
+        }
+      });
+      observer.observe(this.doc.body, { childList: true, subtree: true });
+    }
 
     this.doc.addEventListener("mouseover", (e) => {
       const target = (e.target as HTMLElement).closest(
