@@ -1136,7 +1136,7 @@ export class WebviewController {
     const scrollHeight = inputEl.scrollHeight;
     const newHeight = Math.max(52, Math.min(scrollHeight, maxHeight));
     inputEl.style.height = newHeight + "px";
-    inputEl.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
+    inputEl.style.overflowY = scrollHeight > maxHeight - 1 ? "auto" : "hidden";
   }
 
   private restoreState(): void {

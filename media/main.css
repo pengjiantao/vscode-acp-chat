@@ -1334,7 +1334,6 @@ body {
 #input {
   width: 100%;
   min-height: 52px;
-  max-height: 200px;
   overflow-y: auto;
   padding: 4px 8px;
   outline: none;
