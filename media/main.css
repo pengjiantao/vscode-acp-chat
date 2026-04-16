@@ -1841,9 +1841,15 @@ kbd {
   mask: url(./icons/chevron-down.svg) no-repeat center;
   -webkit-mask: url(./icons/chevron-down.svg) no-repeat center;
   background-color: currentColor;
-  opacity: 0.4;
-  transition: transform 0.15s ease;
+  opacity: 0;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
   flex-shrink: 0;
+}
+
+.agent-thought summary:hover::after {
+  opacity: 0.6;
 }
 
 .agent-thought:not([open]) summary::after {
@@ -1920,9 +1926,15 @@ kbd {
   mask: url(./icons/chevron-down.svg) no-repeat center;
   -webkit-mask: url(./icons/chevron-down.svg) no-repeat center;
   background-color: currentColor;
-  opacity: 0.4;
-  transition: transform 0.15s ease;
+  opacity: 0;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
   flex-shrink: 0;
+}
+
+.tool-item summary:hover::after {
+  opacity: 0.6;
 }
 
 .tool-item:not([open]) summary::after {
