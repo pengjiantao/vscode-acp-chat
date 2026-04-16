@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v0.11.1...v0.12.0) (2026-04-16)
+
+
+### Features
+
+* **webview:** add code highlighting support with highlight.js ([ddf0f14](https://github.com/pengjiantao/vscode-acp-chat/commit/ddf0f14a7b043dff5190205a0875ed9d12f62691))
+* **webview:** add copy button to code blocks ([069f0ae](https://github.com/pengjiantao/vscode-acp-chat/commit/069f0aeaf740877f5bcc56f8eb57afff171b3509))
+
 ## [0.11.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v0.11.0...v0.11.1) (2026-04-13)
 
 
