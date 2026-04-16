@@ -10,6 +10,18 @@
   --input-margin-vertical: 4px;
   --border-radius: 4px;
   --border-radius-small: 3px;
+  --acp-scrollbar-thumb: var(
+    --vscode-scrollbarSlider-background,
+    rgba(121, 121, 121, 0.4)
+  );
+  --acp-scrollbar-thumb-hover: var(
+    --vscode-scrollbarSlider-hoverBackground,
+    rgba(100, 100, 100, 0.7)
+  );
+  --acp-scrollbar-thumb-active: var(
+    --vscode-scrollbarSlider-activeBackground,
+    rgba(191, 191, 191, 0.4)
+  );
 }
 
 body {
@@ -20,6 +32,45 @@ body {
   font-family: var(--vscode-font-family);
   background-color: var(--vscode-sideBar-background);
   line-height: 1.4;
+}
+
+/* Global scrollbar styling: keep the track visually consistent with each
+   scroll container by leaving it transparent, and theme the thumb via VS Code. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--acp-scrollbar-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--acp-scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--acp-scrollbar-thumb-hover);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: var(--acp-scrollbar-thumb-active);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Focus styles */
