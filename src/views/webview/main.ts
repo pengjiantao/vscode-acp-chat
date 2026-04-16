@@ -1,4 +1,4 @@
-import { marked } from "marked";
+import { marked } from "./marked-config";
 import { renderToolSummary, renderToolDetails } from "./tool-render";
 import { computeLineDiff } from "../../utils/diff";
 
@@ -7,12 +7,6 @@ export interface VsCodeApi {
   getState<T>(): T | undefined;
   setState<T>(state: T): T;
 }
-
-// Configure marked for streaming (GFM and line breaks)
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-});
 
 declare function acquireVsCodeApi(): VsCodeApi;
 
