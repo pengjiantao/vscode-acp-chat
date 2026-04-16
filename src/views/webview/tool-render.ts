@@ -2,7 +2,6 @@ import {
   ToolKind,
   ToolCallSummary,
   escapeHtml,
-  getToolKindIcon,
   renderDiff,
   hasAnsiCodes,
   ansiToHtml,
@@ -11,6 +10,54 @@ import {
 export interface ToolRenderer {
   renderSummary(info: ToolCallSummary): string;
   renderDetails(info: ToolCallSummary): string;
+}
+
+const TOOL_KIND_ICONS: Record<ToolKind, string> = {
+  read: "codicon codicon-file-text",
+  edit: "codicon codicon-edit",
+  write: "codicon codicon-edit",
+  delete: "codicon codicon-trash",
+  move: "codicon codicon-references",
+  search: "codicon codicon-search",
+  execute: "codicon codicon-terminal",
+  think: "codicon codicon-lightbulb",
+  fetch: "codicon codicon-globe",
+  switch_mode: "codicon codicon-sync",
+  other: "codicon codicon-gear",
+};
+
+export function getToolKindIcon(kind?: string): string {
+  if (!kind) return "";
+  const lower = kind.toLowerCase();
+
+  if (lower in TOOL_KIND_ICONS) {
+    return TOOL_KIND_ICONS[lower as ToolKind];
+  }
+
+  // Handle technical names by prefix/substring
+  if (lower.startsWith("read")) return TOOL_KIND_ICONS.read;
+  if (lower.startsWith("write")) return TOOL_KIND_ICONS.write;
+  if (
+    lower.startsWith("edit") ||
+    lower.startsWith("patch") ||
+    lower.includes("replace")
+  )
+    return TOOL_KIND_ICONS.edit;
+  if (lower.startsWith("search") || lower.startsWith("grep"))
+    return TOOL_KIND_ICONS.search;
+  if (
+    lower.startsWith("execute") ||
+    lower.startsWith("run") ||
+    lower === "bash" ||
+    lower === "sh"
+  )
+    return TOOL_KIND_ICONS.execute;
+  if (lower.startsWith("delete") || lower.startsWith("remove"))
+    return TOOL_KIND_ICONS.delete;
+  if (lower.startsWith("move") || lower.startsWith("rename"))
+    return TOOL_KIND_ICONS.move;
+
+  return TOOL_KIND_ICONS.other;
 }
 
 // 通用信息提取助手

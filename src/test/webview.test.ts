@@ -2,19 +2,119 @@ import * as assert from "assert";
 import { JSDOM, DOMWindow } from "jsdom";
 import {
   escapeHtml,
-  getToolsHtml,
   getElements,
   WebviewController,
   initWebview,
   ansiToHtml,
   hasAnsiCodes,
-  getToolKindIcon,
   renderDiff,
   type VsCodeApi,
   type Tool,
   type WebviewElements,
 } from "../views/webview/main";
+import { getToolKindIcon } from "../views/webview/tool-render";
 import { computeLineDiff } from "../utils/diff";
+
+function getToolsHtml(
+  tools: Record<string, Tool>,
+  expandedToolId?: string | null
+): string {
+  const toolIds = Object.keys(tools);
+  if (toolIds.length === 0) return "";
+  const toolItems = toolIds
+    .map((id) => {
+      const tool = tools[id];
+      const iconClass = getToolKindIcon(tool.kind);
+      const kindSpan = iconClass
+        ? `<span class="tool-kind-icon ${iconClass}" acp-title="${escapeHtml(
+            tool.kind || "other"
+          )}"></span> `
+        : "";
+      const statusIcon =
+        tool.status === "completed"
+          ? '<span class="codicon codicon-check"></span>'
+          : tool.status === "failed"
+            ? '<span class="codicon codicon-close"></span>'
+            : '<span class="codicon codicon-loading animate-spin"></span>';
+      const statusClass = tool.status === "running" ? "running" : "";
+      let detailsContent = "";
+      if (tool.input) {
+        detailsContent +=
+          '<div class="tool-input"><strong>$</strong> ' +
+          escapeHtml(tool.input) +
+          "</div>";
+      }
+      if (tool.output) {
+        const truncated =
+          tool.output.length > 500
+            ? tool.output.slice(0, 500) + "..."
+            : tool.output;
+        const hasAnsi = hasAnsiCodes(truncated);
+        const outputHtml = hasAnsi
+          ? ansiToHtml(truncated)
+          : escapeHtml(truncated);
+        const terminalClass = hasAnsi ? " terminal" : "";
+        detailsContent +=
+          '<pre class="tool-output' +
+          terminalClass +
+          '">' +
+          outputHtml +
+          "</pre>";
+      }
+      const escapedStatus = escapeHtml(tool.status);
+      const inputPreview = tool.input
+        ? '<span class="tool-input-preview">' +
+          escapeHtml(tool.input) +
+          "</span>"
+        : "";
+      const isExpanded = id === expandedToolId;
+      if (detailsContent) {
+        const openAttr = isExpanded ? " open" : "";
+        return (
+          '<li><details class="tool-item"' +
+          openAttr +
+          '><summary><span class="tool-status ' +
+          statusClass +
+          '" aria-label="' +
+          escapedStatus +
+          '">' +
+          statusIcon +
+          "</span> " +
+          kindSpan +
+          escapeHtml(tool.name) +
+          inputPreview +
+          "</summary>" +
+          detailsContent +
+          "</details></li>"
+        );
+      }
+      return (
+        '<li><span class="tool-status ' +
+        statusClass +
+        '" aria-label="' +
+        escapedStatus +
+        '">' +
+        statusIcon +
+        "</span> " +
+        kindSpan +
+        escapeHtml(tool.name) +
+        inputPreview +
+        "</li>"
+      );
+    })
+    .join("");
+  return (
+    '<details class="tool-details" open><summary aria-label="' +
+    toolIds.length +
+    ' tools used">' +
+    toolIds.length +
+    " tool" +
+    (toolIds.length > 1 ? "s" : "") +
+    '</summary><ul class="tool-list" role="list">' +
+    toolItems +
+    "</ul></details>"
+  );
+}
 
 function createMockVsCodeApi(): VsCodeApi & {
   _getMessages: () => unknown[];
