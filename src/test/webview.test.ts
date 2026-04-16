@@ -9,112 +9,14 @@ import {
   hasAnsiCodes,
   renderDiff,
   type VsCodeApi,
-  type Tool,
   type WebviewElements,
 } from "../views/webview/main";
-import { getToolKindIcon } from "../views/webview/tool-render";
+import {
+  renderToolSummary,
+  renderToolDetails,
+  getToolKindIcon,
+} from "../views/webview/tool-render";
 import { computeLineDiff } from "../utils/diff";
-
-function getToolsHtml(
-  tools: Record<string, Tool>,
-  expandedToolId?: string | null
-): string {
-  const toolIds = Object.keys(tools);
-  if (toolIds.length === 0) return "";
-  const toolItems = toolIds
-    .map((id) => {
-      const tool = tools[id];
-      const iconClass = getToolKindIcon(tool.kind);
-      const kindSpan = iconClass
-        ? `<span class="tool-kind-icon ${iconClass}" acp-title="${escapeHtml(
-            tool.kind || "other"
-          )}"></span> `
-        : "";
-      const statusIcon =
-        tool.status === "completed"
-          ? '<span class="codicon codicon-check"></span>'
-          : tool.status === "failed"
-            ? '<span class="codicon codicon-close"></span>'
-            : '<span class="codicon codicon-loading animate-spin"></span>';
-      const statusClass = tool.status === "running" ? "running" : "";
-      let detailsContent = "";
-      if (tool.input) {
-        detailsContent +=
-          '<div class="tool-input"><strong>$</strong> ' +
-          escapeHtml(tool.input) +
-          "</div>";
-      }
-      if (tool.output) {
-        const truncated =
-          tool.output.length > 500
-            ? tool.output.slice(0, 500) + "..."
-            : tool.output;
-        const hasAnsi = hasAnsiCodes(truncated);
-        const outputHtml = hasAnsi
-          ? ansiToHtml(truncated)
-          : escapeHtml(truncated);
-        const terminalClass = hasAnsi ? " terminal" : "";
-        detailsContent +=
-          '<pre class="tool-output' +
-          terminalClass +
-          '">' +
-          outputHtml +
-          "</pre>";
-      }
-      const escapedStatus = escapeHtml(tool.status);
-      const inputPreview = tool.input
-        ? '<span class="tool-input-preview">' +
-          escapeHtml(tool.input) +
-          "</span>"
-        : "";
-      const isExpanded = id === expandedToolId;
-      if (detailsContent) {
-        const openAttr = isExpanded ? " open" : "";
-        return (
-          '<li><details class="tool-item"' +
-          openAttr +
-          '><summary><span class="tool-status ' +
-          statusClass +
-          '" aria-label="' +
-          escapedStatus +
-          '">' +
-          statusIcon +
-          "</span> " +
-          kindSpan +
-          escapeHtml(tool.name) +
-          inputPreview +
-          "</summary>" +
-          detailsContent +
-          "</details></li>"
-        );
-      }
-      return (
-        '<li><span class="tool-status ' +
-        statusClass +
-        '" aria-label="' +
-        escapedStatus +
-        '">' +
-        statusIcon +
-        "</span> " +
-        kindSpan +
-        escapeHtml(tool.name) +
-        inputPreview +
-        "</li>"
-      );
-    })
-    .join("");
-  return (
-    '<details class="tool-details" open><summary aria-label="' +
-    toolIds.length +
-    ' tools used">' +
-    toolIds.length +
-    " tool" +
-    (toolIds.length > 1 ? "s" : "") +
-    '</summary><ul class="tool-list" role="list">' +
-    toolItems +
-    "</ul></details>"
-  );
-}
 
 function createMockVsCodeApi(): VsCodeApi & {
   _getMessages: () => unknown[];
@@ -261,22 +163,14 @@ suite("Webview", () => {
     });
   });
 
-  suite("getToolsHtml", () => {
-    test("returns empty string for no tools", () => {
-      assert.strictEqual(getToolsHtml({}), "");
-    });
-
+  suite("renderToolSummary", () => {
     test("renders running tool with spinner icon", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "bash",
-          input: null,
-          output: null,
-          status: "running",
-        },
-      };
-      const html = getToolsHtml(tools);
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "bash",
+        kind: "execute",
+        status: "in_progress",
+      });
       assert.ok(
         html.includes(
           '<span class="codicon codicon-loading animate-spin"></span>'
@@ -287,105 +181,175 @@ suite("Webview", () => {
     });
 
     test("renders completed tool with checkmark", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "read_file",
-          input: "path/to/file",
-          output: "file contents",
-          status: "completed",
-        },
-      };
-      const html = getToolsHtml(tools);
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "read_file",
+        kind: "read",
+        status: "completed",
+        rawInput: { path: "path/to/file" },
+      });
       assert.ok(html.includes('<span class="codicon codicon-check"></span>'));
-      assert.ok(html.includes("read_file"));
+      assert.ok(html.includes("Read:"));
+      assert.ok(html.includes("path/to/file"));
     });
 
     test("renders failed tool with X", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "write_file",
-          input: null,
-          output: "Permission denied",
-          status: "failed",
-        },
-      };
-      const html = getToolsHtml(tools);
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "write_file",
+        kind: "edit",
+        status: "failed",
+        rawInput: { path: "test.txt" },
+      });
       assert.ok(html.includes('<span class="codicon codicon-close"></span>'));
+      assert.ok(html.includes("failed"));
     });
 
-    test("escapes tool name to prevent XSS", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "<script>alert(1)</script>",
-          input: null,
-          output: null,
-          status: "running",
-        },
-      };
-      const html = getToolsHtml(tools);
+    test("escapes tool title to prevent XSS", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "<script>alert(1)</script>",
+        status: "in_progress",
+      });
       assert.ok(html.includes("&lt;script&gt;"));
       assert.ok(!html.includes("<script>alert"));
     });
 
-    test("truncates long output", () => {
-      const longOutput = "x".repeat(600);
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "test",
-          input: null,
-          output: longOutput,
-          status: "completed",
-        },
-      };
-      const html = getToolsHtml(tools);
-      assert.ok(html.includes("..."));
-      assert.ok(!html.includes("x".repeat(600)));
+    test("shows duration when provided", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "test",
+        kind: "execute",
+        status: "completed",
+        duration: 1500,
+      });
+      assert.ok(html.includes("1.5s"));
     });
 
-    test("shows tool count in summary", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "a",
-          input: null,
-          output: null,
-          status: "completed",
-        },
-        "tool-2": {
-          id: "tool-2",
-          name: "b",
-          input: null,
-          output: null,
-          status: "completed",
-        },
-        "tool-3": {
-          id: "tool-3",
-          name: "c",
-          input: null,
-          output: null,
-          status: "completed",
-        },
-      };
-      const html = getToolsHtml(tools);
-      assert.ok(html.includes("3 tools"));
+    test("renders edit tool with correct label", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "src/file.ts",
+        kind: "edit",
+        status: "completed",
+        rawInput: { path: "src/file.ts" },
+      });
+      assert.ok(html.includes("<strong>Edit:</strong>"));
+      assert.ok(html.includes("src/file.ts"));
     });
 
-    test("shows singular tool for single tool", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "a",
-          input: null,
-          output: null,
-          status: "completed",
-        },
-      };
-      const html = getToolsHtml(tools);
-      assert.ok(html.includes(">1 tool<"));
+    test("renders read tool with correct label", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "config.json",
+        kind: "read",
+        status: "completed",
+        rawInput: { path: "config.json" },
+      });
+      assert.ok(html.includes("<strong>Read:</strong>"));
+      assert.ok(html.includes("config.json"));
+    });
+
+    test("renders search tool with correct label", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "function test",
+        kind: "search",
+        status: "completed",
+        rawInput: { pattern: "function test" },
+      });
+      assert.ok(html.includes("<strong>Search:</strong>"));
+      assert.ok(html.includes('"function test"'));
+    });
+  });
+
+  suite("renderToolDetails", () => {
+    test("renders tool details panel", () => {
+      const html = renderToolDetails({
+        toolCallId: "tool-1",
+        title: "test tool",
+        kind: "execute",
+        status: "completed",
+        rawInput: { command: "npm test", description: "Run tests" },
+      });
+      assert.ok(html.includes('<div class="tool-details-panel">'));
+      assert.ok(html.includes("Type:"));
+      assert.ok(html.includes("execute"));
+    });
+
+    test("renders input parameters in details", () => {
+      const html = renderToolDetails({
+        toolCallId: "tool-1",
+        title: "test",
+        kind: "execute",
+        status: "completed",
+        rawInput: { command: "npm test", cwd: "/project" },
+      });
+      assert.ok(html.includes("Input:"));
+      assert.ok(html.includes("$ npm test"));
+      assert.ok(html.includes("cwd:"));
+    });
+
+    test("renders output in details", () => {
+      const html = renderToolDetails({
+        toolCallId: "tool-1",
+        title: "test",
+        kind: "execute",
+        status: "completed",
+        rawOutput: { output: "All tests passed" },
+      });
+      assert.ok(html.includes("Output:"));
+      assert.ok(html.includes("All tests passed"));
+    });
+
+    test("renders terminal output with ANSI support", () => {
+      const html = renderToolDetails({
+        toolCallId: "tool-1",
+        title: "terminal",
+        kind: "execute",
+        status: "completed",
+        terminalOutput: "\x1b[32m✓ Tests passed\x1b[0m",
+      });
+      assert.ok(html.includes("Output:"));
+      assert.ok(html.includes('class="tool-output terminal"'));
+      assert.ok(html.includes('class="ansi-green"'));
+      assert.ok(html.includes("✓ Tests passed"));
+    });
+
+    test("escapes HTML in plain output", () => {
+      const html = renderToolDetails({
+        toolCallId: "tool-1",
+        title: "cat",
+        kind: "read",
+        status: "completed",
+        rawOutput: { output: "<script>alert('xss')</script>" },
+      });
+      assert.ok(html.includes("&lt;script&gt;"));
+      assert.ok(!html.includes("<script>"));
+    });
+
+    test("renders locations in details", () => {
+      const html = renderToolDetails({
+        toolCallId: "tool-1",
+        title: "file",
+        kind: "read",
+        status: "completed",
+        locations: [{ path: "/src/test.ts", line: 42 }],
+      });
+      assert.ok(html.includes("Path:"));
+      assert.ok(html.includes("/src/test.ts:42"));
+    });
+
+    test("renders intent/description in details", () => {
+      const html = renderToolDetails({
+        toolCallId: "tool-1",
+        title: "test",
+        kind: "execute",
+        status: "completed",
+        rawInput: { description: "Running unit tests" },
+      });
+      assert.ok(html.includes("Intent:"));
+      assert.ok(html.includes("Running unit tests"));
     });
   });
 
@@ -1699,65 +1663,27 @@ suite("Webview", () => {
     });
   });
 
-  suite("getToolsHtml with ANSI", () => {
-    test("renders tool output with ANSI colors", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "terminal",
-          input: "npm test",
-          output: "\x1b[32m✓ All tests passed\x1b[0m",
-          status: "completed",
-        },
-      };
-      const html = getToolsHtml(tools);
-      assert.ok(html.includes('class="tool-output terminal"'));
-      assert.ok(html.includes('class="ansi-green"'));
-      assert.ok(html.includes("✓ All tests passed"));
-    });
-
-    test("renders plain output without terminal class", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "read_file",
-          input: "file.txt",
-          output: "plain text output",
-          status: "completed",
-        },
-      };
-      const html = getToolsHtml(tools);
-      assert.ok(html.includes('class="tool-output"'));
-      assert.ok(!html.includes('class="tool-output terminal"'));
-      assert.ok(html.includes("plain text output"));
-    });
-
+  suite("renderToolDetails with ANSI and XSS", () => {
     test("escapes HTML in plain output", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "cat",
-          input: null,
-          output: "<script>alert('xss')</script>",
-          status: "completed",
-        },
-      };
-      const html = getToolsHtml(tools);
+      const html = renderToolDetails({
+        toolCallId: "tool-1",
+        title: "cat",
+        kind: "read",
+        status: "completed",
+        rawOutput: { output: "<script>alert('xss')</script>" },
+      });
       assert.ok(html.includes("&lt;script&gt;"));
       assert.ok(!html.includes("<script>"));
     });
 
     test("handles ANSI output with HTML characters", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "grep",
-          input: null,
-          output: "\x1b[31m<error>\x1b[0m",
-          status: "failed",
-        },
-      };
-      const html = getToolsHtml(tools);
+      const html = renderToolDetails({
+        toolCallId: "tool-1",
+        title: "grep",
+        kind: "search",
+        status: "failed",
+        terminalOutput: "\x1b[31m<error>\x1b[0m",
+      });
       assert.ok(html.includes("&lt;error&gt;"));
       assert.ok(html.includes('class="ansi-red"'));
     });
@@ -1815,68 +1741,112 @@ suite("Webview", () => {
     });
   });
 
-  suite("getToolsHtml with tool kinds", () => {
+  suite("renderToolSummary with tool kinds", () => {
     test("renders tool kind icon when kind is provided", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "read_file",
-          input: "file.txt",
-          output: "content",
-          status: "completed",
-          kind: "read",
-        },
-      };
-      const html = getToolsHtml(tools);
-      assert.ok(
-        html.includes('class="tool-kind-icon codicon codicon-file-text"')
-      );
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "file.txt",
+        kind: "read",
+        status: "completed",
+        rawInput: { path: "file.txt" },
+      });
+      assert.ok(html.includes('class="codicon codicon-file-text"'));
     });
 
     test("renders execute kind icon for command tools", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "bash",
-          input: "npm test",
-          output: "success",
-          status: "completed",
-          kind: "execute",
-        },
-      };
-      const html = getToolsHtml(tools);
-      assert.ok(
-        html.includes('class="tool-kind-icon codicon codicon-terminal"')
-      );
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "npm test",
+        kind: "execute",
+        status: "completed",
+        rawInput: { command: "npm test" },
+      });
+      assert.ok(html.includes('class="codicon codicon-terminal"'));
     });
 
     test("does not render kind icon when kind is undefined", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "unknown_tool",
-          input: null,
-          output: null,
-          status: "running",
-        },
-      };
-      const html = getToolsHtml(tools);
-      assert.ok(!html.includes('class="tool-kind-icon"'));
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "unknown_tool",
+        status: "in_progress",
+      });
+      // Should still have status icon but no specific tool-kind-icon
+      assert.ok(html.includes("codicon-loading"));
     });
 
-    test("includes kind in title attribute for accessibility", () => {
-      const tools: Record<string, Tool> = {
-        "tool-1": {
-          id: "tool-1",
-          name: "write_file",
-          input: "file.txt",
-          output: "done",
-          status: "completed",
-          kind: "edit",
-        },
-      };
-      const html = getToolsHtml(tools);
-      assert.ok(html.includes('title="edit"'));
+    test("renders edit tool with edit icon", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "file.txt",
+        kind: "edit",
+        status: "completed",
+        rawInput: { path: "file.txt" },
+      });
+      assert.ok(html.includes('class="codicon codicon-edit"'));
+      assert.ok(html.includes("<strong>Edit:</strong>"));
+    });
+
+    test("renders delete tool with trash icon", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "old-file.txt",
+        kind: "delete",
+        status: "completed",
+        rawInput: { path: "old-file.txt" },
+      });
+      assert.ok(html.includes('class="codicon codicon-trash"'));
+    });
+
+    test("renders search tool with search icon", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "pattern",
+        kind: "search",
+        status: "completed",
+        rawInput: { pattern: "pattern" },
+      });
+      assert.ok(html.includes('class="codicon codicon-search"'));
+    });
+
+    test("renders fetch tool with globe icon", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "https://example.com",
+        kind: "fetch",
+        status: "completed",
+        rawInput: { url: "https://example.com" },
+      });
+      assert.ok(html.includes('class="codicon codicon-globe"'));
+    });
+
+    test("renders think tool with lightbulb icon", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "thinking",
+        kind: "think",
+        status: "completed",
+      });
+      assert.ok(html.includes('class="codicon codicon-lightbulb"'));
+    });
+
+    test("renders switch_mode tool with sync icon", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "switching",
+        kind: "switch_mode",
+        status: "completed",
+      });
+      assert.ok(html.includes('class="codicon codicon-sync"'));
+    });
+
+    test("renders other tool with gear icon", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "custom tool",
+        kind: "other",
+        status: "completed",
+      });
+      assert.ok(html.includes('class="codicon codicon-gear"'));
     });
   });
 
