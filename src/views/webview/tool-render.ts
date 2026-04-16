@@ -319,7 +319,7 @@ const BaseRenderer: ToolRenderer = {
       if (hasMeaningfulInput) {
         html +=
           '<div class="detail-section"><span class="detail-label">Input:</span>';
-        html += '<pre class="detail-input">';
+        html += '<div class="code-block-wrapper"><pre class="detail-input">';
         for (const [key, value] of Object.entries(rawInput)) {
           if (key === "description") continue;
           if (hasDiff && skipInputKeys.includes(key)) continue;
@@ -332,7 +332,8 @@ const BaseRenderer: ToolRenderer = {
             }
           }
         }
-        html += "</pre></div>";
+        html +=
+          '</pre><button class="code-copy-btn" acp-title="Copy input"><span class="codicon codicon-copy"></span></button></div></div>';
       }
     }
 
@@ -342,7 +343,7 @@ const BaseRenderer: ToolRenderer = {
       for (const item of content) {
         if (item.type === "content" && item.content?.text) {
           html += `<div class="detail-section"><span class="detail-label">Output:</span>`;
-          html += `<pre class="tool-output">${escapeHtml(item.content.text)}</pre></div>`;
+          html += `<div class="code-block-wrapper"><pre class="tool-output">${escapeHtml(item.content.text)}</pre><button class="code-copy-btn" acp-title="Copy output"><span class="codicon codicon-copy"></span></button></div></div>`;
           hasOutput = true;
         } else if (item.type === "terminal") {
           const output = terminalOutput || "";
@@ -350,7 +351,7 @@ const BaseRenderer: ToolRenderer = {
           const outputHtml = hasAnsi ? ansiToHtml(output) : escapeHtml(output);
           const terminalClass = hasAnsi ? " terminal" : "";
           html += `<div class="detail-section"><span class="detail-label">Terminal:</span>`;
-          html += `<pre class="tool-output${terminalClass}">${outputHtml}</pre></div>`;
+          html += `<div class="code-block-wrapper"><pre class="tool-output${terminalClass}">${outputHtml}</pre><button class="code-copy-btn" acp-title="Copy terminal output"><span class="codicon codicon-copy"></span></button></div></div>`;
           hasOutput = true;
         } else if (item.type === "diff") {
           html += renderDiff(item.path, item.oldText, item.newText);
@@ -372,7 +373,7 @@ const BaseRenderer: ToolRenderer = {
         const outputHtml = hasAnsi ? ansiToHtml(output) : escapeHtml(output);
         const terminalClass = hasAnsi ? " terminal" : "";
         html += `<div class="detail-section"><span class="detail-label">Output:</span>`;
-        html += `<pre class="tool-output${terminalClass}">${outputHtml}</pre></div>`;
+        html += `<div class="code-block-wrapper"><pre class="tool-output${terminalClass}">${outputHtml}</pre><button class="code-copy-btn" acp-title="Copy output"><span class="codicon codicon-copy"></span></button></div></div>`;
       }
     }
 

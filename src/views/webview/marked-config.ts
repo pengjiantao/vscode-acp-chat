@@ -25,7 +25,7 @@ renderer.code = ({ text, lang }) => {
     }
   }
 
-  return `<pre><code class="hljs ${validLanguage || ""}">${highlighted}</code></pre>`;
+  return `<div class="code-block-wrapper"><pre><code class="hljs ${validLanguage || ""}">${highlighted}</code></pre><button class="code-copy-btn" acp-title="Copy code"><span class="codicon codicon-copy"></span></button></div>`;
 };
 
 // Configure marked for streaming (GFM and line breaks)

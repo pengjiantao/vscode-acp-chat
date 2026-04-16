@@ -221,6 +221,51 @@ body {
   font-size: 0.9em;
 }
 
+/* Code Block Wrapper with Copy Button */
+.code-block-wrapper {
+  position: relative;
+  margin: 12px 0;
+}
+
+.code-block-wrapper pre {
+  margin: 0;
+}
+
+.code-copy-btn {
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.2s ease,
+    background-color 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-foreground);
+  z-index: 10;
+}
+
+.code-block-wrapper:hover .code-copy-btn {
+  opacity: 1;
+}
+
+.code-copy-btn:hover {
+  background: var(
+    --vscode-toolbar-hoverBackground,
+    rgba(255, 255, 255, 0.12)
+  ) !important;
+}
+
+.code-copy-btn.copied {
+  color: var(--vscode-testing-iconPassed);
+}
+
 .message.assistant a {
   color: var(--vscode-textLink-foreground);
   text-decoration: underline;
@@ -2353,10 +2398,6 @@ kbd {
   overflow-x: auto;
   font-size: 12px;
   border: 1px solid var(--vscode-widget-border);
-}
-
-.detail-input div {
-  margin: 2px 0;
 }
 
 /* 工具输出 */

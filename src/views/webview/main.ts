@@ -663,6 +663,66 @@ export class WebviewController {
     this.updateInputState();
     this.vscode.postMessage({ type: "ready" });
     this.setupTooltip();
+    this.setupCodeCopyHandler();
+  }
+
+  private setupCodeCopyHandler(): void {
+    // Use event delegation on messages container to handle copy button clicks
+    this.elements.messagesEl.addEventListener("click", async (e) => {
+      const target = e.target as HTMLElement;
+      const copyBtn = target.closest(".code-copy-btn") as HTMLButtonElement;
+
+      if (!copyBtn) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Find the pre element within the same wrapper
+      const wrapper = copyBtn.closest(".code-block-wrapper");
+      if (!wrapper) return;
+
+      const pre = wrapper.querySelector("pre");
+      if (!pre) return;
+
+      // Extract text content from the pre element
+      const textToCopy = pre.textContent || "";
+
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+
+        // Show success feedback by changing icon
+        const icon = copyBtn.querySelector(".codicon");
+        if (icon) {
+          icon.classList.remove("codicon-copy");
+          icon.classList.add("codicon-check");
+          copyBtn.classList.add("copied");
+          copyBtn.setAttribute("acp-title", "Copied!");
+        }
+
+        // Reset after 1.5 seconds
+        setTimeout(() => {
+          if (icon) {
+            icon.classList.remove("codicon-check");
+            icon.classList.add("codicon-copy");
+            copyBtn.classList.remove("copied");
+            // Reset tooltip based on button type
+            const wrapper = copyBtn.closest(".code-block-wrapper");
+            if (wrapper) {
+              const pre = wrapper.querySelector("pre");
+              if (pre && pre.classList.contains("detail-input")) {
+                copyBtn.setAttribute("acp-title", "Copy input");
+              } else if (pre && pre.classList.contains("tool-output")) {
+                copyBtn.setAttribute("acp-title", "Copy output");
+              } else {
+                copyBtn.setAttribute("acp-title", "Copy code");
+              }
+            }
+          }
+        }, 1500);
+      } catch (err) {
+        console.error("Failed to copy:", err);
+      }
+    });
   }
 
   private setupTooltip(): void {
