@@ -996,11 +996,6 @@ body {
   }
 }
 
-/* Scrollbar styling - now handled globally in vscode.css */
-#command-autocomplete {
-  scrollbar-gutter: stable;
-}
-
 /* Autocomplete items container */
 .autocomplete-list {
   display: flex;
@@ -1503,7 +1498,6 @@ body {
   max-height: 300px;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-gutter: stable;
   padding: 4px 0;
 }
 
@@ -2026,7 +2020,6 @@ kbd {
 .tool-details-content {
   padding: 8px 12px;
   background: transparent;
-  border-top: 1px solid var(--vscode-panel-border);
 }
 
 .block {
@@ -2367,7 +2360,6 @@ kbd {
 .tool-details-panel {
   padding: 8px 0;
   border-top: 1px solid var(--vscode-widget-border);
-  margin-top: 8px;
 }
 
 .detail-section {
