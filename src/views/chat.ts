@@ -467,6 +467,10 @@ export class ChatViewProvider
    * The agent will stream the full conversation history back.
    */
   public async loadHistorySession(sessionId: string): Promise<void> {
+    if (this.acpClient.getCurrentSessionId() === sessionId) {
+      return;
+    }
+
     this.userMessageBuffer = "";
     this.userMessageImages = [];
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -504,6 +508,7 @@ export class ChatViewProvider
         type: "error",
         text: `Failed to load history: ${errorMessage}`,
       });
+      this.sendSessionMetadata();
     }
   }
 

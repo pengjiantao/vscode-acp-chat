@@ -92,6 +92,12 @@ export const AGENTS: AgentConfig[] = [
     command: "kiro-cli",
     args: ["acp"],
   },
+  {
+    id: "cursor",
+    name: "Cursor",
+    command: "agent",
+    args: ["acp"],
+  },
 ];
 
 export function getAgent(id: string): AgentConfig | undefined {

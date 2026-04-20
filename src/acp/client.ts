@@ -528,6 +528,10 @@ export class ACPClient {
     return this.sessionMetadata;
   }
 
+  getCurrentSessionId(): string | null {
+    return this.currentSessionId;
+  }
+
   async setMode(modeId: string): Promise<void> {
     if (!this.connection || !this.currentSessionId) {
       throw new Error("No active session");

@@ -1415,6 +1415,8 @@ export class WebviewController {
     if (text) {
       this.announceToScreenReader(label + ": " + text.substring(0, 100));
     }
+
+    this.updateViewState();
     return div;
   }
 
@@ -2434,7 +2436,6 @@ export class WebviewController {
           this.currentAssistantMessage = null;
           this.activeBlock = null;
           this.addMessage(msg.text || "", "user", msg.mentions);
-          this.updateViewState();
         }
         break;
       case "addMention":
