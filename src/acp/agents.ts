@@ -95,7 +95,7 @@ export const AGENTS: AgentConfig[] = [
   {
     id: "cursor",
     name: "Cursor",
-    command: "agent",
+    command: "cursor-agent",
     args: ["acp"],
   },
 ];
