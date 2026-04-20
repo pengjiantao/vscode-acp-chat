@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.0.0...v1.0.1) (2026-04-20)
+
+
+### Bug Fixes
+
+* resolve chat UI issues, optimize loading and add Cursor integration ([0150413](https://github.com/pengjiantao/vscode-acp-chat/commit/0150413081ddcc66cc314d40079afc2ee3674c32))
+
 ## [0.12.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v0.11.1...v0.12.0) (2026-04-16)
 
 
