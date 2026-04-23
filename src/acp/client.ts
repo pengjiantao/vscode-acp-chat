@@ -43,6 +43,11 @@ import {
   serializeMentionsWithContext,
   type Mention,
 } from "../utils/mention-serializer";
+import {
+  getMcpServerConfigs,
+  toMcpServerStdio,
+  type McpServerConfig,
+} from "../mcp";
 
 export interface SessionMetadata {
   modes: SessionModeState | null;
@@ -120,6 +125,7 @@ export class ACPClient {
   private agentConfig: AgentConfig;
   private spawnFn: SpawnFunction;
   private skipAvailabilityCheck: boolean;
+  private mcpServerConfigs: McpServerConfig[] = [];
 
   constructor(options?: ACPClientOptions | AgentConfig) {
     if (options && "id" in options) {
@@ -194,6 +200,11 @@ export class ACPClient {
   setOnPermissionRequest(callback: PermissionCallback): () => void {
     this.permissionRequestListeners.add(callback);
     return () => this.permissionRequestListeners.delete(callback);
+  }
+
+  async reloadMcpServers(): Promise<void> {
+    this.mcpServerConfigs = await getMcpServerConfigs();
+    console.log(`[ACP] Loaded ${this.mcpServerConfigs.length} MCP server(s)`);
   }
 
   isConnected(): boolean {
@@ -384,6 +395,7 @@ export class ACPClient {
       });
 
       this.setState("connected");
+      await this.reloadMcpServers();
       this.agentCapabilities = initResponse.agentCapabilities ?? null;
       return initResponse;
     } catch (error) {
@@ -426,7 +438,7 @@ export class ACPClient {
     const request: LoadSessionRequest = {
       sessionId: params.sessionId,
       cwd: params.cwd,
-      mcpServers: [],
+      mcpServers: this.mcpServerConfigs.map(toMcpServerStdio),
     };
 
     const response = await this.connection.loadSession(request);
@@ -510,7 +522,7 @@ export class ACPClient {
 
     const response = await this.connection.newSession({
       cwd: workingDirectory,
-      mcpServers: [],
+      mcpServers: this.mcpServerConfigs.map(toMcpServerStdio),
     });
 
     this.currentSessionId = response.sessionId;

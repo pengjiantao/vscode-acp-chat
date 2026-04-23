@@ -39,6 +39,22 @@ export function activate(context: vscode.ExtensionContext) {
     updateStatusBar(state);
   });
 
+  const mcpConfigWatcher = vscode.workspace.onDidChangeConfiguration(
+    async (e) => {
+      if (e.affectsConfiguration("mcp")) {
+        try {
+          await acpClient?.reloadMcpServers();
+          console.log(
+            "[Extension] MCP servers reloaded due to configuration change"
+          );
+        } catch (error) {
+          console.error("[Extension] Failed to reload MCP servers:", error);
+        }
+      }
+    }
+  );
+  context.subscriptions.push(mcpConfigWatcher);
+
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       ChatViewProvider.viewType,
