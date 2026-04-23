@@ -32,6 +32,8 @@ import {
   type AgentCapabilities,
   type ListSessionsRequest,
   type ListSessionsResponse,
+  type McpServer,
+  type McpCapabilities,
 } from "@agentclientprotocol/sdk";
 import {
   type AgentConfig,
@@ -46,6 +48,8 @@ import {
 import {
   getMcpServerConfigs,
   toMcpServerStdio,
+  toMcpServerHttp,
+  toMcpServerSse,
   type McpServerConfig,
 } from "../mcp";
 
@@ -213,6 +217,38 @@ export class ACPClient {
 
   getState(): ACPConnectionState {
     return this.state;
+  }
+
+  private filterAndConvertMcpServers(
+    configs: McpServerConfig[],
+    mcpCapabilities: McpCapabilities | undefined
+  ): McpServer[] {
+    const result: McpServer[] = [];
+
+    for (const config of configs) {
+      const type = config.type ?? "stdio";
+      if (type === "stdio") {
+        result.push(toMcpServerStdio(config));
+      } else if (type === "http") {
+        if (mcpCapabilities?.http) {
+          result.push(toMcpServerHttp(config));
+        } else {
+          console.log(
+            `[MCP] Skipping server "${config.name}": agent does not support http transport`
+          );
+        }
+      } else if (type === "sse") {
+        if (mcpCapabilities?.sse) {
+          result.push(toMcpServerSse(config));
+        } else {
+          console.log(
+            `[MCP] Skipping server "${config.name}": agent does not support sse transport`
+          );
+        }
+      }
+    }
+
+    return result;
   }
 
   async connect(): Promise<InitializeResponse> {
@@ -438,7 +474,10 @@ export class ACPClient {
     const request: LoadSessionRequest = {
       sessionId: params.sessionId,
       cwd: params.cwd,
-      mcpServers: this.mcpServerConfigs.map(toMcpServerStdio),
+      mcpServers: this.filterAndConvertMcpServers(
+        this.mcpServerConfigs,
+        this.agentCapabilities?.mcpCapabilities
+      ),
     };
 
     const response = await this.connection.loadSession(request);
@@ -522,7 +561,10 @@ export class ACPClient {
 
     const response = await this.connection.newSession({
       cwd: workingDirectory,
-      mcpServers: this.mcpServerConfigs.map(toMcpServerStdio),
+      mcpServers: this.filterAndConvertMcpServers(
+        this.mcpServerConfigs,
+        this.agentCapabilities?.mcpCapabilities
+      ),
     });
 
     this.currentSessionId = response.sessionId;

@@ -1,6 +1,8 @@
 import * as assert from "assert";
 import {
   toMcpServerStdio,
+  toMcpServerHttp,
+  toMcpServerSse,
   type McpServerConfig,
   type RawMcpServerConfig,
   type RawMcpConfig,
@@ -92,6 +94,96 @@ suite("MCP Types", () => {
         "--flag",
         "value",
       ]);
+    });
+  });
+
+  suite("toMcpServerHttp", () => {
+    test("should convert http config to McpServerHttp format", () => {
+      const config: McpServerConfig = {
+        name: "http-server",
+        command: "",
+        args: [],
+        env: [],
+        type: "http",
+        url: "http://localhost:3000",
+        headers: { Authorization: "Bearer token" },
+      };
+
+      const result = toMcpServerHttp(config);
+
+      assert.strictEqual(result.name, "http-server");
+      assert.ok(
+        "type" in result && result.type === "http",
+        "should have type http"
+      );
+      const httpResult = result as { name: string; type: "http"; url: string };
+      assert.strictEqual(httpResult.url, "http://localhost:3000");
+    });
+
+    test("should handle http config without headers", () => {
+      const config: McpServerConfig = {
+        name: "http-server-no-headers",
+        command: "",
+        args: [],
+        env: [],
+        type: "http",
+        url: "http://localhost:3000",
+      };
+
+      const result = toMcpServerHttp(config);
+
+      assert.strictEqual(result.name, "http-server-no-headers");
+      assert.ok(
+        "type" in result && result.type === "http",
+        "should have type http"
+      );
+      const httpResult = result as { name: string; type: "http"; url: string };
+      assert.strictEqual(httpResult.url, "http://localhost:3000");
+    });
+  });
+
+  suite("toMcpServerSse", () => {
+    test("should convert sse config to McpServerSse format", () => {
+      const config: McpServerConfig = {
+        name: "sse-server",
+        command: "",
+        args: [],
+        env: [],
+        type: "sse",
+        url: "http://localhost:3000/sse",
+        headers: { "X-Custom-Header": "value" },
+      };
+
+      const result = toMcpServerSse(config);
+
+      assert.strictEqual(result.name, "sse-server");
+      assert.ok(
+        "type" in result && result.type === "sse",
+        "should have type sse"
+      );
+      const sseResult = result as { name: string; type: "sse"; url: string };
+      assert.strictEqual(sseResult.url, "http://localhost:3000/sse");
+    });
+
+    test("should handle sse config without headers", () => {
+      const config: McpServerConfig = {
+        name: "sse-server-no-headers",
+        command: "",
+        args: [],
+        env: [],
+        type: "sse",
+        url: "http://localhost:3000/sse",
+      };
+
+      const result = toMcpServerSse(config);
+
+      assert.strictEqual(result.name, "sse-server-no-headers");
+      assert.ok(
+        "type" in result && result.type === "sse",
+        "should have type sse"
+      );
+      const sseResult = result as { name: string; type: "sse"; url: string };
+      assert.strictEqual(sseResult.url, "http://localhost:3000/sse");
     });
   });
 

@@ -3,20 +3,27 @@ import type { McpServer, EnvVariable } from "@agentclientprotocol/sdk";
 /**
  * Normalized MCP server configuration used by the ACP client.
  *
- * This represents a stdio-based MCP server that will be passed to agents
- * via the ACP `mcpServers` parameter in `newSession`/`loadSession` requests.
+ * Supports stdio, http, and sse transport types for MCP servers
+ * that will be passed to agents via the ACP `mcpServers` parameter
+ * in `newSession`/`loadSession` requests.
  */
 export interface McpServerConfig {
   /** Human-readable name identifying this MCP server. */
   name: string;
-  /** Path to the MCP server executable. */
+  /** Path to the MCP server executable (for stdio type). */
   command: string;
-  /** Command-line arguments to pass to the MCP server. */
+  /** Command-line arguments to pass to the MCP server (for stdio type). */
   args: string[];
   /** Environment variables to set when launching the MCP server. */
   env: EnvVariable[];
   /** Optional working directory for the MCP server process. */
   cwd?: string;
+  /** Transport type. Defaults to "stdio" if omitted. */
+  type?: "stdio" | "http" | "sse";
+  /** URL to the MCP server (for http/sse types). */
+  url?: string;
+  /** HTTP headers (for http/sse types). */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -103,5 +110,51 @@ export function toMcpServerStdio(config: McpServerConfig): McpServer {
     command: config.command,
     args: config.args,
     env: config.env,
+  };
+}
+
+/**
+ * Converts a normalized McpServerConfig to the ACP protocol McpServerHttp type.
+ *
+ * Used when passing HTTP transport MCP server configurations to agents via the
+ * ACP `newSession` or `loadSession` requests. Only use this if the agent has
+ * advertised `mcpCapabilities.http` support.
+ *
+ * @param config - The normalized MCP server configuration with type="http"
+ * @returns McpServerHttp object compatible with ACP protocol
+ * @throws If config.url is missing
+ */
+export function toMcpServerHttp(config: McpServerConfig): McpServer {
+  return {
+    type: "http",
+    name: config.name,
+    url: config.url!,
+    headers: Object.entries(config.headers ?? {}).map(([name, value]) => ({
+      name,
+      value,
+    })),
+  };
+}
+
+/**
+ * Converts a normalized McpServerConfig to the ACP protocol McpServerSse type.
+ *
+ * Used when passing SSE transport MCP server configurations to agents via the
+ * ACP `newSession` or `loadSession` requests. Only use this if the agent has
+ * advertised `mcpCapabilities.sse` support.
+ *
+ * @param config - The normalized MCP server configuration with type="sse"
+ * @returns McpServerSse object compatible with ACP protocol
+ * @throws If config.url is missing
+ */
+export function toMcpServerSse(config: McpServerConfig): McpServer {
+  return {
+    type: "sse",
+    name: config.name,
+    url: config.url!,
+    headers: Object.entries(config.headers ?? {}).map(([name, value]) => ({
+      name,
+      value,
+    })),
   };
 }

@@ -106,8 +106,8 @@ async function readMcpJsonFile(uri: vscode.Uri): Promise<RawMcpConfig | null> {
 /**
  * Parses a raw server config into a normalized McpServerConfig.
  *
- * Validates the server configuration and filters out unsupported transport
- * types (http/sse). Only stdio-based servers are currently supported.
+ * Validates the server configuration. For stdio type, command is required.
+ * For http/sse types, url is required. Returns null if validation fails.
  *
  * @param name - Server name from mcp.json
  * @param server - Raw server configuration
@@ -120,27 +120,32 @@ function parseMcpServerConfig(
   inputs: Map<string, string>
 ): McpServerConfig | null {
   if (server.type === "http" || server.type === "sse") {
-    console.warn(
-      `[MCP] Server "${name}" uses ${server.type} transport, which is not supported yet. Only stdio is supported.`
-    );
-    return null;
-  }
-
-  if (!server.command) {
-    console.warn(
-      `[MCP] Server "${name}" is missing "command" field, skipping.`
-    );
-    return null;
+    if (!server.url) {
+      console.warn(
+        `[MCP] Server "${name}" uses ${server.type} transport but is missing "url" field, skipping.`
+      );
+      return null;
+    }
+  } else {
+    if (!server.command) {
+      console.warn(
+        `[MCP] Server "${name}" is missing "command" field, skipping.`
+      );
+      return null;
+    }
   }
 
   const resolvedEnv = resolveEnvVariables(server.env, inputs);
 
   return {
     name,
-    command: server.command,
+    command: server.command ?? "",
     args: server.args || [],
     env: Object.entries(resolvedEnv).map(([name, value]) => ({ name, value })),
     cwd: server.cwd,
+    type: server.type ?? "stdio",
+    url: server.url,
+    headers: server.headers,
   };
 }
 

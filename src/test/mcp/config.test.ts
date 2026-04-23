@@ -79,18 +79,23 @@ suite("MCP Config", () => {
       assert.strictEqual(result?.env[0].value, "/workspace");
     });
 
-    test("should skip http server type (unsupported)", () => {
+    test("should parse http server config with url", () => {
       const rawServer: RawMcpServerConfig = {
         type: "http",
         url: "http://localhost:3000",
+        headers: { Authorization: "Bearer token" },
       };
 
       const result = parseMcpServerConfigForTest("http-server", rawServer);
 
-      assert.strictEqual(result, null, "HTTP servers should return null");
+      assert.ok(result, "Result should not be null");
+      assert.strictEqual(result?.name, "http-server");
+      assert.strictEqual(result?.type, "http");
+      assert.strictEqual(result?.url, "http://localhost:3000");
+      assert.strictEqual(result?.headers?.Authorization, "Bearer token");
     });
 
-    test("should skip sse server type (unsupported)", () => {
+    test("should parse sse server config with url", () => {
       const rawServer: RawMcpServerConfig = {
         type: "sse",
         url: "http://localhost:3000/sse",
@@ -98,7 +103,38 @@ suite("MCP Config", () => {
 
       const result = parseMcpServerConfigForTest("sse-server", rawServer);
 
-      assert.strictEqual(result, null, "SSE servers should return null");
+      assert.ok(result, "Result should not be null");
+      assert.strictEqual(result?.name, "sse-server");
+      assert.strictEqual(result?.type, "sse");
+      assert.strictEqual(result?.url, "http://localhost:3000/sse");
+    });
+
+    test("should skip http server without url", () => {
+      const rawServer: RawMcpServerConfig = {
+        type: "http",
+      };
+
+      const result = parseMcpServerConfigForTest("http-no-url", rawServer);
+
+      assert.strictEqual(
+        result,
+        null,
+        "HTTP server without url should return null"
+      );
+    });
+
+    test("should skip sse server without url", () => {
+      const rawServer: RawMcpServerConfig = {
+        type: "sse",
+      };
+
+      const result = parseMcpServerConfigForTest("sse-no-url", rawServer);
+
+      assert.strictEqual(
+        result,
+        null,
+        "SSE server without url should return null"
+      );
     });
 
     test("should skip server without command field", () => {
@@ -295,20 +331,25 @@ function parseMcpServerConfigForTest(
   inputs: Map<string, string> = new Map()
 ): McpServerConfig | null {
   if (server.type === "http" || server.type === "sse") {
-    return null;
-  }
-
-  if (!server.command) {
-    return null;
+    if (!server.url) {
+      return null;
+    }
+  } else {
+    if (!server.command) {
+      return null;
+    }
   }
 
   const resolvedEnv = resolveEnvVariablesForTest(server.env, inputs);
 
   return {
     name,
-    command: server.command,
+    command: server.command ?? "",
     args: server.args || [],
     env: Object.entries(resolvedEnv).map(([name, value]) => ({ name, value })),
     cwd: server.cwd,
+    type: server.type ?? "stdio",
+    url: server.url,
+    headers: server.headers,
   };
 }
