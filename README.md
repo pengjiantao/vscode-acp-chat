@@ -19,6 +19,10 @@
 - **Streaming Responses** — Watch the AI think and work in real-time.
 - **Session Management** — Load and resume previous conversations with full history restoration.
 - **Terminal Integration** — View terminal output with full ANSI color support.
+- **MCP Server Configuration** — Connect to MCP servers via `stdio`, `http`, or `sse` transports. Configurations are loaded from:
+  - Workspace: `<workspace>/.vscode/mcp.json`
+  - User-level: `~/.config/Code/User/mcp.json` (Linux), `~/Library/Application Support/Code/User/mcp.json` (macOS), `%APPDATA%/Code/User/mcp.json` (Windows)
+  - HTTP/SSE servers are sent to agents based on the agent's advertised `mcpCapabilities`.
 
 ## 📦 Getting Started
 
