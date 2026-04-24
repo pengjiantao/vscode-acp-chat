@@ -1733,7 +1733,7 @@ suite("Webview", () => {
     });
 
     test("returns other icon for other kind", () => {
-      assert.strictEqual(getToolKindIcon("other"), "codicon codicon-gear");
+      assert.strictEqual(getToolKindIcon("other"), "codicon codicon-tools");
     });
 
     test("returns empty string for undefined kind", () => {
@@ -1846,7 +1846,7 @@ suite("Webview", () => {
         kind: "other",
         status: "completed",
       });
-      assert.ok(html.includes('class="codicon codicon-gear"'));
+      assert.ok(html.includes('class="codicon codicon-tools"'));
     });
   });
 

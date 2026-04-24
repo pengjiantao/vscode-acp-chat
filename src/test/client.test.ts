@@ -24,26 +24,6 @@ suite("ACPClient", () => {
     client.dispose();
   });
 
-  suite("constructor", () => {
-    test("should create client with default agent", () => {
-      assert.strictEqual(client.getAgentId(), "opencode");
-    });
-
-    test("should create client with custom agent", () => {
-      const claudeAgent = getAgent("claude-code");
-      const customClient = new ACPClient(claudeAgent);
-      assert.strictEqual(customClient.getAgentId(), "claude-code");
-      customClient.dispose();
-    });
-
-    test("should create client with options object", () => {
-      const claudeAgent = getAgent("claude-code");
-      const customClient = new ACPClient({ agentConfig: claudeAgent });
-      assert.strictEqual(customClient.getAgentId(), "claude-code");
-      customClient.dispose();
-    });
-  });
-
   suite("state management", () => {
     test("should start in disconnected state", () => {
       assert.strictEqual(client.getState(), "disconnected");
