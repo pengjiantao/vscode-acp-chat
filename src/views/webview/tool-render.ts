@@ -23,7 +23,7 @@ const TOOL_KIND_ICONS: Record<ToolKind, string> = {
   think: "codicon codicon-lightbulb",
   fetch: "codicon codicon-globe",
   switch_mode: "codicon codicon-sync",
-  other: "codicon codicon-gear",
+  other: "codicon codicon-tools",
 };
 
 export function getToolKindIcon(kind?: string): string {
