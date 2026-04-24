@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.0.1...v1.1.0) (2026-04-24)
+
+
+### Features
+
+* add custom agent configuration with override support ([e13ae3a](https://github.com/pengjiantao/vscode-acp-chat/commit/e13ae3a073ffd76f1472bd6e4f813db3ca87876c))
+* add http/sse transport support for MCP server configuration ([7b5b2e6](https://github.com/pengjiantao/vscode-acp-chat/commit/7b5b2e6d8edaab1854e0a606d38e8b15c5519b73))
+* add MCP client integration ([b5ddb2a](https://github.com/pengjiantao/vscode-acp-chat/commit/b5ddb2a8581febe4554634df140608191c1b48b4))
+* add optional MCP server passthrough configuration ([866b1df](https://github.com/pengjiantao/vscode-acp-chat/commit/866b1dfbd94223a6f658fb4b62f6b542ec7f7cd4))
+* update cursor agent command to cursor-agent ([a022576](https://github.com/pengjiantao/vscode-acp-chat/commit/a022576ea4006eca8f2309698a847f262e642df8))
+
+
+### Bug Fixes
+
+* update icon for ToolKind.other from gear to tools ([7bd0b98](https://github.com/pengjiantao/vscode-acp-chat/commit/7bd0b9839bf138b7a36dc844bab939551c235519))
+
 ## [1.0.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.0.0...v1.0.1) (2026-04-20)
 
 
