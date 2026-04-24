@@ -123,6 +123,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable the collective diff summary for file modifications."
+        },
+        "vscode-acp-chat.passMcpServers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to pass MCP server configurations to the agent via ACP newSession/loadSession requests."
         }
       }
     },

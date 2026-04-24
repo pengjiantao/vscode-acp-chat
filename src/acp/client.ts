@@ -1,5 +1,6 @@
 import { ChildProcess, spawn as nodeSpawn, SpawnOptions } from "child_process";
 import { Readable, Writable } from "stream";
+import * as vscode from "vscode";
 import {
   ClientSideConnection,
   ndJsonStream,
@@ -207,8 +208,16 @@ export class ACPClient {
   }
 
   async reloadMcpServers(): Promise<void> {
-    this.mcpServerConfigs = await getMcpServerConfigs();
-    console.log(`[ACP] Loaded ${this.mcpServerConfigs.length} MCP server(s)`);
+    const passMcpServers = vscode.workspace
+      .getConfiguration("vscode-acp-chat")
+      .get<boolean>("passMcpServers", true);
+    if (passMcpServers) {
+      this.mcpServerConfigs = await getMcpServerConfigs();
+      console.log(`[ACP] Loaded ${this.mcpServerConfigs.length} MCP server(s)`);
+    } else {
+      this.mcpServerConfigs = [];
+      console.log(`[ACP] MCP server passthrough disabled, skipping MCP config`);
+    }
   }
 
   isConnected(): boolean {

@@ -51,6 +51,10 @@ export function activate(context: vscode.ExtensionContext) {
           console.error("[Extension] Failed to reload MCP servers:", error);
         }
       }
+      if (e.affectsConfiguration("vscode-acp-chat.passMcpServers")) {
+        await acpClient?.reloadMcpServers();
+        console.log(`[Extension] MCP passthrough configuration changed`);
+      }
     }
   );
   context.subscriptions.push(mcpConfigWatcher);
