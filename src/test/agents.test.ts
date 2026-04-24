@@ -1,5 +1,5 @@
 import * as assert from "assert";
-import { AGENTS, getAgent, getDefaultAgent } from "../acp/agents";
+import { AGENTS, getAgent, getFirstAvailableAgent } from "../acp/agents";
 
 suite("agents", () => {
   suite("AGENTS", () => {
@@ -49,15 +49,23 @@ suite("agents", () => {
     });
   });
 
-  suite("getDefaultAgent", () => {
-    test("should return first agent as default", () => {
-      const defaultAgent = getDefaultAgent();
-      assert.strictEqual(defaultAgent, AGENTS[0]);
+  suite("getFirstAvailableAgent", () => {
+    test("should return an agent with required properties", () => {
+      const agent = getFirstAvailableAgent();
+      assert.ok(agent, "agent should be defined");
+      assert.ok(agent.id, "agent.id should be defined");
+      assert.ok(agent.name, "agent.name should be defined");
+      assert.ok(agent.command, "agent.command should be defined");
+      assert.ok(Array.isArray(agent.args), "agent.args should be an array");
     });
 
-    test("should return opencode as default", () => {
-      const defaultAgent = getDefaultAgent();
-      assert.strictEqual(defaultAgent.id, "opencode");
+    test("should return an agent from AGENTS", () => {
+      const agent = getFirstAvailableAgent();
+      const agentIds = AGENTS.map((a) => a.id);
+      assert.ok(
+        agentIds.includes(agent.id),
+        `agent.id ${agent.id} should be in AGENTS`
+      );
     });
   });
 });

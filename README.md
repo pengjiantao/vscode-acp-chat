@@ -74,6 +74,45 @@ The extension automatically detects installed agents by checking your system's `
 | Kiro CLI     | `kiro-cli acp`                        | Checks `$PATH` |
 | Cursor Cli   | `agent acp`                           | Checks `$PATH` |
 
+### Custom Agents
+
+You can add custom agents via VS Code settings:
+
+1. Open **Settings** (`Cmd+Shift+P` / `Ctrl+Shift+P` → `Preferences: Open User Settings`)
+2. Search for `vscode-acp-chat.customAgents`
+3. Click **Edit in settings.json**
+
+#### Example Configuration
+
+```json
+{
+  "vscode-acp-chat.customAgents": [
+    {
+      "id": "my-agent",
+      "name": "My Custom Agent",
+      "command": "my-agent-cli",
+      "args": ["--acp"],
+      "env": {
+        "API_KEY": "your-api-key"
+      }
+    }
+  ]
+}
+```
+
+#### Configuration Fields
+
+| Field     | Type       | Required | Description                            |
+| --------- | ---------- | -------- | -------------------------------------- |
+| `id`      | `string`   | Yes      | Unique identifier for the agent        |
+| `name`    | `string`   | Yes      | Display name shown in agent selector   |
+| `command` | `string`   | Yes      | Executable command                     |
+| `args`    | `string[]` | No       | Command-line arguments (default: `[]`) |
+| `env`     | `object`   | No       | Environment variables                  |
+
+> [!NOTE]
+> Custom agents with the same `id` as a built-in agent will **replace** the built-in configuration.
+
 ## 👨‍💻 Development
 
 ```bash

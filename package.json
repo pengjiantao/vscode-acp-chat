@@ -128,6 +128,48 @@
           "type": "boolean",
           "default": true,
           "description": "Whether to pass MCP server configurations to the agent via ACP newSession/loadSession requests."
+        },
+        "vscode-acp-chat.customAgents": {
+          "type": "array",
+          "default": [],
+          "description": "Custom agent configurations. These will be merged with built-in agents, with custom agents taking precedence for matching IDs.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "command",
+              "args"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique identifier for the agent"
+              },
+              "name": {
+                "type": "string",
+                "description": "Display name for the agent"
+              },
+              "command": {
+                "type": "string",
+                "description": "Command to execute (e.g., 'npx', 'goose')"
+              },
+              "args": {
+                "type": "array",
+                "description": "Arguments to pass to the command",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "type": "object",
+                "description": "Environment variables to set for the agent process",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     },

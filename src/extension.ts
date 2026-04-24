@@ -3,13 +3,21 @@ import { ACPClient } from "./acp/client";
 import { ChatViewProvider } from "./views/chat";
 import { getAgentsWithStatus } from "./acp/agents";
 
+/** VSCode ACP extension client instance. */
 let acpClient: ACPClient | undefined;
+/** Chat view provider instance. */
 let chatProvider: ChatViewProvider | undefined;
+/** Status bar item showing connection state. */
 let statusBarItem: vscode.StatusBarItem | undefined;
 
+/**
+ * Activates the VSCode ACP extension.
+ * Sets up the chat view, status bar, commands, and configuration watchers.
+ */
 export function activate(context: vscode.ExtensionContext) {
   console.log("VSCode ACP extension is now active");
 
+  // Open Developer Tools for webview debugging
   context.subscriptions.push(
     vscode.commands.registerCommand("vscode-acp-chat.openDevTools", () => {
       vscode.commands.executeCommand(
@@ -18,6 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Initialize ACP client and chat view provider
   acpClient = new ACPClient();
   chatProvider = new ChatViewProvider(
     context.extensionUri,
@@ -25,6 +34,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.globalState
   );
 
+  // Create and show status bar item
   statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
     100
@@ -35,10 +45,12 @@ export function activate(context: vscode.ExtensionContext) {
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
 
+  // Update status bar on connection state changes
   acpClient.setOnStateChange((state) => {
     updateStatusBar(state);
   });
 
+  // Watch for configuration changes to reload MCP servers or refresh agents
   const mcpConfigWatcher = vscode.workspace.onDidChangeConfiguration(
     async (e) => {
       if (e.affectsConfiguration("mcp")) {
@@ -51,14 +63,23 @@ export function activate(context: vscode.ExtensionContext) {
           console.error("[Extension] Failed to reload MCP servers:", error);
         }
       }
+
       if (e.affectsConfiguration("vscode-acp-chat.passMcpServers")) {
         await acpClient?.reloadMcpServers();
         console.log(`[Extension] MCP passthrough configuration changed`);
+      }
+
+      if (e.affectsConfiguration("vscode-acp-chat.customAgents")) {
+        getAgentsWithStatus(true); // Force refresh agents cache and re-validate
+        console.log(
+          `[Extension] Custom agents configuration changed, cache refreshed`
+        );
       }
     }
   );
   context.subscriptions.push(mcpConfigWatcher);
 
+  // Register webview view provider for the chat panel
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       ChatViewProvider.viewType,
@@ -71,6 +92,7 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // Open chat view and connect to ACP server
   context.subscriptions.push(
     vscode.commands.registerCommand("vscode-acp-chat.startChat", async () => {
       await vscode.commands.executeCommand("vscode-acp-chat.chatView.focus");
@@ -86,18 +108,21 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Create a new chat session
   context.subscriptions.push(
     vscode.commands.registerCommand("vscode-acp-chat.newChat", () => {
       chatProvider?.newChat();
     })
   );
 
+  // Clear current chat messages
   context.subscriptions.push(
     vscode.commands.registerCommand("vscode-acp-chat.clearChat", () => {
       chatProvider?.clearChat();
     })
   );
 
+  // Load a previous chat session from history
   context.subscriptions.push(
     vscode.commands.registerCommand("vscode-acp-chat.loadHistory", async () => {
       if (!chatProvider) return;
@@ -141,6 +166,7 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Switch to a different AI agent
   context.subscriptions.push(
     vscode.commands.registerCommand("vscode-acp-chat.selectAgent", async () => {
       const agents = getAgentsWithStatus();
@@ -166,6 +192,7 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Send current editor/terminal selection to the chat
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "vscode-acp-chat.sendSelectionToChat",
@@ -226,6 +253,7 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // Send terminal selection to chat (may include args from terminal context)
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "vscode-acp-chat.sendTerminalSelectionToChat",
@@ -281,6 +309,10 @@ export function activate(context: vscode.ExtensionContext) {
   });
 }
 
+/**
+ * Updates the status bar item to reflect the current connection state.
+ * @param state - The connection state: disconnected, connecting, connected, or error.
+ */
 function updateStatusBar(
   state: "disconnected" | "connecting" | "connected" | "error"
 ): void {
@@ -316,6 +348,9 @@ function updateStatusBar(
   }
 }
 
+/**
+ * Cleans up resources when the extension is deactivated.
+ */
 export function deactivate() {
   console.log("VSCode ACP extension deactivating");
   acpClient?.dispose();

@@ -1,14 +1,22 @@
-import { execSync } from "child_process";
-import * as path from "path";
-import * as fs from "fs";
+import * as vscode from "vscode";
+import { validateAgents, showValidationWarnings } from "./agent-validator";
+import { isCommandAvailable } from "../utils/bin-paths";
 
+/**
+ * Configuration for an agent executable.
+ * Represents the structure needed to launch an AI agent via CLI.
+ */
 export interface AgentConfig {
   id: string;
   name: string;
   command: string;
   args: string[];
+  env?: Record<string, string>;
 }
 
+/**
+ * Agent configuration with an additional availability status.
+ */
 export interface AgentWithStatus extends AgentConfig {
   available: boolean;
 }
@@ -100,164 +108,93 @@ export const AGENTS: AgentConfig[] = [
   },
 ];
 
-export function getAgent(id: string): AgentConfig | undefined {
-  return AGENTS.find((a) => a.id === id);
-}
-
-export function getDefaultAgent(): AgentConfig {
-  return AGENTS[0];
-}
-
 /**
- * Get common global bin paths where agents might be installed.
+ * Retrieves custom agents from VS Code workspace configuration.
  */
-let cachedGlobalBinPaths: string[] | null = null;
-
-export function getGlobalBinPaths(): string[] {
-  if (cachedGlobalBinPaths !== null) {
-    return cachedGlobalBinPaths;
-  }
-
-  cachedGlobalBinPaths = [];
-
-  // 1. Try to get from pnpm config or bin command
-  const pnpmCommands = ["pnpm config get global-bin-dir", "pnpm bin -g"];
-  for (const cmd of pnpmCommands) {
-    try {
-      const pnpmBin = execSync(cmd, {
-        stdio: ["ignore", "pipe", "ignore"],
-        encoding: "utf8",
-      }).trim();
-      if (pnpmBin && pnpmBin !== "undefined" && fs.existsSync(pnpmBin)) {
-        if (!cachedGlobalBinPaths.includes(pnpmBin)) {
-          cachedGlobalBinPaths.push(pnpmBin);
-        }
-      }
-    } catch {}
-  }
-
-  // 2. Try to get from npm config
-  try {
-    const npmPrefix = execSync("npm config get prefix", {
-      stdio: ["ignore", "pipe", "ignore"],
-      encoding: "utf8",
-    }).trim();
-    if (npmPrefix && npmPrefix !== "undefined") {
-      const npmBin =
-        process.platform === "win32" ? npmPrefix : path.join(npmPrefix, "bin");
-      if (fs.existsSync(npmBin) && !cachedGlobalBinPaths.includes(npmBin)) {
-        cachedGlobalBinPaths.push(npmBin);
-      }
-    }
-  } catch {}
-
-  // 3. Add common fallbacks based on OS
-  const home = process.env.HOME || process.env.USERPROFILE;
-  if (home) {
-    const fallbacks =
-      process.platform === "win32"
-        ? [path.join(process.env.LOCALAPPDATA || "", "pnpm")]
-        : [
-            path.join(home, ".local/share/pnpm"),
-            path.join(home, ".pnpm-global/bin"),
-            path.join(home, ".npm-global/bin"),
-            path.join(home, ".local/bin"),
-            "/usr/local/bin",
-          ];
-
-    for (const p of fallbacks) {
-      if (fs.existsSync(p) && !cachedGlobalBinPaths.includes(p)) {
-        cachedGlobalBinPaths.push(p);
-      }
-    }
-  }
-
-  return cachedGlobalBinPaths;
+function getCustomAgents(): AgentConfig[] {
+  const config = vscode.workspace.getConfiguration("vscode-acp-chat");
+  return config.get<AgentConfig[]>("customAgents", []);
 }
 
 /**
- * Check if a command exists on the system PATH or in common global bin directories.
- * For npx commands, we assume they're available since npx can install on demand.
+ * Merges built-in agents with custom agents from configuration.
+ * Custom agents override built-in ones with the same id.
  */
-function isCommandAvailable(command: string): boolean {
-  if (command === "npx") {
-    // npx can install packages on demand, assume available if node/npm is installed
-    try {
-      execSync(process.platform === "win32" ? "where npx" : "which npx", {
-        stdio: "ignore",
-      });
-      return true;
-    } catch {
-      // Fallback: check if npm is available
-      try {
-        execSync(process.platform === "win32" ? "where npm" : "which npm", {
-          stdio: "ignore",
-        });
-        return true;
-      } catch {}
+function getMergedAgents(): AgentConfig[] {
+  const customAgents = getCustomAgents();
+  const builtinIds = new Set(AGENTS.map((a) => a.id));
+
+  const merged: AgentConfig[] = AGENTS.map((builtin) => {
+    const custom = customAgents.find((c) => c.id === builtin.id);
+    return custom ?? builtin;
+  });
+
+  for (const custom of customAgents) {
+    if (!builtinIds.has(custom.id)) {
+      merged.push(custom);
     }
   }
 
-  // 1. Try standard which/where
-  try {
-    const whichCmd = process.platform === "win32" ? "where" : "which";
-    execSync(`${whichCmd} ${command}`, { stdio: "ignore" });
-    return true;
-  } catch {}
-
-  // 2. Check global bin paths
-  const binPaths = getGlobalBinPaths();
-  for (const binPath of binPaths) {
-    try {
-      const isWindows = process.platform === "win32";
-      const fullPath = path.join(
-        binPath,
-        isWindows ? `${command}.cmd` : command
-      );
-      if (fs.existsSync(fullPath)) return true;
-
-      if (isWindows) {
-        if (
-          fs.existsSync(path.join(binPath, `${command}.exe`)) ||
-          fs.existsSync(path.join(binPath, `${command}.bat`))
-        ) {
-          return true;
-        }
-      }
-    } catch {}
-  }
-
-  return false;
+  return merged;
 }
 
 /**
- * Get all agents with their availability status.
- * Caches the result for performance.
+ * Gets all agents with their availability status.
+ * Caches the result for performance. Filters out invalid agents and shows warnings.
+ * @param forceRefresh - If true, bypasses the cache and revalidates all agents.
  */
 let cachedAgentsWithStatus: AgentWithStatus[] | null = null;
 
+/**
+ * Gets all agents merged from built-in and custom configurations with availability status.
+ * Results are cached. Invalid agents are filtered out and warnings are shown.
+ * @param forceRefresh - If true, bypasses cache and revalidates all agents.
+ */
 export function getAgentsWithStatus(forceRefresh = false): AgentWithStatus[] {
   if (cachedAgentsWithStatus && !forceRefresh) {
     return cachedAgentsWithStatus;
   }
 
-  cachedAgentsWithStatus = AGENTS.map((agent) => ({
-    ...agent,
-    available: isCommandAvailable(agent.command),
-  }));
+  const mergedAgents = getMergedAgents();
+  const invalidAgents = validateAgents(mergedAgents);
+
+  if (invalidAgents.length > 0) {
+    showValidationWarnings(invalidAgents).catch((err) => {
+      console.error("[Agents] Failed to show validation warnings:", err);
+    });
+  }
+
+  const invalidAgentIds = new Set(invalidAgents.map((a) => a.agent.id));
+  cachedAgentsWithStatus = mergedAgents
+    .filter((agent) => !invalidAgentIds.has(agent.id))
+    .map((agent) => ({
+      ...agent,
+      available: isCommandAvailable(agent.command),
+    }));
 
   return cachedAgentsWithStatus;
 }
 
 /**
- * Get the first available agent, or fall back to the default.
+ * Gets the first available agent, or falls back to the default (first merged agent).
  */
 export function getFirstAvailableAgent(): AgentConfig {
   const agents = getAgentsWithStatus();
   const available = agents.find((a) => a.available);
-  return available ?? AGENTS[0];
+  return available ?? getMergedAgents()[0];
 }
 
+/**
+ * Retrieves an agent by its id from the merged agent list.
+ */
+export function getAgent(id: string): AgentConfig | undefined {
+  const agents = getAgentsWithStatus();
+  return agents.find((a) => a.id === id);
+}
+
+/**
+ * Checks if an agent is available by verifying its command exists.
+ */
 export function isAgentAvailable(agentId: string): boolean {
   const agents = getAgentsWithStatus();
   const agent = agents.find((a) => a.id === agentId);

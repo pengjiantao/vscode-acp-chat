@@ -38,10 +38,10 @@ import {
 } from "@agentclientprotocol/sdk";
 import {
   type AgentConfig,
-  getDefaultAgent,
   isAgentAvailable,
-  getGlobalBinPaths,
+  getFirstAvailableAgent,
 } from "./agents";
+import { getGlobalBinPaths } from "../utils/bin-paths";
 import {
   serializeMentionsWithContext,
   type Mention,
@@ -138,7 +138,7 @@ export class ACPClient {
       this.spawnFn = nodeSpawn as SpawnFunction;
       this.skipAvailabilityCheck = false;
     } else {
-      this.agentConfig = options?.agentConfig ?? getDefaultAgent();
+      this.agentConfig = options?.agentConfig ?? getFirstAvailableAgent();
       this.spawnFn = options?.spawn ?? (nodeSpawn as SpawnFunction);
       this.skipAvailabilityCheck = options?.skipAvailabilityCheck ?? false;
     }
@@ -292,6 +292,7 @@ export class ACPClient {
           stdio: ["pipe", "pipe", "pipe"],
           env: {
             ...process.env,
+            ...this.agentConfig.env,
             [pathEnvName]: newPath,
           },
         }
