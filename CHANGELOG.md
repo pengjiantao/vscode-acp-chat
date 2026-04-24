@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.1.0...v1.1.1) (2026-04-24)
+
+
+### Bug Fixes
+
+* **webview:** ensure diff line background covers full width when scrolling ([119caa4](https://github.com/pengjiantao/vscode-acp-chat/commit/119caa4d07023d7b2d7bc1d817ff00f3ec15a873))
+
 ## [1.1.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.0.1...v1.1.0) (2026-04-24)
 
 
