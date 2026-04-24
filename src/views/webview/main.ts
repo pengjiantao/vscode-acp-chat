@@ -344,7 +344,7 @@ export function renderDiff(
     <span class="diff-path">${escapeHtml(filename)}</span>
   </div>`;
   }
-  html += '<pre class="diff-content">';
+  html += '<pre class="diff-content"><div class="diff-content-inner">';
 
   let lastIndex = -1;
   const sortedIndexes = Array.from(showLineIndexes).sort((a, b) => a - b);
@@ -374,7 +374,7 @@ export function renderDiff(
     lastIndex = idx;
   }
 
-  html += "</pre>";
+  html += "</div></pre>";
   html += "</div>";
 
   return html;

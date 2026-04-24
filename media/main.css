@@ -2069,6 +2069,12 @@ kbd {
   line-height: 1.5;
 }
 
+.diff-content-inner {
+  display: block;
+  min-width: 100%;
+  width: max-content;
+}
+
 .diff-line {
   padding: 0;
   white-space: pre;
