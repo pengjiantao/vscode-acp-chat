@@ -9,6 +9,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: 250px;
 }
 
 /* Welcome View */
@@ -933,7 +934,10 @@ body {
   font-size: 11px;
   /* Matches VSCode native tooltip size */
   pointer-events: none;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: min(300px, calc(100vw - 24px));
+  box-sizing: border-box;
   visibility: hidden;
   opacity: 0;
   transition: opacity 0.1s ease-in-out;
@@ -1493,6 +1497,7 @@ body {
   bottom: 100%;
   left: 0;
   min-width: 100%;
+  max-width: calc(100vw - 24px);
   margin-bottom: 4px;
   background: var(--vscode-menu-background, var(--vscode-dropdown-background));
   border: 1px solid var(--vscode-menu-border, var(--vscode-dropdown-border));

@@ -484,11 +484,41 @@ export class Dropdown {
 
     this.isOpen = true;
     this.element.classList.add("open");
+    this.adjustPosition();
   }
 
   close(): void {
     this.isOpen = false;
     this.element.classList.remove("open");
+    this.popover.style.left = "";
+  }
+
+  private adjustPosition(): void {
+    const popover = this.popover;
+    const rect = this.element.getBoundingClientRect();
+    const windowWidth =
+      this.element.ownerDocument.defaultView?.innerWidth || window.innerWidth;
+    const padding = 12;
+
+    // Reset styles first
+    popover.style.left = "0";
+
+    // Wait for next frame to get accurate width after 'open' class is added
+    requestAnimationFrame(() => {
+      const popoverRect = popover.getBoundingClientRect();
+      const rightEdge = rect.left + popoverRect.width;
+
+      if (rightEdge > windowWidth - padding) {
+        const offset = rightEdge - (windowWidth - padding);
+        popover.style.left = `-${offset}px`;
+      }
+
+      // Check if it overflows the left edge after adjustment
+      const newRect = popover.getBoundingClientRect();
+      if (newRect.left < padding) {
+        popover.style.left = `-${rect.left - padding}px`;
+      }
+    });
   }
 
   private renderOptions(): void {
