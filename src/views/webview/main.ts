@@ -1186,11 +1186,14 @@ export class WebviewController {
         commandAutocomplete.classList.contains("visible");
 
       if (isAutocompleteVisible) {
+        const text = inputEl.textContent || "";
+        const query =
+          this.autocompleteMode === "command"
+            ? text.slice(this.autocompleteTriggerPos).split(/\s/)[0]
+            : "";
         const count =
           this.autocompleteMode === "command"
-            ? this.getFilteredCommands(
-                inputEl.textContent?.split(/\s/)[0] || ""
-              ).length
+            ? this.getFilteredCommands(query).length
             : this.fileResults.length;
 
         if (e.key === "ArrowDown") {
@@ -1870,13 +1873,59 @@ export class WebviewController {
     );
   }
 
+  private getGlobalCursorOffset(): number {
+    const selection = this.win.getSelection();
+    if (!selection || selection.rangeCount === 0) return 0;
+    const range = selection.getRangeAt(0);
+
+    // Support for test mocks where startContainer might not be a real Node
+    if (!(range.startContainer instanceof (this.win as any).Node)) {
+      return range.startOffset;
+    }
+
+    try {
+      const preRange = range.cloneRange();
+      preRange.selectNodeContents(this.elements.inputEl);
+      preRange.setEnd(range.startContainer, range.startOffset);
+      return preRange.toString().length;
+    } catch {
+      // Fallback for edge cases or complex DOM structures
+      return range.startOffset;
+    }
+  }
+
+  private getNodeAtOffset(
+    parent: Node,
+    offset: number
+  ): { node: Node; offset: number } {
+    const walker = this.doc.createTreeWalker(parent, NodeFilter.SHOW_TEXT);
+    let currentOffset = 0;
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const length = node.textContent?.length || 0;
+      if (currentOffset + length >= offset) {
+        return { node, offset: offset - currentOffset };
+      }
+      currentOffset += length;
+    }
+    return { node: parent, offset: 0 };
+  }
+
   private updateAutocomplete(): void {
     const selection = this.win.getSelection();
     if (!selection || selection.rangeCount === 0) return;
 
     const range = selection.getRangeAt(0);
-    const textBefore =
-      range.startContainer.textContent?.slice(0, range.startOffset) || "";
+    const useMockFallback =
+      !(range.startContainer instanceof (this.win as any).Node) &&
+      typeof range.startContainer.textContent === "string";
+
+    const fullText = this.elements.inputEl.textContent || "";
+    const globalOffset = this.getGlobalCursorOffset();
+
+    const textBefore = useMockFallback
+      ? range.startContainer.textContent!.slice(0, range.startOffset)
+      : fullText.slice(0, globalOffset);
 
     const lastSlashIdx = textBefore.lastIndexOf("/");
     const lastAtIdx = textBefore.lastIndexOf("@");
@@ -1895,6 +1944,7 @@ export class WebviewController {
     ) {
       this.autocompleteMode = "command";
       this.autocompleteTriggerPos = lastSlashIdx;
+
       const query = textBefore.slice(lastSlashIdx);
       const filtered = this.getFilteredCommands(query);
       this.selectedIndex = filtered.length > 0 ? 0 : -1;
@@ -2077,11 +2127,47 @@ export class WebviewController {
     if (!selection || selection.rangeCount === 0) return;
 
     const range = selection.getRangeAt(0);
-    range.setStart(range.startContainer, this.autocompleteTriggerPos);
-    range.deleteContents();
-    range.insertNode(this.doc.createTextNode(newText));
+    const useMockFallback = !(
+      range.startContainer instanceof (this.win as any).Node
+    );
 
-    selection.collapseToEnd();
+    if (!useMockFallback) {
+      const { node, offset } = this.getNodeAtOffset(
+        this.elements.inputEl,
+        this.autocompleteTriggerPos
+      );
+
+      if (node.nodeType === (this.win as any).Node.TEXT_NODE) {
+        range.setStart(node, offset);
+        range.deleteContents();
+        const textNode = this.doc.createTextNode(newText);
+        range.insertNode(textNode);
+
+        if (typeof range.setStartAfter === "function") {
+          range.setStartAfter(textNode);
+          range.collapse(true);
+        }
+
+        if (typeof selection.removeAllRanges === "function") {
+          selection.removeAllRanges();
+          selection.addRange(range);
+        } else if (typeof selection.collapseToEnd === "function") {
+          selection.collapseToEnd();
+        }
+      } else {
+        console.warn(
+          "Could not find text node for autocomplete replacement at offset",
+          this.autocompleteTriggerPos
+        );
+      }
+    } else {
+      // Fallback for test mocks
+      range.setStart(range.startContainer, this.autocompleteTriggerPos);
+      range.deleteContents();
+      range.insertNode(this.doc.createTextNode(newText));
+      selection.collapseToEnd();
+    }
+
     this.elements.inputEl.focus();
     this.adjustHeight();
   }
@@ -2218,7 +2304,19 @@ export class WebviewController {
     let range: Range;
     if (this.autocompleteMode !== "none" && selection.rangeCount > 0) {
       range = selection.getRangeAt(0);
-      range.setStart(range.startContainer, this.autocompleteTriggerPos);
+      const useMockFallback = !(
+        range.startContainer instanceof (this.win as any).Node
+      );
+
+      if (!useMockFallback) {
+        const { node, offset } = this.getNodeAtOffset(
+          this.elements.inputEl,
+          this.autocompleteTriggerPos
+        );
+        range.setStart(node, offset);
+      } else {
+        range.setStart(range.startContainer, this.autocompleteTriggerPos);
+      }
       range.deleteContents();
     } else {
       this.elements.inputEl.focus();

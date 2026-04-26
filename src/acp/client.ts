@@ -581,7 +581,7 @@ export class ACPClient {
     this.sessionMetadata = {
       modes: response.modes ?? null,
       models: response.models ?? null,
-      commands: this.pendingCommands,
+      commands: this.pendingCommands ?? this.sessionMetadata?.commands ?? null,
     };
     this.pendingCommands = null;
 
