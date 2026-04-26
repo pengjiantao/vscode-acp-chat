@@ -595,7 +595,6 @@ export class WebviewController {
   private planEntries: PlanEntry[] = [];
   private isPlanExpanded = false;
   private isConnected = false;
-  private messageTexts = new Map<HTMLElement, string>();
   private availableCommands: AvailableCommand[] = [];
   private fileResults: Array<{
     name: string;
@@ -1366,14 +1365,6 @@ export class WebviewController {
             : "System message";
     div.setAttribute("aria-label", label);
 
-    if (type === "assistant" || type === "user") {
-      div.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        const msgText = this.messageTexts.get(div) || div.textContent || "";
-        this.vscode.postMessage({ type: "copyMessage", text: msgText });
-      });
-    }
-
     if (text) {
       const textEl = this.doc.createElement("div");
       textEl.className = "message-content-text";
@@ -1402,15 +1393,6 @@ export class WebviewController {
       }
 
       div.appendChild(textEl);
-
-      // Clean text for copying (replace placeholders with labels)
-      const cleanText = text.replace(/__MENTION_(\d+)__/g, (m, idx) => {
-        const i = parseInt(idx, 10);
-        return mentions && mentions[i] ? mentions[i].name : m;
-      });
-      this.messageTexts.set(div, cleanText);
-    } else {
-      this.messageTexts.set(div, "");
     }
 
     this.elements.messagesEl.appendChild(div);
@@ -1456,6 +1438,10 @@ export class WebviewController {
           this.elements.typingIndicatorEl
         );
       }
+    }
+
+    if (type === "text" && this.currentAssistantMessage) {
+      // No special logic needed here as we now retrieve the last text block from the DOM
     }
 
     const blockEl = this.doc.createElement("div");
@@ -1523,13 +1509,7 @@ export class WebviewController {
   }
 
   private updateAssistantMessageText(): void {
-    if (this.currentAssistantMessage) {
-      const allText = this.blocks
-        .filter((b) => b.type === "text")
-        .map((b) => b.content)
-        .join("\n\n");
-      this.messageTexts.set(this.currentAssistantMessage, allText);
-    }
+    // No longer needed as we use DOM
   }
 
   private finalizeBlock(block: Block): void {
@@ -2371,6 +2351,117 @@ export class WebviewController {
     this.adjustHeight();
   }
 
+  private renderActionButtons(messageEl: HTMLElement): void {
+    if (!messageEl || messageEl.querySelector(".message-actions")) {
+      return;
+    }
+
+    const actionsContainer = this.doc.createElement("div");
+    actionsContainer.className = "message-actions";
+
+    const createBtn = (
+      icon: string,
+      title: string,
+      onClick: (btn: HTMLElement, iconEl: HTMLElement) => void
+    ) => {
+      const btn = this.doc.createElement("button");
+      btn.className = "action-btn";
+      btn.setAttribute("acp-title", title);
+      const iconEl = this.doc.createElement("span");
+      iconEl.className = `codicon codicon-${icon}`;
+      btn.appendChild(iconEl);
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick(btn, iconEl);
+      });
+      return btn;
+    };
+
+    const getFinalText = () => {
+      const textBlocks = messageEl.querySelectorAll(".block-text");
+      if (textBlocks.length > 0) {
+        const lastBlock = textBlocks[textBlocks.length - 1] as HTMLElement;
+        return (
+          lastBlock.getAttribute("data-raw-content") ||
+          lastBlock.innerText ||
+          ""
+        );
+      }
+      const textEl = messageEl.querySelector(
+        ".message-content-text"
+      ) as HTMLElement;
+      return textEl?.innerText || "";
+    };
+
+    // Copy Button
+    const copyBtn = createBtn("copy", "Copy response", async (btn, iconEl) => {
+      const text = getFinalText();
+      if (text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          const originalClass = iconEl.className;
+          iconEl.className = "codicon codicon-check";
+          setTimeout(() => {
+            iconEl.className = originalClass;
+          }, 1500);
+        } catch (err) {
+          console.error("Failed to copy:", err);
+        }
+      }
+    });
+
+    // Paste to Input Button
+    const pasteBtn = createBtn("edit", "Copy to input", () => {
+      const text = getFinalText();
+      if (text) {
+        this.elements.inputEl.textContent = text;
+        this.adjustHeight();
+        this.saveState();
+        this.updateInputState();
+        this.elements.inputEl.focus();
+
+        const range = this.doc.createRange();
+        const sel = this.win.getSelection();
+        range.selectNodeContents(this.elements.inputEl);
+        range.collapse(false);
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }
+    });
+
+    // Scroll to Top Button
+    const topBtn = createBtn("arrow-up", "Scroll to top", () => {
+      this.elements.messagesEl.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    // Scroll to Recent User Input Button
+    const userBtn = createBtn("reply", "Scroll to user question", () => {
+      const allMessages = Array.from(
+        this.elements.messagesEl.querySelectorAll(".message")
+      );
+      const currentIdx = allMessages.indexOf(messageEl);
+      if (currentIdx > 0) {
+        for (let i = currentIdx - 1; i >= 0; i--) {
+          if (allMessages[i].classList.contains("user")) {
+            allMessages[i].scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+            break;
+          }
+        }
+      }
+    });
+
+    actionsContainer.appendChild(copyBtn);
+    actionsContainer.appendChild(pasteBtn);
+    actionsContainer.appendChild(topBtn);
+    actionsContainer.appendChild(userBtn);
+
+    messageEl.appendChild(actionsContainer);
+  }
+
   private setGenerating(isGenerating: boolean): void {
     this.isGenerating = isGenerating;
     const { typingIndicatorEl, messagesEl, sendBtn, stopBtn } = this.elements;
@@ -2544,11 +2635,12 @@ export class WebviewController {
         }
         break;
       case "userMessage":
+        // Always reset assistant state before a new turn, regardless of content
+        // This ensures subsequent streamChunk creates a new assistant message and prevents turn merging
+        this.currentAssistantMessage = null;
+        this.activeBlock = null;
+
         if (msg.text || (msg.images && msg.images.length > 0)) {
-          // Reset assistant state before adding user message
-          // This ensures subsequent streamChunk creates a new assistant message
-          this.currentAssistantMessage = null;
-          this.activeBlock = null;
           this.addMessage(msg.text || "", "user", msg.mentions);
         }
         break;
@@ -2568,10 +2660,12 @@ export class WebviewController {
           const block = this.ensureBlock("text");
           block.content += msg.text;
           block.contentEl.innerHTML = marked.parse(block.content) as string;
-          this.updateAssistantMessageText();
+          // Store raw content on the element for reliable retrieval by action buttons
+          block.element.setAttribute("data-raw-content", block.content);
           this.scrollToBottom();
         }
         break;
+
       case "thoughtChunk":
         if (msg.text) {
           const block = this.ensureBlock("thought");
@@ -2583,6 +2677,10 @@ export class WebviewController {
       case "streamEnd":
         this.finalizeBlocks();
         this.setGenerating(false);
+        if (this.currentAssistantMessage) {
+          this.renderActionButtons(this.currentAssistantMessage);
+          this.currentAssistantMessage = null; // Clear to ensure next turn starts a new message
+        }
         this.elements.inputEl.focus();
         break;
       case "toolCallStart":
@@ -2686,7 +2784,6 @@ export class WebviewController {
         this.currentAssistantMessage = null;
         this.activeBlock = null;
         this.blocks = [];
-        this.messageTexts.clear();
         this.hideAutocomplete();
         this.hidePlan();
         this.diffChanges = [];

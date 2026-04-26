@@ -495,6 +495,8 @@ export class ChatViewProvider
       await this.sessionManager.loadSession(sessionId, cwd);
       // Flush buffer and send streamEnd to separate thinking blocks
       this.flushUserMessageBuffer();
+      // Finalize the last agent response in the history
+      this.postMessage({ type: "streamEnd", stopReason: "history_load" });
       this.isLoadingHistory = false;
 
       this.hasSession = true;
@@ -1211,6 +1213,10 @@ export class ChatViewProvider
 
   private flushUserMessageBuffer(): void {
     if (this.userMessageBuffer) {
+      // Ensure the PREVIOUS assistant response is finalized before starting the next user message
+      // This is critical during history restoration to correctly separate turns and add toolbars
+      this.postMessage({ type: "streamEnd", stopReason: "end_turn" });
+
       const { text, mentions } = extractMentions(this.userMessageBuffer);
 
       // Merge collected image dataUrls into their corresponding mentions
@@ -1224,8 +1230,6 @@ export class ChatViewProvider
               mention.dataUrl = this.userMessageImages[imageIdx];
               imageIdx++;
             }
-            // If agent didn't provide image chunk, mention.dataUrl stays undefined
-            // and the chip will gracefully not show preview (fallback to option C)
           }
         }
       }
@@ -1237,8 +1241,6 @@ export class ChatViewProvider
       });
       this.userMessageBuffer = "";
       this.userMessageImages = [];
-      // Ensure thinking block for the next response is properly separated
-      this.postMessage({ type: "streamEnd", stopReason: "end_turn" });
     }
   }
 

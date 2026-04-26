@@ -450,4 +450,35 @@ suite("ChatViewProvider", () => {
       assert.strictEqual(memento.get("vscode-acp-chat.selectedMode"), "mode-2");
     });
   });
+
+  suite("Turn Separation and History Restoration", () => {
+    test("flushUserMessageBuffer sends streamEnd before userMessage", () => {
+      const provider = new ChatViewProvider(
+        mockExtensionUri,
+        acpClient as any,
+        memento as any
+      );
+
+      const messages: any[] = [];
+      (provider as any).postMessage = (msg: any) => messages.push(msg);
+
+      // Set up buffer
+      (provider as any).userMessageBuffer = "Test question";
+
+      // Trigger flush
+      (provider as any).flushUserMessageBuffer();
+
+      assert.strictEqual(messages.length, 2);
+      assert.strictEqual(
+        messages[0].type,
+        "streamEnd",
+        "streamEnd should be sent first"
+      );
+      assert.strictEqual(
+        messages[1].type,
+        "userMessage",
+        "userMessage should be sent second"
+      );
+    });
+  });
 });

@@ -357,6 +357,7 @@ body {
     opacity: 0.3;
     transform: scale(0.8);
   }
+
   40% {
     opacity: 1;
     transform: scale(1);
@@ -922,7 +923,8 @@ body {
   border: 1px solid var(--vscode-editorHoverWidget-border);
   border-radius: 3px;
   box-shadow: 0 2px 8px var(--vscode-widget-shadow);
-  font-size: 11px; /* Matches VSCode native tooltip size */
+  font-size: 11px;
+  /* Matches VSCode native tooltip size */
   pointer-events: none;
   white-space: nowrap;
   visibility: hidden;
@@ -2541,4 +2543,47 @@ kbd {
 
 .diff-item-btn {
   padding: 2px;
+}
+
+/* Message Actions */
+.message.assistant {
+  display: flex;
+  flex-direction: column;
+}
+
+.message-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 0 12px 10px 12px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.action-btn {
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-descriptionForeground);
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.action-btn:hover {
+  background: var(
+    --vscode-toolbar-hoverBackground,
+    rgba(255, 255, 255, 0.12)
+  ) !important;
+  color: var(--vscode-foreground);
+}
+
+.action-btn .codicon {
+  font-size: 14px;
+  color: inherit !important;
+  /* Force inherit from button to bypass global codicon colors */
 }

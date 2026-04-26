@@ -776,6 +776,120 @@ suite("Webview", () => {
       });
     });
 
+    suite("Action Buttons and Copy Logic", () => {
+      test("renders action buttons after streamEnd", () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({ type: "streamChunk", text: "Final output" });
+        controller.handleMessage({ type: "streamEnd" });
+
+        const assistantMsg =
+          elements.messagesEl.querySelector(".message.assistant");
+        assert.ok(assistantMsg);
+        const actions = assistantMsg.querySelector(".message-actions");
+        assert.ok(actions, "Actions container should be present");
+
+        const buttons = actions.querySelectorAll(".action-btn");
+        assert.strictEqual(buttons.length, 4, "Should have 4 action buttons");
+
+        // Check acp-title for tooltips
+        assert.strictEqual(
+          buttons[0].getAttribute("acp-title"),
+          "Copy response"
+        );
+        assert.strictEqual(
+          buttons[1].getAttribute("acp-title"),
+          "Copy to input"
+        );
+        assert.strictEqual(
+          buttons[2].getAttribute("acp-title"),
+          "Scroll to top"
+        );
+        assert.strictEqual(
+          buttons[3].getAttribute("acp-title"),
+          "Scroll to user question"
+        );
+      });
+
+      test("Paste to input action uses the last text block", async () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Internal state",
+        });
+        controller.handleMessage({
+          type: "toolCallStart",
+          toolCallId: "t2",
+          name: "ls",
+        });
+        controller.handleMessage({
+          type: "toolCallComplete",
+          toolCallId: "t2",
+          status: "completed",
+        });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Public result",
+        });
+        controller.handleMessage({ type: "streamEnd" });
+
+        const assistantMsg = elements.messagesEl.querySelector(
+          ".message.assistant"
+        ) as HTMLElement;
+        const pasteBtn = assistantMsg.querySelector(
+          '.action-btn[acp-title="Copy to input"]'
+        ) as HTMLElement;
+
+        pasteBtn.click();
+
+        // Wait for next tick
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        assert.strictEqual(elements.inputEl.textContent, "Public result");
+      });
+
+      test("Turn separation: each turn gets its own container and toolbar", () => {
+        // First Turn
+        controller.handleMessage({ type: "userMessage", text: "Question 1" });
+        controller.handleMessage({ type: "streamChunk", text: "Answer 1" });
+        controller.handleMessage({ type: "streamEnd" });
+
+        // Second Turn
+        controller.handleMessage({ type: "userMessage", text: "Question 2" });
+        controller.handleMessage({ type: "streamChunk", text: "Answer 2" });
+        controller.handleMessage({ type: "streamEnd" });
+
+        const assistantMsgs =
+          elements.messagesEl.querySelectorAll(".message.assistant");
+        assert.strictEqual(
+          assistantMsgs.length,
+          2,
+          "Should have 2 separate assistant messages"
+        );
+
+        assert.ok(
+          assistantMsgs[0].querySelector(".message-actions"),
+          "Turn 1 should have toolbar"
+        );
+        assert.ok(
+          assistantMsgs[1].querySelector(".message-actions"),
+          "Turn 2 should have toolbar"
+        );
+
+        assert.strictEqual(
+          assistantMsgs[0].textContent.includes("Answer 1"),
+          true
+        );
+        assert.strictEqual(
+          assistantMsgs[0].textContent.includes("Answer 2"),
+          false
+        );
+        assert.strictEqual(
+          assistantMsgs[1].textContent.includes("Answer 2"),
+          true
+        );
+      });
+    });
+
     suite("model selection with starring and grouping", () => {
       const testModels = {
         availableModels: [
