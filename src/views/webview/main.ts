@@ -1186,26 +1186,19 @@ export class WebviewController {
         commandAutocomplete.classList.contains("visible");
 
       if (isAutocompleteVisible) {
-        const text = inputEl.textContent || "";
-        const query =
-          this.autocompleteMode === "command"
-            ? text.slice(this.autocompleteTriggerPos).split(/\s/)[0]
-            : "";
         const count =
-          this.autocompleteMode === "command"
-            ? this.getFilteredCommands(query).length
-            : this.fileResults.length;
+          commandAutocomplete.querySelectorAll(".command-item").length;
 
         if (e.key === "ArrowDown") {
           e.preventDefault();
           this.selectedIndex = Math.min(this.selectedIndex + 1, count - 1);
-          this.renderAutocomplete();
+          this.updateAutocompleteSelection();
           this.scrollSelectedIntoView();
           return;
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
           this.selectedIndex = Math.max(this.selectedIndex - 1, 0);
-          this.renderAutocomplete();
+          this.updateAutocompleteSelection();
           this.scrollSelectedIntoView();
           return;
         } else if (
@@ -1257,9 +1250,17 @@ export class WebviewController {
       input.click();
     });
 
+    commandAutocomplete.addEventListener("mousedown", (e) => {
+      const item = (e.target as HTMLElement).closest(".command-item");
+      if (item) {
+        e.preventDefault(); // Prevent focus loss from inputEl
+      }
+    });
+
     commandAutocomplete.addEventListener("click", (e) => {
       const item = (e.target as HTMLElement).closest(".command-item");
       if (item) {
+        e.stopPropagation();
         const index = parseInt(item.getAttribute("data-index") || "0", 10);
         this.selectAutocomplete(index);
       }
@@ -1268,11 +1269,11 @@ export class WebviewController {
     commandAutocomplete.addEventListener("mouseover", (e) => {
       const item = (e.target as HTMLElement).closest(".command-item");
       if (item) {
-        this.selectedIndex = parseInt(
-          item.getAttribute("data-index") || "0",
-          10
-        );
-        this.renderAutocomplete();
+        const index = parseInt(item.getAttribute("data-index") || "0", 10);
+        if (this.selectedIndex !== index) {
+          this.selectedIndex = index;
+          this.updateAutocompleteSelection();
+        }
       }
     });
 
@@ -1707,6 +1708,7 @@ export class WebviewController {
     if (headerEl) {
       // Use onclick to avoid duplicate bindings
       (headerEl as HTMLElement).onclick = () => this.togglePlan();
+
       headerEl.addEventListener("keydown", (e: Event) => {
         const keyboardEvent = e as KeyboardEvent;
         if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
@@ -2087,8 +2089,22 @@ export class WebviewController {
       ".command-item.selected"
     );
     if (selectedItem && typeof selectedItem.scrollIntoView === "function") {
-      selectedItem.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      selectedItem.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
+  }
+
+  private updateAutocompleteSelection(): void {
+    const { commandAutocomplete } = this.elements;
+    const items = commandAutocomplete.querySelectorAll(".command-item");
+    items.forEach((item, i) => {
+      if (i === this.selectedIndex) {
+        item.classList.add("selected");
+        item.setAttribute("aria-selected", "true");
+      } else {
+        item.classList.remove("selected");
+        item.setAttribute("aria-selected", "false");
+      }
+    });
   }
 
   hideAutocomplete(): void {
