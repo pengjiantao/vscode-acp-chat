@@ -1369,8 +1369,26 @@ export class WebviewController {
       const textEl = this.doc.createElement("div");
       textEl.className = "message-content-text";
 
+      // Detect slash command at the start of user messages
+      let commandOffset = 0;
+      if (type === "user" && text.startsWith("/")) {
+        const firstSpaceIdx = text.indexOf(" ");
+        const commandWithSlash =
+          firstSpaceIdx === -1 ? text : text.substring(0, firstSpaceIdx);
+        const commandName = commandWithSlash.substring(1);
+        const cmd = this.availableCommands.find((c) => c.name === commandName);
+
+        if (cmd) {
+          textEl.appendChild(
+            this.renderCommandChip(commandWithSlash, cmd.description, true)
+          );
+          commandOffset = commandWithSlash.length;
+        }
+      }
+
       const placeholderRegex = /__MENTION_(\d+)__/g;
-      let lastIndex = 0;
+      placeholderRegex.lastIndex = commandOffset;
+      let lastIndex = commandOffset;
       let match;
 
       while ((match = placeholderRegex.exec(text)) !== null) {
@@ -1812,6 +1830,8 @@ export class WebviewController {
           const idx = mentions.length;
           mentions.push(mention);
           text += `__MENTION_${idx}__`;
+        } else if (el.classList.contains("command-chip")) {
+          text += el.dataset.command || "";
         } else if (el.tagName === "BR") {
           text += "\n";
         } else {
@@ -2103,7 +2123,7 @@ export class WebviewController {
       const commands = this.getFilteredCommands(query);
       if (index >= 0 && index < commands.length) {
         const cmd = commands[index];
-        this.replaceTriggerWithText("/" + cmd.name + " ");
+        this.insertCommandChip("/" + cmd.name, cmd.description);
       }
     } else if (this.autocompleteMode === "file") {
       if (index >= 0 && index < this.fileResults.length) {
@@ -2291,6 +2311,94 @@ export class WebviewController {
     }
 
     return chip;
+  }
+  private renderCommandChip(
+    command: string,
+    description?: string,
+    readonly = false
+  ): HTMLElement {
+    const chip = this.doc.createElement("span");
+    chip.className = "command-chip" + (readonly ? " readonly" : "");
+    chip.contentEditable = "false";
+    chip.dataset.command = command;
+    if (description) chip.setAttribute("acp-title", description);
+
+    const displayLabel = command.startsWith("/")
+      ? command.substring(1)
+      : command;
+    chip.innerHTML = `<span class="chip-icon command-icon codicon codicon-symbol-misc"></span><span class="chip-label">${escapeHtml(
+      displayLabel
+    )}</span>`;
+
+    if (!readonly) {
+      const deleteBtn = this.doc.createElement("div");
+      deleteBtn.className = "chip-delete";
+      deleteBtn.setAttribute("acp-title", "Remove command");
+      deleteBtn.innerHTML = `<span class="codicon codicon-close icon-dismiss"></span>`;
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        chip.remove();
+        this.saveState();
+        this.updateInputState();
+      });
+      chip.appendChild(deleteBtn);
+    }
+
+    return chip;
+  }
+
+  private insertCommandChip(command: string, description?: string): void {
+    const selection = this.win.getSelection();
+    if (!selection) return;
+
+    let range: Range;
+    if (this.autocompleteMode !== "none" && selection.rangeCount > 0) {
+      range = selection.getRangeAt(0);
+      const useMockFallback = !(
+        range.startContainer instanceof (this.win as any).Node
+      );
+
+      if (!useMockFallback) {
+        const { node, offset } = this.getNodeAtOffset(
+          this.elements.inputEl,
+          this.autocompleteTriggerPos
+        );
+        range.setStart(node, offset);
+      } else {
+        range.setStart(range.startContainer, this.autocompleteTriggerPos);
+      }
+      range.deleteContents();
+    } else {
+      this.elements.inputEl.focus();
+      const currentSelection = this.win.getSelection();
+      if (!currentSelection || currentSelection.rangeCount === 0) {
+        range = this.doc.createRange();
+        range.selectNodeContents(this.elements.inputEl);
+        range.collapse(false);
+      } else {
+        range = currentSelection.getRangeAt(0);
+      }
+    }
+
+    const chip = this.renderCommandChip(command, description, false);
+    range.insertNode(chip);
+
+    const space = this.doc.createTextNode(" ");
+    range.setStartAfter(chip);
+    range.insertNode(space);
+
+    const selectionAfter = this.win.getSelection();
+    if (selectionAfter) {
+      selectionAfter.removeAllRanges();
+      const newRange = this.doc.createRange();
+      newRange.setStartAfter(space);
+      newRange.collapse(true);
+      selectionAfter.addRange(newRange);
+    }
+
+    this.elements.inputEl.focus();
+    this.saveState();
+    this.updateInputState();
   }
 
   private insertMentionChip(mention: Mention): void {

@@ -669,8 +669,9 @@ body {
   width: 100%;
 }
 
-/* File and Folder Chips */
-.mention-chip {
+/* File, Folder and Command Chips */
+.mention-chip,
+.command-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -691,12 +692,14 @@ body {
   top: 1px;
 }
 
-.mention-chip:hover {
+.mention-chip:hover,
+.command-chip:hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.18));
   border-color: var(--vscode-focusBorder);
 }
 
-.mention-chip.readonly {
+.mention-chip.readonly,
+.command-chip.readonly {
   padding: 1px 8px;
   color: var(--vscode-foreground);
   font-size: 12px;
@@ -704,7 +707,8 @@ body {
   top: 0;
 }
 
-.mention-chip .chip-icon {
+.mention-chip .chip-icon,
+.command-chip .chip-icon {
   width: 1em;
   height: 1em;
   display: flex;
@@ -713,7 +717,8 @@ body {
   opacity: 0.9;
 }
 
-.mention-chip .chip-delete {
+.mention-chip .chip-delete,
+.command-chip .chip-delete {
   margin-left: 2px;
   opacity: 0.6;
   cursor: pointer;
@@ -726,7 +731,8 @@ body {
   transition: background 0.1s;
 }
 
-.mention-chip .chip-delete:hover {
+.mention-chip .chip-delete:hover,
+.command-chip .chip-delete:hover {
   opacity: 1;
   background: var(
     --vscode-toolbar-activeBackground,
@@ -734,7 +740,8 @@ body {
   ) !important;
 }
 
-.mention-chip .chip-delete .icon-dismiss {
+.mention-chip .chip-delete .icon-dismiss,
+.command-chip .chip-delete .icon-dismiss {
   width: 14px;
   height: 14px;
 }

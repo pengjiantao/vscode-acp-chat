@@ -601,6 +601,37 @@ suite("Webview", () => {
         assert.strictEqual(mentionChip.textContent, "test.ts");
       });
 
+      test("handles userMessage with slash commands", () => {
+        // Set up available commands first
+        controller.handleMessage({
+          type: "availableCommands",
+          commands: [
+            { name: "explain", description: "Explain the code" },
+            { name: "fix", description: "Fix the bug" },
+          ],
+        });
+
+        controller.handleMessage({
+          type: "userMessage",
+          text: "/explain this code",
+        });
+
+        const msgs = elements.messagesEl.querySelectorAll(".message.user");
+        assert.strictEqual(msgs.length, 1);
+
+        const commandChip = msgs[0].querySelector(".command-chip");
+        assert.ok(commandChip !== null, "Command chip should be rendered");
+        assert.strictEqual(commandChip.textContent, "explain");
+        assert.strictEqual(
+          (commandChip as HTMLElement).getAttribute("acp-title"),
+          "Explain the code"
+        );
+        assert.ok(
+          msgs[0].textContent.includes(" this code"),
+          "Remaining text should be present"
+        );
+      });
+
       test("handles userMessage with image mentions", () => {
         controller.handleMessage({
           type: "userMessage",
@@ -1020,6 +1051,35 @@ suite("Webview", () => {
         );
       });
 
+      test("command chips are serialized to plain text in sendMessage", () => {
+        mockVsCode._clearMessages();
+
+        // Simulate a command chip followed by text
+        const commandChip = (controller as any).renderCommandChip(
+          "/explain",
+          "Explain this"
+        );
+        elements.inputEl.appendChild(commandChip);
+        elements.inputEl.appendChild(document.createTextNode(" this code"));
+
+        const event = new window.KeyboardEvent("keydown", {
+          key: "Enter",
+          shiftKey: false,
+        });
+        elements.inputEl.dispatchEvent(event);
+
+        const messages = mockVsCode._getMessages();
+        const sentMsg = messages.find(
+          (m: any) => (m as any).type === "sendMessage"
+        ) as any;
+        assert.ok(sentMsg, "Message should be sent");
+        assert.strictEqual(
+          sentMsg.text,
+          "/explain this code",
+          "Command chip should be serialized to plain text"
+        );
+      });
+
       test("Escape clears input", () => {
         elements.inputEl.innerHTML = "Test message";
         const event = new window.KeyboardEvent("keydown", { key: "Escape" });
@@ -1256,6 +1316,7 @@ suite("Webview", () => {
         // Mock range and selection
         const range = {
           setStart: () => {},
+          setStartAfter: () => {},
           deleteContents: () => {
             elements.inputEl.textContent = "";
           },
@@ -1288,7 +1349,7 @@ suite("Webview", () => {
         elements.commandAutocomplete.appendChild(item);
 
         item.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-        assert.ok(elements.inputEl.textContent.includes("/help "));
+        assert.ok(elements.inputEl.textContent.includes("help "));
       });
 
       test("availableCommands message updates commands", () => {
