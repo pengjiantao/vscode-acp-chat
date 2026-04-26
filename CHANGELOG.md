@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.2.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.1.1...v1.2.0) (2026-04-26)
+
+
+### Features
+
+* **agents:** add project-specific agent skills ([e75f1e9](https://github.com/pengjiantao/vscode-acp-chat/commit/e75f1e91d88c3a8e1d869e0af86e974355ded337))
+* **webview:** add message action buttons and improve turn separation ([d8a68df](https://github.com/pengjiantao/vscode-acp-chat/commit/d8a68df6994bc885ebb67f1e7b213fb7083e94b4))
+* **webview:** add slash command chips for user messages ([8c0f138](https://github.com/pengjiantao/vscode-acp-chat/commit/8c0f138b83520a07c1e90c0c083eedeaf36bda30))
+
+
+### Bug Fixes
+
+* prevent dropdown and tooltip overflow at viewport edges ([9974516](https://github.com/pengjiantao/vscode-acp-chat/commit/997451635c8f6a0823c220257663ed6b24a7d555))
+* update autocomplete to use global offsets and fix related bugs ([9107190](https://github.com/pengjiantao/vscode-acp-chat/commit/91071900b3b7ebd52cd8a1b21bf0c2bab928b12b))
+
+
+### Performance Improvements
+
+* **webview:** optimize autocomplete rendering and improve focus management ([03cf7e0](https://github.com/pengjiantao/vscode-acp-chat/commit/03cf7e05afff54bf2bafc06e7159fd471b8bf5fa))
+
 ## [1.1.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.1.0...v1.1.1) (2026-04-24)
 
 
