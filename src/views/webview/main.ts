@@ -1391,41 +1391,77 @@ export class WebviewController {
       const textEl = this.doc.createElement("div");
       textEl.className = "message-content-text";
 
-      // Detect slash command at the start of user messages
-      let commandOffset = 0;
-      if (type === "user" && text.startsWith("/")) {
-        const firstSpaceIdx = text.indexOf(" ");
-        const commandWithSlash =
-          firstSpaceIdx === -1 ? text : text.substring(0, firstSpaceIdx);
-        const commandName = commandWithSlash.substring(1);
-        const cmd = this.availableCommands.find((c) => c.name === commandName);
+      const placeholderRegex = /__MENTION_(\d+)__/g;
+      const commandRegex = /(?<=^|\s)\/[\w-]+(?=\s|$)/g;
 
-        if (cmd) {
-          textEl.appendChild(
-            this.renderCommandChip(commandWithSlash, cmd.description, true)
+      type Token =
+        | { type: "mention"; start: number; end: number; index: number }
+        | { type: "command"; start: number; end: number; name: string };
+
+      const tokens: Token[] = [];
+      let match: RegExpExecArray | null;
+
+      while ((match = placeholderRegex.exec(text)) !== null) {
+        tokens.push({
+          type: "mention",
+          start: match.index,
+          end: placeholderRegex.lastIndex,
+          index: parseInt(match[1], 10),
+        });
+      }
+
+      if (type === "user") {
+        while ((match = commandRegex.exec(text)) !== null) {
+          const commandName = match[0].substring(1);
+          const cmd = this.availableCommands.find(
+            (c) => c.name === commandName
           );
-          commandOffset = commandWithSlash.length;
+          if (cmd) {
+            tokens.push({
+              type: "command",
+              start: match.index,
+              end: commandRegex.lastIndex,
+              name: commandName,
+            });
+          }
         }
       }
 
-      const placeholderRegex = /__MENTION_(\d+)__/g;
-      placeholderRegex.lastIndex = commandOffset;
-      let lastIndex = commandOffset;
-      let match;
+      tokens.sort((a, b) => a.start - b.start);
 
-      while ((match = placeholderRegex.exec(text)) !== null) {
-        if (match.index > lastIndex) {
+      const validTokens: Token[] = [];
+      let currentEnd = 0;
+      for (const token of tokens) {
+        if (token.start >= currentEnd) {
+          validTokens.push(token);
+          currentEnd = token.end;
+        }
+      }
+
+      let lastIndex = 0;
+      for (const token of validTokens) {
+        if (token.start > lastIndex) {
           textEl.appendChild(
-            this.doc.createTextNode(text.substring(lastIndex, match.index))
+            this.doc.createTextNode(text.substring(lastIndex, token.start))
           );
         }
 
-        const idx = parseInt(match[1], 10);
-        if (mentions && mentions[idx]) {
-          textEl.appendChild(this.renderMentionChip(mentions[idx], true));
+        if (token.type === "mention") {
+          if (mentions && mentions[token.index]) {
+            textEl.appendChild(
+              this.renderMentionChip(mentions[token.index], true)
+            );
+          }
+        } else if (token.type === "command") {
+          const cmd = this.availableCommands.find(
+            (c) => c.name === token.name
+          )!;
+          textEl.appendChild(
+            this.renderCommandChip("/" + token.name, cmd.description, true)
+          );
         }
 
-        lastIndex = placeholderRegex.lastIndex;
+        lastIndex = token.end;
       }
 
       if (lastIndex < text.length) {
