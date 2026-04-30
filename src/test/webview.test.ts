@@ -959,7 +959,7 @@ suite("Webview", () => {
         assert.strictEqual(items.length, 2);
       });
 
-      test("starring a model creates 'Starred' and 'All Models' groups", () => {
+      test("starring a model sends toggleModelStar message and renders groups after sessionMetadata update", () => {
         controller.handleMessage({
           type: "sessionMetadata",
           models: testModels,
@@ -981,7 +981,24 @@ suite("Webview", () => {
         assert.ok(starIcon);
         starIcon.click();
 
-        // Dropdown should re-render with headers
+        // Verify toggleModelStar message was sent to Extension
+        const messages = mockVsCode._getMessages();
+        const toggleMsg = messages.find(
+          (m: any) => m.type === "toggleModelStar"
+        );
+        assert.ok(toggleMsg, "should send toggleModelStar message");
+        assert.strictEqual((toggleMsg as any).modelId, "model-2");
+        assert.strictEqual((toggleMsg as any).isStarred, true);
+
+        // Simulate Extension replying with updated sessionMetadata
+        controller.handleMessage({
+          type: "sessionMetadata",
+          models: testModels,
+          modes: null,
+          starredModels: ["model-2"],
+        });
+
+        // Dropdown should now show Starred and All Models groups
         const headers = popover.querySelectorAll(".dropdown-header");
         assert.strictEqual(headers.length, 2);
         assert.strictEqual(headers[0].textContent, "Starred");

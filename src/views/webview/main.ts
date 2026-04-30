@@ -49,7 +49,6 @@ export interface Block {
 export interface WebviewState {
   isConnected: boolean;
   inputValue: string;
-  starredModels?: string[];
   diffChanges?: Array<{
     path: string;
     relativePath: string;
@@ -117,6 +116,7 @@ export interface ExtensionMessage {
     currentModelId: string;
   } | null;
   commands?: AvailableCommand[] | null;
+  starredModels?: string[];
   toolCallId?: string;
   agentId?: string;
   agentName?: string;
@@ -673,15 +673,11 @@ export class WebviewController {
         this.vscode.postMessage({ type: "selectModel", modelId: id });
       },
       (id, isStarred) => {
-        if (isStarred) {
-          this.starredModels.add(id);
-        } else {
-          this.starredModels.delete(id);
-        }
-        this.saveState();
-        if (this.lastModelsMsg) {
-          this.updateModelDropdown(this.lastModelsMsg);
-        }
+        this.vscode.postMessage({
+          type: "toggleModelStar",
+          modelId: id,
+          isStarred,
+        });
       }
     );
 
@@ -1110,9 +1106,6 @@ export class WebviewController {
     const previousState = this.vscode.getState<WebviewState>();
     if (previousState) {
       this.isConnected = previousState.isConnected;
-      if (previousState.starredModels) {
-        this.starredModels = new Set(previousState.starredModels);
-      }
       if (previousState.inputValue) {
         this.elements.inputEl.innerHTML = previousState.inputValue;
         // Re-attach listeners to mention chips
@@ -1145,7 +1138,6 @@ export class WebviewController {
     this.vscode.setState<WebviewState>({
       isConnected: this.isConnected,
       inputValue: this.elements.inputEl.innerHTML || "",
-      starredModels: Array.from(this.starredModels),
       diffChanges: this.diffChanges,
     });
   }
@@ -2943,6 +2935,10 @@ export class WebviewController {
           msg.models &&
           msg.models.availableModels &&
           msg.models.availableModels.length > 0;
+
+        if (Array.isArray(msg.starredModels)) {
+          this.starredModels = new Set(msg.starredModels);
+        }
 
         if (hasModes && msg.modes) {
           this.elements.modeDropdown.style.display = "flex";

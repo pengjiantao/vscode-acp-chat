@@ -30,8 +30,15 @@ import type {
 } from "@agentclientprotocol/sdk";
 
 const SELECTED_AGENT_KEY = "vscode-acp-chat.selectedAgent";
-const SELECTED_MODE_KEY = "vscode-acp-chat.selectedMode";
-const SELECTED_MODEL_KEY = "vscode-acp-chat.selectedModel";
+const AGENT_PREFS_KEY = "vscode-acp-chat.agentPreferences.v1";
+
+interface AgentPreference {
+  modeId?: string;
+  modelId?: string;
+  starredModels: string[];
+}
+
+type AgentPreferences = Record<string, AgentPreference>;
 
 interface WebviewMessage {
   type:
@@ -51,10 +58,12 @@ interface WebviewMessage {
     | "acceptDiff"
     | "rollbackDiff"
     | "acceptAllDiffs"
-    | "rollbackAllDiffs";
+    | "rollbackAllDiffs"
+    | "toggleModelStar";
   text?: string;
   modeId?: string;
   modelId?: string;
+  isStarred?: boolean;
   images?: string[];
   mentions?: Array<{
     name: string;
@@ -289,6 +298,23 @@ export class ChatViewProvider
         case "selectModel":
           if (message.modelId) {
             await this.handleModelChange(message.modelId);
+          }
+          break;
+        case "toggleModelStar":
+          if (
+            message.modelId !== undefined &&
+            message.isStarred !== undefined
+          ) {
+            await this.updateCurrentAgentPreference((pref) => {
+              const starred = new Set(pref.starredModels);
+              if (message.isStarred) {
+                starred.add(message.modelId!);
+              } else {
+                starred.delete(message.modelId!);
+              }
+              return { ...pref, starredModels: Array.from(starred) };
+            });
+            this.sendSessionMetadata();
           }
           break;
         case "connect":
@@ -1385,6 +1411,7 @@ export class ChatViewProvider
       this.acpClient.setAgent(agent);
       this.globalState.update(SELECTED_AGENT_KEY, agentId);
       this.hasSession = false;
+      this.hasRestoredModeModel = false;
       this.diffManager.clear();
       this.sessionManager.syncCapabilities();
       this.postMessage({
@@ -1408,7 +1435,7 @@ export class ChatViewProvider
   private async handleModeChange(modeId: string): Promise<void> {
     try {
       await this.acpClient.setMode(modeId);
-      await this.globalState.update(SELECTED_MODE_KEY, modeId);
+      await this.updateCurrentAgentPreference((pref) => ({ ...pref, modeId }));
       this.sendSessionMetadata();
     } catch (error) {
       console.error("[Chat] Failed to set mode:", error);
@@ -1418,7 +1445,7 @@ export class ChatViewProvider
   private async handleModelChange(modelId: string): Promise<void> {
     try {
       await this.acpClient.setModel(modelId);
-      await this.globalState.update(SELECTED_MODEL_KEY, modelId);
+      await this.updateCurrentAgentPreference((pref) => ({ ...pref, modelId }));
       this.sendSessionMetadata();
     } catch (error) {
       console.error("[Chat] Failed to set model:", error);
@@ -1474,11 +1501,13 @@ export class ChatViewProvider
 
   private sendSessionMetadata(): void {
     const metadata = this.acpClient.getSessionMetadata();
+    const pref = this.getCurrentAgentPreference();
     this.postMessage({
       type: "sessionMetadata",
       modes: metadata?.modes ?? null,
       models: metadata?.models ?? null,
       commands: metadata?.commands ?? null,
+      starredModels: pref.starredModels,
     });
 
     if (!this.hasRestoredModeModel && this.hasSession) {
@@ -1487,6 +1516,23 @@ export class ChatViewProvider
         console.warn("[Chat] Failed to restore saved mode/model:", error)
       );
     }
+  }
+
+  private getCurrentAgentPreference(): AgentPreference {
+    const agentId = this.acpClient.getAgentId();
+    const allPrefs =
+      this.globalState.get<AgentPreferences>(AGENT_PREFS_KEY) ?? {};
+    return allPrefs[agentId] ?? { starredModels: [] };
+  }
+
+  private async updateCurrentAgentPreference(
+    updater: (pref: AgentPreference) => AgentPreference
+  ): Promise<void> {
+    const agentId = this.acpClient.getAgentId();
+    const allPrefs =
+      this.globalState.get<AgentPreferences>(AGENT_PREFS_KEY) ?? {};
+    allPrefs[agentId] = updater(allPrefs[agentId] ?? { starredModels: [] });
+    await this.globalState.update(AGENT_PREFS_KEY, allPrefs);
   }
 
   private async restoreSavedModeAndModel(): Promise<void> {
@@ -1498,36 +1544,39 @@ export class ChatViewProvider
       ? metadata.models.availableModels
       : [];
 
-    const savedModeId = this.globalState.get<string>(SELECTED_MODE_KEY);
-    const savedModelId = this.globalState.get<string>(SELECTED_MODEL_KEY);
+    const pref = this.getCurrentAgentPreference();
 
     let modeRestored = false;
     let modelRestored = false;
 
     if (
-      savedModeId &&
+      pref.modeId &&
       availableModes.some(
-        (mode: { id: string }) => mode && mode.id === savedModeId
+        (mode: { id: string }) => mode && mode.id === pref.modeId
       )
     ) {
-      await this.acpClient.setMode(savedModeId);
-      console.log(`[Chat] Restored mode: ${savedModeId}`);
+      await this.acpClient.setMode(pref.modeId);
+      console.log(`[Chat] Restored mode: ${pref.modeId}`);
       modeRestored = true;
     }
 
     if (
-      savedModelId &&
+      pref.modelId &&
       availableModels.some(
-        (model: { modelId: string }) => model && model.modelId === savedModelId
+        (model: { modelId: string }) => model && model.modelId === pref.modelId
       )
     ) {
-      await this.acpClient.setModel(savedModelId);
-      console.log(`[Chat] Restored model: ${savedModelId}`);
+      await this.acpClient.setModel(pref.modelId);
+      console.log(`[Chat] Restored model: ${pref.modelId}`);
       modelRestored = true;
     }
 
     if (modeRestored || modelRestored) {
-      this.postMessage({ type: "sessionMetadata", ...metadata });
+      this.postMessage({
+        type: "sessionMetadata",
+        ...metadata,
+        starredModels: pref.starredModels,
+      });
     }
   }
 
