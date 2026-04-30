@@ -2408,6 +2408,7 @@ kbd {
   border-radius: 4px;
   margin: 4px 0;
   overflow-x: auto;
+  font-family: var(--vscode-editor-font-family), monospace;
   font-size: 12px;
   border: 1px solid var(--vscode-widget-border);
 }
@@ -2421,6 +2422,7 @@ kbd {
   overflow-x: auto;
   max-height: 300px;
   overflow-y: auto;
+  font-family: var(--vscode-editor-font-family), monospace;
   font-size: 12px;
   border: 1px solid var(--vscode-widget-border);
 }
