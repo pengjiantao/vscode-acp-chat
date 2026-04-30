@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.2.0...v1.3.0) (2026-04-30)
+
+
+### Features
+
+* **chat:** migrate preferences to agent-scoped storage and add starred models backend ([785766e](https://github.com/pengjiantao/vscode-acp-chat/commit/785766e090046e6c76e314181f9c2926db0591f4))
+
 ## [1.2.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.1.1...v1.2.0) (2026-04-26)
 
 
