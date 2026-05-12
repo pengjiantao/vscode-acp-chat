@@ -1093,6 +1093,7 @@ export class WebviewController {
 
   private adjustHeight(): void {
     const { inputEl } = this.elements;
+    const scrollTop = inputEl.scrollTop;
     inputEl.style.height = "auto";
     const maxHeight = this.win.innerHeight / 3;
     const scrollHeight = inputEl.scrollHeight;
@@ -1100,6 +1101,7 @@ export class WebviewController {
     inputEl.style.height = newHeight + "px";
     inputEl.style.overflowY =
       scrollHeight > maxHeight - 1 ? "overlay" : "hidden";
+    inputEl.scrollTop = scrollTop;
   }
 
   private restoreState(): void {
