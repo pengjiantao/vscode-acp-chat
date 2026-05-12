@@ -416,14 +416,14 @@ export class Dropdown {
     this.trigger = element.querySelector(".dropdown-trigger")!;
     this.popover = element.querySelector(".dropdown-popover")!;
     this.labelEl = element.querySelector(".selected-label")!;
-
-    this.trigger.addEventListener("click", (e) => {
-      e.stopPropagation();
+    this.trigger.addEventListener("click", () => {
       this.toggle();
     });
 
-    this.element.ownerDocument.addEventListener("click", () => {
-      if (this.isOpen) this.close();
+    this.element.ownerDocument.addEventListener("click", (e) => {
+      if (this.isOpen && !this.element.contains(e.target as Node)) {
+        this.close();
+      }
     });
 
     this.popover.addEventListener("click", (e) => e.stopPropagation());
@@ -475,13 +475,6 @@ export class Dropdown {
   }
 
   open(): void {
-    // Close other dropdowns first
-    this.element.ownerDocument
-      .querySelectorAll(".custom-dropdown.open")
-      .forEach((el) => {
-        if (el !== this.element) el.classList.remove("open");
-      });
-
     this.isOpen = true;
     this.element.classList.add("open");
     this.adjustPosition();
