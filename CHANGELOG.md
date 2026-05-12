@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.2.0...v1.3.0) (2026-05-12)
+
+
+### Features
+
+* **chat:** migrate preferences to agent-scoped storage and add starred models backend ([785766e](https://github.com/pengjiantao/vscode-acp-chat/commit/785766e090046e6c76e314181f9c2926db0591f4))
+
+
+### Bug Fixes
+
+* **webview:** preserve scroll position when auto-resizing input textarea ([0033d1c](https://github.com/pengjiantao/vscode-acp-chat/commit/0033d1c663ae26bff51deebb1846ca90ab5cf8f7))
+* **webview:** track auto-scroll state as class field ([f80da15](https://github.com/pengjiantao/vscode-acp-chat/commit/f80da15af366bc330ba54eb93000589c67ff8f54))
+* 修复 Webview 中 IME 输入导致的重复字符问题 ([3406107](https://github.com/pengjiantao/vscode-acp-chat/commit/3406107442515cb1db2136902eb47ed595e17f11))
+
 ## [1.3.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.2.0...v1.3.0) (2026-04-30)
 
 
