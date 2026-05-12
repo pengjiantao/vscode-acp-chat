@@ -651,6 +651,7 @@ export class WebviewController {
     status: string;
   }> = [];
   private diffSummaryExpanded = false;
+  private isAutoScrollEnabled = true;
 
   constructor(
     vscode: VsCodeApi,
@@ -1319,6 +1320,15 @@ export class WebviewController {
       }
     });
 
+    messagesEl.addEventListener("scroll", () => {
+      const isNearBottom =
+        messagesEl.scrollHeight -
+          messagesEl.scrollTop -
+          messagesEl.clientHeight <
+        100;
+      this.isAutoScrollEnabled = isNearBottom;
+    });
+
     this.win.addEventListener("message", (e: MessageEvent<ExtensionMessage>) =>
       this.handleMessage(e.data)
     );
@@ -1361,10 +1371,7 @@ export class WebviewController {
 
   private scrollToBottom(force = false): void {
     const { messagesEl } = this.elements;
-    const isNearBottom =
-      messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <
-      100;
-    if (force || isNearBottom) {
+    if (force || this.isAutoScrollEnabled) {
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
   }
