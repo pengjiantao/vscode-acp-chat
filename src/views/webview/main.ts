@@ -1181,8 +1181,8 @@ export class WebviewController {
     range.deleteContents();
     const textNode = this.doc.createTextNode(plainText);
     range.insertNode(textNode);
-    range.setStartAfter(textNode);
-    range.setEndAfter(textNode);
+    range.setStart(textNode, textNode.length);
+    range.setEnd(textNode, textNode.length);
     selection.removeAllRanges();
     selection.addRange(range);
     this.adjustHeight();
@@ -2217,8 +2217,8 @@ export class WebviewController {
         const textNode = this.doc.createTextNode(newText);
         range.insertNode(textNode);
 
-        if (typeof range.setStartAfter === "function") {
-          range.setStartAfter(textNode);
+        if (typeof range.setStart === "function") {
+          range.setStart(textNode, textNode.length);
           range.collapse(true);
         }
 
@@ -2449,7 +2449,7 @@ export class WebviewController {
     if (selectionAfter) {
       selectionAfter.removeAllRanges();
       const newRange = this.doc.createRange();
-      newRange.setStartAfter(space);
+      newRange.setStart(space, space.length);
       newRange.collapse(true);
       selectionAfter.addRange(newRange);
     }
@@ -2506,7 +2506,7 @@ export class WebviewController {
     if (selectionAfter) {
       selectionAfter.removeAllRanges();
       const newRange = this.doc.createRange();
-      newRange.setStartAfter(space);
+      newRange.setStart(space, space.length);
       newRange.collapse(true);
       selectionAfter.addRange(newRange);
     }
