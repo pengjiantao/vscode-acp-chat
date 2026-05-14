@@ -2850,6 +2850,7 @@ export class WebviewController {
           this.currentAssistantMessage = null; // Clear to ensure next turn starts a new message
         }
         this.elements.inputEl.focus();
+        this.scrollToBottom();
         break;
       case "toolCallStart":
         if (msg.toolCallId && msg.name) {
@@ -2921,6 +2922,7 @@ export class WebviewController {
             block.contentEl.innerHTML = detailsHtml;
 
             this.finalizeBlock(block);
+            this.scrollToBottom();
           }
         }
         break;
