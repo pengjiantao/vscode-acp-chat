@@ -325,10 +325,11 @@ const BaseRenderer: ToolRenderer = {
           if (hasDiff && skipInputKeys.includes(key)) continue;
 
           if (value !== undefined) {
+            const displayValue = formatValueForDisplay(value);
             if (key === "command" || key === "pattern") {
-              html += `<div><strong>$ ${escapeHtml(String(value))}</strong></div>`;
+              html += `<div><strong>$ ${escapeHtml(displayValue)}</strong></div>`;
             } else {
-              html += `<div><span class="param-key">${key}:</span> ${escapeHtml(String(value))}</div>`;
+              html += `<div><span class="param-key">${key}:</span> ${escapeHtml(displayValue)}</div>`;
             }
           }
         }
@@ -462,4 +463,15 @@ function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60000).toFixed(1)}m`;
+}
+
+function formatValueForDisplay(value: unknown): string {
+  if (typeof value === "object" && value !== null) {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
 }
