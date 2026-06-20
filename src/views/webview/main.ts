@@ -107,6 +107,8 @@ export interface ExtensionMessage {
   state?: string;
   modeId?: string;
   modelId?: string;
+  configId?: string;
+  value?: string;
   modes?: {
     availableModes: Array<{ id: string; name: string }>;
     currentModeId: string;
@@ -115,6 +117,17 @@ export interface ExtensionMessage {
     availableModels: Array<{ modelId: string; name: string }>;
     currentModelId: string;
   } | null;
+  genericConfigOptions?: Array<{
+    id: string;
+    name: string;
+    category: string | null;
+    options: Array<{
+      value: string;
+      name: string;
+      description?: string | null;
+    }>;
+    currentValue: string;
+  }>;
   commands?: AvailableCommand[] | null;
   starredModels?: string[];
   toolCallId?: string;
@@ -188,6 +201,22 @@ export function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+function cssEscapeAttr(value: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(value);
+  }
+  return value.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
+}
+
+/**
+ * Maps ACP `SessionConfigOptionCategory` values to codicon class names used
+ * in the dropdown trigger. Categories not listed here render without an
+ * icon. Add new entries here when agents advertise new semantic categories.
+ */
+const CATEGORY_ICONS: Record<string, string> = {
+  thought_level: "codicon-lightbulb",
+};
 
 const ANSI_FOREGROUND: Record<number, string> = {
   30: "ansi-black",
@@ -594,6 +623,7 @@ export interface WebviewElements {
   stopBtn: HTMLButtonElement;
   modeDropdown: HTMLElement;
   modelDropdown: HTMLElement;
+  configOptionsContainer: HTMLElement;
   contextUsageRing: HTMLDivElement;
   welcomeView: HTMLElement;
   commandAutocomplete: HTMLElement;
@@ -613,6 +643,7 @@ export function getElements(doc: Document): WebviewElements {
     stopBtn: doc.getElementById("stop") as HTMLButtonElement,
     modeDropdown: doc.getElementById("mode-dropdown")!,
     modelDropdown: doc.getElementById("model-dropdown")!,
+    configOptionsContainer: doc.getElementById("config-options-container")!,
     contextUsageRing: doc.getElementById(
       "context-usage-ring"
     ) as HTMLDivElement,
@@ -651,6 +682,7 @@ export class WebviewController {
 
   private modeDropdown: Dropdown;
   private modelDropdown: Dropdown;
+  private configOptionDropdowns = new Map<string, Dropdown>();
   private isGenerating = false;
   private hoveredImageChip: HTMLElement | null = null;
   private starredModels = new Set<string>();
@@ -3102,6 +3134,8 @@ export class WebviewController {
           this.lastModelsMsg = null;
         }
 
+        this.renderGenericConfigOptions(msg.genericConfigOptions ?? []);
+
         if (msg.commands && Array.isArray(msg.commands)) {
           this.availableCommands = msg.commands;
         }
@@ -3187,6 +3221,99 @@ export class WebviewController {
     });
 
     this.modelDropdown.setOptions(options, modelsMsg.currentModelId);
+  }
+
+  private renderGenericConfigOptions(
+    options: NonNullable<ExtensionMessage["genericConfigOptions"]>
+  ): void {
+    const container = this.elements.configOptionsContainer;
+    const incomingIds = new Set(options.map((o) => o.id));
+
+    for (const id of this.configOptionDropdowns.keys()) {
+      if (!incomingIds.has(id)) {
+        const el = container.querySelector<HTMLElement>(
+          `[data-config-id="${cssEscapeAttr(id)}"]`
+        );
+        if (el) el.remove();
+        this.configOptionDropdowns.delete(id);
+      }
+    }
+
+    for (const opt of options) {
+      const safeId = opt.id.replace(/[^a-zA-Z0-9_-]/g, "_");
+      let wrapper = container.querySelector<HTMLElement>(
+        `[data-config-id="${cssEscapeAttr(opt.id)}"]`
+      );
+
+      if (!wrapper) {
+        wrapper = this.createGenericConfigOptionElement(opt, safeId);
+        container.appendChild(wrapper);
+      }
+
+      const dropdown = this.ensureConfigOptionDropdown(opt.id, wrapper);
+      dropdown.setOptions(
+        opt.options.map((o) => ({ id: o.value, name: o.name || o.value })),
+        opt.currentValue
+      );
+    }
+  }
+
+  private createGenericConfigOptionElement(
+    opt: NonNullable<ExtensionMessage["genericConfigOptions"]>[number],
+    safeId: string
+  ): HTMLElement {
+    const wrapper = this.doc.createElement("div");
+    wrapper.className = "custom-dropdown";
+    wrapper.setAttribute("data-config-id", opt.id);
+    wrapper.id = `config-option-${safeId}`;
+    wrapper.style.display = "flex";
+
+    const trigger = this.doc.createElement("div");
+    trigger.className = "dropdown-trigger";
+
+    const iconClass = opt.category ? CATEGORY_ICONS[opt.category] : undefined;
+    if (iconClass) {
+      const icon = this.doc.createElement("span");
+      icon.className = `dropdown-icon codicon ${iconClass}`;
+      icon.setAttribute("aria-hidden", "true");
+      trigger.appendChild(icon);
+    }
+
+    const label = this.doc.createElement("span");
+    label.className = "selected-label";
+    label.textContent = opt.name || opt.id;
+    trigger.appendChild(label);
+
+    const chevron = this.doc.createElement("span");
+    chevron.className = "dropdown-chevron";
+    const chevronIcon = this.doc.createElement("span");
+    chevronIcon.className = "codicon codicon-chevron-down";
+    chevron.appendChild(chevronIcon);
+    trigger.appendChild(chevron);
+
+    const popover = this.doc.createElement("div");
+    popover.className = "dropdown-popover";
+
+    wrapper.appendChild(trigger);
+    wrapper.appendChild(popover);
+    return wrapper;
+  }
+
+  private ensureConfigOptionDropdown(
+    configId: string,
+    wrapper: HTMLElement
+  ): Dropdown {
+    const existing = this.configOptionDropdowns.get(configId);
+    if (existing) return existing;
+    const dropdown = new Dropdown(wrapper, (value) => {
+      this.vscode.postMessage({
+        type: "selectConfigOption",
+        configId,
+        value,
+      });
+    });
+    this.configOptionDropdowns.set(configId, dropdown);
+    return dropdown;
   }
 
   getIsConnected(): boolean {

@@ -90,6 +90,7 @@ function createWebviewHTML(): string {
           </div>
           <div class="dropdown-popover"></div>
         </div>
+        <div id="config-options-container"></div>
         <div id="context-usage-ring" class="context-usage" hidden>
           <svg viewBox="0 0 18 18" width="18" height="18" role="img">
             <circle class="context-usage__bg" cx="9" cy="9" r="7"></circle>
@@ -381,6 +382,7 @@ suite("Webview", () => {
       assert.ok(elements.stopBtn);
       assert.ok(elements.modeDropdown);
       assert.ok(elements.modelDropdown);
+      assert.ok(elements.configOptionsContainer);
       assert.ok(elements.welcomeView);
       assert.ok(elements.commandAutocomplete);
       assert.ok(elements.typingIndicatorEl);
@@ -1715,6 +1717,154 @@ suite("Webview", () => {
         const planEl =
           elements.planContainer.querySelector(".agent-plan-sticky");
         assert.strictEqual(planEl, null);
+      });
+    });
+
+    suite("generic config options dropdown", () => {
+      const thoughtLevel = {
+        id: "thought_level",
+        name: "Thought Level",
+        category: "thought_level",
+        currentValue: "medium",
+        options: [
+          { value: "off", name: "Off" },
+          { value: "medium", name: "Medium" },
+          { value: "high", name: "High" },
+        ],
+      };
+      const otherOption = {
+        id: "custom_knob",
+        name: "Custom Knob",
+        category: null,
+        currentValue: "a",
+        options: [
+          { value: "a", name: "A" },
+          { value: "b", name: "B" },
+        ],
+      };
+
+      test("renders one dropdown per generic config option", () => {
+        controller.handleMessage({
+          type: "sessionMetadata",
+          modes: null,
+          models: null,
+          genericConfigOptions: [thoughtLevel, otherOption],
+        });
+
+        const wrappers =
+          elements.configOptionsContainer.querySelectorAll(".custom-dropdown");
+        assert.strictEqual(wrappers.length, 2);
+        assert.ok(
+          elements.configOptionsContainer.querySelector(
+            '[data-config-id="thought_level"]'
+          )
+        );
+        assert.ok(
+          elements.configOptionsContainer.querySelector(
+            '[data-config-id="custom_knob"]'
+          )
+        );
+      });
+
+      test("thought_level option gets lightbulb icon, others do not", () => {
+        controller.handleMessage({
+          type: "sessionMetadata",
+          modes: null,
+          models: null,
+          genericConfigOptions: [thoughtLevel, otherOption],
+        });
+
+        const thoughtWrapper =
+          elements.configOptionsContainer.querySelector<HTMLElement>(
+            '[data-config-id="thought_level"]'
+          )!;
+        const customWrapper =
+          elements.configOptionsContainer.querySelector<HTMLElement>(
+            '[data-config-id="custom_knob"]'
+          )!;
+        assert.ok(
+          thoughtWrapper.querySelector(".codicon-lightbulb"),
+          "thought_level should have a lightbulb icon"
+        );
+        assert.strictEqual(
+          customWrapper.querySelector(".dropdown-icon"),
+          null,
+          "non-thought_level options should not have an icon"
+        );
+      });
+
+      test("uses option.name as the selected label", () => {
+        controller.handleMessage({
+          type: "sessionMetadata",
+          modes: null,
+          models: null,
+          genericConfigOptions: [thoughtLevel],
+        });
+
+        const label = elements.configOptionsContainer
+          .querySelector('[data-config-id="thought_level"]')
+          ?.querySelector(".selected-label");
+        assert.strictEqual(label?.textContent, "Medium");
+      });
+
+      test("selecting a value posts selectConfigOption with configId and value", () => {
+        controller.handleMessage({
+          type: "sessionMetadata",
+          modes: null,
+          models: null,
+          genericConfigOptions: [thoughtLevel],
+        });
+
+        const wrapper =
+          elements.configOptionsContainer.querySelector<HTMLElement>(
+            '[data-config-id="thought_level"]'
+          )!;
+        wrapper
+          .querySelector(".dropdown-trigger")
+          ?.dispatchEvent(new window.MouseEvent("click"));
+        const popover = wrapper.querySelector(".dropdown-popover")!;
+        const items = popover.querySelectorAll(".dropdown-item");
+        assert.ok(items.length >= 3);
+        const last = items[items.length - 1] as HTMLElement;
+        last.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+        const messages = mockVsCode._getMessages();
+        const select = messages.find(
+          (m): m is { type: string; configId: string; value: string } =>
+            typeof m === "object" &&
+            m !== null &&
+            (m as { type?: unknown }).type === "selectConfigOption"
+        );
+        assert.ok(select, "expected a selectConfigOption postMessage");
+        assert.strictEqual(select!.configId, "thought_level");
+        assert.strictEqual(select!.value, "high");
+      });
+
+      test("removes dropdown when option no longer present", () => {
+        controller.handleMessage({
+          type: "sessionMetadata",
+          modes: null,
+          models: null,
+          genericConfigOptions: [thoughtLevel],
+        });
+        assert.ok(
+          elements.configOptionsContainer.querySelector(
+            '[data-config-id="thought_level"]'
+          )
+        );
+
+        controller.handleMessage({
+          type: "sessionMetadata",
+          modes: null,
+          models: null,
+          genericConfigOptions: [],
+        });
+        assert.strictEqual(
+          elements.configOptionsContainer.querySelector(
+            '[data-config-id="thought_level"]'
+          ),
+          null
+        );
       });
     });
 

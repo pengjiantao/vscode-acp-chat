@@ -183,7 +183,7 @@ suite("ChatViewProvider", () => {
         memento as any
       );
 
-      const restoreMethod = (provider as any).restoreSavedModeAndModel;
+      const restoreMethod = (provider as any).restoreSessionPreferences;
       await restoreMethod.call(provider);
 
       assert.strictEqual(client.lastSetModeId, "test-mode");
@@ -218,7 +218,7 @@ suite("ChatViewProvider", () => {
         memento as any
       );
 
-      const restoreMethod = (provider as any).restoreSavedModeAndModel;
+      const restoreMethod = (provider as any).restoreSessionPreferences;
       await restoreMethod.call(provider);
 
       assert.strictEqual(client.lastSetModelId, "gpt-4");
@@ -253,7 +253,7 @@ suite("ChatViewProvider", () => {
         memento as any
       );
 
-      const restoreMethod = (provider as any).restoreSavedModeAndModel;
+      const restoreMethod = (provider as any).restoreSessionPreferences;
       await restoreMethod.call(provider);
 
       assert.strictEqual(client.getSetModeCallCount(), 0);
@@ -287,7 +287,7 @@ suite("ChatViewProvider", () => {
         memento as any
       );
 
-      const restoreMethod = (provider as any).restoreSavedModeAndModel;
+      const restoreMethod = (provider as any).restoreSessionPreferences;
       await restoreMethod.call(provider);
 
       assert.strictEqual(client.getSetModelCallCount(), 0);
@@ -300,7 +300,7 @@ suite("ChatViewProvider", () => {
         memento as any
       );
 
-      const restoreMethod = (provider as any).restoreSavedModeAndModel;
+      const restoreMethod = (provider as any).restoreSessionPreferences;
       await restoreMethod.call(provider);
 
       assert.strictEqual(acpClient.getSetModeCallCount(), 0);
@@ -336,7 +336,7 @@ suite("ChatViewProvider", () => {
         memento as any
       );
 
-      const restoreMethod = (provider as any).restoreSavedModeAndModel;
+      const restoreMethod = (provider as any).restoreSessionPreferences;
 
       await assert.rejects(() => restoreMethod.call(provider));
     });
@@ -566,7 +566,7 @@ suite("ChatViewProvider", () => {
         memento as any
       );
 
-      const restoreMethod = (provider as any).restoreSavedModeAndModel;
+      const restoreMethod = (provider as any).restoreSessionPreferences;
       await restoreMethod.call(provider);
 
       assert.strictEqual(client.lastSetModeId, "mode-b");

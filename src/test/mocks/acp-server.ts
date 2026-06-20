@@ -202,6 +202,19 @@ export class MockACPServer {
             { value: "architect", name: "Architect" },
           ],
         },
+        {
+          id: "thought_level",
+          name: "Thought Level",
+          category: "thought_level",
+          type: "select",
+          currentValue: "medium",
+          options: [
+            { value: "off", name: "Off" },
+            { value: "low", name: "Low" },
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
+          ],
+        },
       ];
       // Remove old format fields to simulate new agents
       delete response.models;
@@ -544,6 +557,19 @@ export class MockACPServer {
           options: [
             { value: "code", name: "Code" },
             { value: "architect", name: "Architect" },
+          ],
+        },
+        {
+          id: "thought_level",
+          name: "Thought Level",
+          category: "thought_level",
+          type: "select",
+          currentValue: configId === "thought_level" ? value : "medium",
+          options: [
+            { value: "off", name: "Off" },
+            { value: "low", name: "Low" },
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
           ],
         },
       ],

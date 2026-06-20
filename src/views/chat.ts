@@ -36,6 +36,7 @@ const AGENT_PREFS_KEY = "vscode-acp-chat.agentPreferences.v1";
 interface AgentPreference {
   modeId?: string;
   modelId?: string;
+  configOptionValues: Record<string, string>;
   starredModels: string[];
 }
 
@@ -47,6 +48,7 @@ interface WebviewMessage {
     | "ready"
     | "selectMode"
     | "selectModel"
+    | "selectConfigOption"
     | "connect"
     | "newChat"
     | "clearChat"
@@ -64,6 +66,8 @@ interface WebviewMessage {
   text?: string;
   modeId?: string;
   modelId?: string;
+  configId?: string;
+  value?: string;
   isStarred?: boolean;
   images?: string[];
   mentions?: Array<{
@@ -303,6 +307,14 @@ export class ChatViewProvider
             await this.handleModelChange(message.modelId);
           }
           break;
+        case "selectConfigOption":
+          if (message.configId && message.value !== undefined) {
+            await this.handleConfigOptionChange(
+              message.configId,
+              message.value
+            );
+          }
+          break;
         case "toggleModelStar":
           if (
             message.modelId !== undefined &&
@@ -512,7 +524,12 @@ export class ChatViewProvider
     this.clearToolCallMetadata();
     this.diffManager.clear();
     this.postMessage({ type: "chatCleared" });
-    this.postMessage({ type: "sessionMetadata", modes: null, models: null });
+    this.postMessage({
+      type: "sessionMetadata",
+      modes: null,
+      models: null,
+      genericConfigOptions: [],
+    });
     this.acpClient.clearLastUsageUpdate();
     this.sendContextUsage();
 
@@ -1466,7 +1483,12 @@ export class ChatViewProvider
         agentId,
         agentName: agent.name,
       });
-      this.postMessage({ type: "sessionMetadata", modes: null, models: null });
+      this.postMessage({
+        type: "sessionMetadata",
+        modes: null,
+        models: null,
+        genericConfigOptions: [],
+      });
       this.acpClient.clearLastUsageUpdate();
       this.sendContextUsage();
 
@@ -1501,6 +1523,25 @@ export class ChatViewProvider
     }
   }
 
+  private async handleConfigOptionChange(
+    configId: string,
+    value: string
+  ): Promise<void> {
+    try {
+      await this.acpClient.setConfigOption(configId, value);
+      await this.updateCurrentAgentPreference((pref) => ({
+        ...pref,
+        configOptionValues: {
+          ...pref.configOptionValues,
+          [configId]: value,
+        },
+      }));
+      this.sendSessionMetadata();
+    } catch (error) {
+      console.error(`[Chat] Failed to set config option ${configId}:`, error);
+    }
+  }
+
   private async handleConnect(): Promise<void> {
     try {
       if (!this.acpClient.isConnected()) {
@@ -1530,7 +1571,12 @@ export class ChatViewProvider
     this.clearToolCallMetadata();
     this.diffManager.clear();
     this.postMessage({ type: "chatCleared" });
-    this.postMessage({ type: "sessionMetadata", modes: null, models: null });
+    this.postMessage({
+      type: "sessionMetadata",
+      modes: null,
+      models: null,
+      genericConfigOptions: [],
+    });
     this.acpClient.clearLastUsageUpdate();
     this.sendContextUsage();
 
@@ -1558,14 +1604,18 @@ export class ChatViewProvider
       type: "sessionMetadata",
       modes: metadata?.modes ?? null,
       models: metadata?.models ?? null,
+      genericConfigOptions: metadata?.genericConfigOptions ?? [],
       commands: metadata?.commands ?? null,
       starredModels: pref.starredModels,
     });
 
     if (!this.hasRestoredModeModel && this.hasSession) {
       this.hasRestoredModeModel = true;
-      this.restoreSavedModeAndModel().catch((error) =>
-        console.warn("[Chat] Failed to restore saved mode/model:", error)
+      this.restoreSessionPreferences().catch((error) =>
+        console.warn(
+          "[Chat] Failed to restore saved session preferences:",
+          error
+        )
       );
     }
   }
@@ -1593,7 +1643,7 @@ export class ChatViewProvider
     const agentId = this.acpClient.getAgentId();
     const allPrefs =
       this.globalState.get<AgentPreferences>(AGENT_PREFS_KEY) ?? {};
-    return allPrefs[agentId] ?? { starredModels: [] };
+    return allPrefs[agentId] ?? { configOptionValues: {}, starredModels: [] };
   }
 
   private async updateCurrentAgentPreference(
@@ -1602,11 +1652,13 @@ export class ChatViewProvider
     const agentId = this.acpClient.getAgentId();
     const allPrefs =
       this.globalState.get<AgentPreferences>(AGENT_PREFS_KEY) ?? {};
-    allPrefs[agentId] = updater(allPrefs[agentId] ?? { starredModels: [] });
+    allPrefs[agentId] = updater(
+      allPrefs[agentId] ?? { configOptionValues: {}, starredModels: [] }
+    );
     await this.globalState.update(AGENT_PREFS_KEY, allPrefs);
   }
 
-  private async restoreSavedModeAndModel(): Promise<void> {
+  private async restoreSessionPreferences(): Promise<void> {
     const metadata = this.acpClient.getSessionMetadata();
     const availableModes = Array.isArray(metadata?.modes?.availableModes)
       ? metadata.modes.availableModes
@@ -1614,11 +1666,15 @@ export class ChatViewProvider
     const availableModels = Array.isArray(metadata?.models?.availableModels)
       ? metadata.models.availableModels
       : [];
+    const genericConfigOptions = Array.isArray(metadata?.genericConfigOptions)
+      ? metadata.genericConfigOptions
+      : [];
 
     const pref = this.getCurrentAgentPreference();
 
     let modeRestored = false;
     let modelRestored = false;
+    const configOptionsRestored: string[] = [];
 
     if (
       pref.modeId &&
@@ -1642,10 +1698,33 @@ export class ChatViewProvider
       modelRestored = true;
     }
 
-    if (modeRestored || modelRestored) {
+    const savedConfigValues = pref.configOptionValues ?? {};
+    for (const opt of genericConfigOptions) {
+      const saved = savedConfigValues[opt.id];
+      if (!saved) continue;
+      const stillAvailable = opt.options.some((o) => o.value === saved);
+      if (!stillAvailable) continue;
+      if (saved === opt.currentValue) continue;
+      try {
+        await this.acpClient.setConfigOption(opt.id, saved);
+        console.log(`[Chat] Restored config option ${opt.id}: ${saved}`);
+        configOptionsRestored.push(opt.id);
+      } catch (error) {
+        console.warn(
+          `[Chat] Failed to restore config option ${opt.id}:`,
+          error
+        );
+      }
+    }
+
+    if (modeRestored || modelRestored || configOptionsRestored.length > 0) {
+      const refreshed = this.acpClient.getSessionMetadata();
       this.postMessage({
         type: "sessionMetadata",
-        ...metadata,
+        modes: refreshed?.modes ?? null,
+        models: refreshed?.models ?? null,
+        genericConfigOptions: refreshed?.genericConfigOptions ?? [],
+        commands: refreshed?.commands ?? null,
         starredModels: pref.starredModels,
       });
     }
@@ -1775,6 +1854,7 @@ export class ChatViewProvider
           </div>
           <div class="dropdown-popover"></div>
         </div>
+        <div id="config-options-container" class="config-options-container"></div>
         <div id="context-usage-ring" class="context-usage" hidden aria-label="Context usage">
           <svg viewBox="0 0 18 18" width="18" height="18" role="img">
             <circle class="context-usage__bg" cx="9" cy="9" r="7"></circle>

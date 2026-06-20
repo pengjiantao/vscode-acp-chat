@@ -1421,6 +1421,13 @@ body {
 }
 
 /* Custom VSCode Style Dropdowns */
+.config-options-container {
+  /* The container itself disappears from the layout, so dynamically added
+   * `.custom-dropdown` children become direct flex children of
+   * `#left-options` and inherit its `gap: 8px`. */
+  display: contents;
+}
+
 .custom-dropdown {
   position: relative;
   display: flex;

@@ -63,9 +63,22 @@ import {
   type McpServerConfig,
 } from "../mcp";
 
+export interface GenericConfigOption {
+  id: string;
+  name: string;
+  category: string | null;
+  options: Array<{
+    value: string;
+    name: string;
+    description?: string | null;
+  }>;
+  currentValue: string;
+}
+
 export interface SessionMetadata {
   modes: SessionModeState | null;
   models: SessionModelState | null;
+  genericConfigOptions: GenericConfigOption[];
   commands: AvailableCommand[] | null;
   lastUsageUpdate?: ContextUsageUpdate | null;
 }
@@ -77,22 +90,30 @@ export interface ContextUsageUpdate {
 }
 
 /**
- * Extract models and modes from the newer `configOptions` format.
+ * Extract models, modes and any other select-type config options from the
+ * newer `configOptions` format.
  *
  * The ACP protocol has evolved: older agents return `models` and `modes`
  * directly in session responses, while newer agents (e.g. OpenCode) return
- * a unified `configOptions` array. This function converts the latter to
- * the former so the rest of the extension works unchanged.
+ * a unified `configOptions` array. This function converts the latter into
+ * the legacy shapes (for backwards compatibility) and also surfaces any
+ * other select config options (e.g. `thought_level`) so the UI can render
+ * them as extra dropdowns.
  */
-export function extractModelsAndModesFromConfigOptions(
+export function extractConfigOptions(
   configOptions: Array<SessionConfigOption> | null | undefined
-): { models: SessionModelState | null; modes: SessionModeState | null } {
+): {
+  models: SessionModelState | null;
+  modes: SessionModeState | null;
+  generic: GenericConfigOption[];
+} {
   if (!configOptions?.length) {
-    return { models: null, modes: null };
+    return { models: null, modes: null, generic: [] };
   }
 
   let models: SessionModelState | null = null;
   let modes: SessionModeState | null = null;
+  const generic: GenericConfigOption[] = [];
 
   for (const opt of configOptions) {
     if (opt.type !== "select") continue;
@@ -106,6 +127,7 @@ export function extractModelsAndModesFromConfigOptions(
         })),
         currentModelId: opt.currentValue,
       };
+      continue;
     }
     if (opt.id === "mode") {
       const flatOptions = flattenSelectOptions(opt.options);
@@ -116,9 +138,34 @@ export function extractModelsAndModesFromConfigOptions(
         })),
         currentModeId: opt.currentValue,
       };
+      continue;
     }
+
+    const flatOptions = flattenSelectOptions(opt.options);
+    generic.push({
+      id: opt.id,
+      name: opt.name || opt.id,
+      category: opt.category ?? null,
+      options: flatOptions.map((o) => ({
+        value: o.value,
+        name: o.name || o.value,
+      })),
+      currentValue: opt.currentValue,
+    });
   }
 
+  return { models, modes, generic };
+}
+
+/**
+ * Backwards-compatible wrapper around {@link extractConfigOptions} that
+ * only returns the model and mode state. Kept for existing callers and
+ * tests.
+ */
+export function extractModelsAndModesFromConfigOptions(
+  configOptions: Array<SessionConfigOption> | null | undefined
+): { models: SessionModelState | null; modes: SessionModeState | null } {
+  const { models, modes } = extractConfigOptions(configOptions);
   return { models, modes };
 }
 
@@ -588,14 +635,16 @@ export class ACPClient {
     const response = await this.connection.loadSession(request);
     this.currentSessionId = params.sessionId;
 
-    // Extract models/modes from configOptions if available
+    // Extract models/modes/generic config options from configOptions if available
     if (response.configOptions) {
-      const converted = extractModelsAndModesFromConfigOptions(
-        response.configOptions
-      );
+      const converted = extractConfigOptions(response.configOptions);
       this.sessionMetadata = {
         modes: converted.modes ?? this.sessionMetadata?.modes ?? null,
         models: converted.models ?? this.sessionMetadata?.models ?? null,
+        genericConfigOptions:
+          converted.generic.length > 0
+            ? converted.generic
+            : (this.sessionMetadata?.genericConfigOptions ?? []),
         commands: this.sessionMetadata?.commands ?? null,
       };
     }
@@ -689,13 +738,13 @@ export class ACPClient {
     // Prefer configOptions (new ACP format), fall back to models/modes (old format), then existing metadata
     let models: SessionModelState | null = null;
     let modes: SessionModeState | null = null;
+    let genericConfigOptions: GenericConfigOption[] = [];
 
     if (response.configOptions) {
-      const converted = extractModelsAndModesFromConfigOptions(
-        response.configOptions
-      );
+      const converted = extractConfigOptions(response.configOptions);
       models = converted.models;
       modes = converted.modes;
+      genericConfigOptions = converted.generic;
     }
 
     // Fall back to old format if configOptions didn't provide model/mode
@@ -705,10 +754,14 @@ export class ACPClient {
     // Fall back to existing session metadata
     models = models ?? this.sessionMetadata?.models ?? null;
     modes = modes ?? this.sessionMetadata?.modes ?? null;
+    if (genericConfigOptions.length === 0) {
+      genericConfigOptions = this.sessionMetadata?.genericConfigOptions ?? [];
+    }
 
     this.sessionMetadata = {
       modes,
       models,
+      genericConfigOptions,
       commands: this.pendingCommands ?? this.sessionMetadata?.commands ?? null,
     };
     this.pendingCommands = null;
@@ -743,9 +796,10 @@ export class ACPClient {
     configOptions: Array<SessionConfigOption>
   ): void {
     if (!this.sessionMetadata) return;
-    const converted = extractModelsAndModesFromConfigOptions(configOptions);
+    const converted = extractConfigOptions(configOptions);
     if (converted.models) this.sessionMetadata.models = converted.models;
     if (converted.modes) this.sessionMetadata.modes = converted.modes;
+    this.sessionMetadata.genericConfigOptions = converted.generic;
   }
 
   getCurrentSessionId(): string | null {
@@ -803,6 +857,21 @@ export class ACPClient {
       if (this.sessionMetadata?.models) {
         this.sessionMetadata.models.currentModelId = modelId;
       }
+    }
+  }
+
+  async setConfigOption(configId: string, value: string): Promise<void> {
+    if (!this.connection || !this.currentSessionId) {
+      throw new Error("No active session");
+    }
+
+    const response = await this.connection.setSessionConfigOption({
+      sessionId: this.currentSessionId,
+      configId,
+      value,
+    });
+    if (response.configOptions) {
+      this.updateSessionMetadataFromConfigOptions(response.configOptions);
     }
   }
 

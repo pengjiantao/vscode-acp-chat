@@ -3,6 +3,7 @@ import * as assert from "assert";
 import { ChildProcess } from "child_process";
 import {
   ACPClient,
+  extractConfigOptions,
   extractModelsAndModesFromConfigOptions,
   type SpawnFunction,
 } from "../acp/client";
@@ -610,5 +611,111 @@ suite("ACPClient with configOptions format", () => {
     assert.ok(metadata);
     assert.ok(metadata.modes);
     assert.strictEqual(metadata.modes.currentModeId, "architect");
+  });
+
+  test("newSession should surface thought_level as a generic config option", async () => {
+    await client.connect();
+    await client.newSession("/test/dir");
+
+    const metadata = client.getSessionMetadata();
+    assert.ok(metadata);
+    assert.ok(Array.isArray(metadata.genericConfigOptions));
+    const thought = metadata.genericConfigOptions.find(
+      (o) => o.id === "thought_level"
+    );
+    assert.ok(thought, "expected thought_level in genericConfigOptions");
+    assert.strictEqual(thought!.category, "thought_level");
+    assert.strictEqual(thought!.currentValue, "medium");
+    assert.strictEqual(thought!.options.length, 4);
+  });
+
+  test("setConfigOption should update generic config option state", async () => {
+    await client.connect();
+    await client.newSession("/test/dir");
+
+    await client.setConfigOption("thought_level", "high");
+
+    const metadata = client.getSessionMetadata();
+    assert.ok(metadata);
+    const thought = metadata.genericConfigOptions.find(
+      (o) => o.id === "thought_level"
+    );
+    assert.ok(thought);
+    assert.strictEqual(thought!.currentValue, "high");
+  });
+});
+
+suite("extractConfigOptions", () => {
+  test("returns empty generic array for null input", () => {
+    const result = extractConfigOptions(null);
+    assert.strictEqual(result.models, null);
+    assert.strictEqual(result.modes, null);
+    assert.deepStrictEqual(result.generic, []);
+  });
+
+  test("extracts thought_level into generic with category preserved", () => {
+    const configOptions: SessionConfigOption[] = [
+      {
+        id: "thought_level",
+        name: "Thought Level",
+        category: "thought_level",
+        type: "select",
+        currentValue: "medium",
+        options: [
+          { value: "off", name: "Off" },
+          { value: "medium", name: "Medium" },
+          { value: "high", name: "High" },
+        ],
+      },
+    ];
+    const result = extractConfigOptions(configOptions);
+    assert.strictEqual(result.models, null);
+    assert.strictEqual(result.modes, null);
+    assert.strictEqual(result.generic.length, 1);
+    assert.strictEqual(result.generic[0].id, "thought_level");
+    assert.strictEqual(result.generic[0].category, "thought_level");
+    assert.strictEqual(result.generic[0].currentValue, "medium");
+    assert.strictEqual(result.generic[0].options.length, 3);
+  });
+
+  test("extracts unknown id into generic and leaves model/mode intact", () => {
+    const configOptions: SessionConfigOption[] = [
+      {
+        id: "model",
+        name: "Model",
+        type: "select",
+        currentValue: "gpt-4",
+        options: [{ value: "gpt-4", name: "GPT-4" }],
+      },
+      {
+        id: "custom_knob",
+        name: "Custom Knob",
+        type: "select",
+        currentValue: "a",
+        options: [{ value: "a", name: "A" }],
+      },
+    ];
+    const result = extractConfigOptions(configOptions);
+    assert.ok(result.models);
+    assert.strictEqual(result.models.currentModelId, "gpt-4");
+    assert.strictEqual(result.generic.length, 1);
+    assert.strictEqual(result.generic[0].id, "custom_knob");
+    assert.strictEqual(result.generic[0].category, null);
+  });
+
+  test("backwards-compatible wrapper still returns only models/modes", () => {
+    const configOptions: SessionConfigOption[] = [
+      {
+        id: "thought_level",
+        name: "Thought Level",
+        category: "thought_level",
+        type: "select",
+        currentValue: "low",
+        options: [{ value: "low", name: "Low" }],
+      },
+    ];
+    const result = extractModelsAndModesFromConfigOptions(configOptions);
+    assert.strictEqual(result.models, null);
+    assert.strictEqual(result.modes, null);
   });
 });
