@@ -37,6 +37,13 @@ import {
   type ListSessionsResponse,
   type McpServer,
   type McpCapabilities,
+  type DidOpenDocumentNotification,
+  type DidChangeDocumentNotification,
+  type DidCloseDocumentNotification,
+  type DidSaveDocumentNotification,
+  type DidFocusDocumentNotification,
+  type Position,
+  type Range,
 } from "@agentclientprotocol/sdk";
 import {
   type AgentConfig,
@@ -520,6 +527,10 @@ export class ACPClient {
       this.setState("connected");
       await this.reloadMcpServers();
       this.agentCapabilities = initResponse.agentCapabilities ?? null;
+      console.log(
+        "[ACP] Agent capabilities:",
+        JSON.stringify(this.agentCapabilities, null, 2)
+      );
       return initResponse;
     } catch (error) {
       this.setState("error");
@@ -851,6 +862,129 @@ export class ACPClient {
     this.pendingCommands = null;
     this.agentCapabilities = null;
     this.setState("disconnected");
+  }
+
+  /**
+   * Return the NES document event capabilities the agent advertised.
+   * Returns an object with boolean flags for each supported event type.
+   */
+  getNesDocumentCapabilities(): {
+    didOpen: boolean;
+    didChange: { syncKind: "full" | "incremental" } | null;
+    didClose: boolean;
+    didSave: boolean;
+    didFocus: boolean;
+  } {
+    const doc = this.agentCapabilities?.nes?.events?.document;
+    if (!doc) {
+      return {
+        didOpen: false,
+        didChange: null,
+        didClose: false,
+        didSave: false,
+        didFocus: false,
+      };
+    }
+    return {
+      didOpen: !!doc.didOpen,
+      didChange: doc.didChange ?? null,
+      didClose: !!doc.didClose,
+      didSave: !!doc.didSave,
+      didFocus: !!doc.didFocus,
+    };
+  }
+
+  async notifyDidOpenDocument(params: {
+    uri: string;
+    text: string;
+    languageId: string;
+    version: number;
+  }): Promise<void> {
+    if (!this.connection || !this.currentSessionId) {
+      return;
+    }
+    if (!this.getNesDocumentCapabilities().didOpen) {
+      return;
+    }
+    const notification: DidOpenDocumentNotification = {
+      sessionId: this.currentSessionId,
+      uri: params.uri,
+      text: params.text,
+      languageId: params.languageId,
+      version: params.version,
+    };
+    await this.connection.unstable_didOpenDocument(notification);
+  }
+
+  async notifyDidChangeDocument(params: {
+    uri: string;
+    contentChanges: Array<{ range?: Range | null; text: string }>;
+    version: number;
+  }): Promise<void> {
+    if (!this.connection || !this.currentSessionId) {
+      return;
+    }
+    const cap = this.getNesDocumentCapabilities().didChange;
+    if (!cap) {
+      return;
+    }
+    const notification: DidChangeDocumentNotification = {
+      sessionId: this.currentSessionId,
+      uri: params.uri,
+      contentChanges: params.contentChanges,
+      version: params.version,
+    };
+    await this.connection.unstable_didChangeDocument(notification);
+  }
+
+  async notifyDidCloseDocument(params: { uri: string }): Promise<void> {
+    if (!this.connection || !this.currentSessionId) {
+      return;
+    }
+    if (!this.getNesDocumentCapabilities().didClose) {
+      return;
+    }
+    const notification: DidCloseDocumentNotification = {
+      sessionId: this.currentSessionId,
+      uri: params.uri,
+    };
+    await this.connection.unstable_didCloseDocument(notification);
+  }
+
+  async notifyDidSaveDocument(params: { uri: string }): Promise<void> {
+    if (!this.connection || !this.currentSessionId) {
+      return;
+    }
+    if (!this.getNesDocumentCapabilities().didSave) {
+      return;
+    }
+    const notification: DidSaveDocumentNotification = {
+      sessionId: this.currentSessionId,
+      uri: params.uri,
+    };
+    await this.connection.unstable_didSaveDocument(notification);
+  }
+
+  async notifyDidFocusDocument(params: {
+    uri: string;
+    position: Position;
+    version: number;
+    visibleRange: Range;
+  }): Promise<void> {
+    if (!this.connection || !this.currentSessionId) {
+      return;
+    }
+    if (!this.getNesDocumentCapabilities().didFocus) {
+      return;
+    }
+    const notification: DidFocusDocumentNotification = {
+      sessionId: this.currentSessionId,
+      uri: params.uri,
+      position: params.position,
+      version: params.version,
+      visibleRange: params.visibleRange,
+    };
+    await this.connection.unstable_didFocusDocument(notification);
   }
 
   private setState(state: ACPConnectionState): void {

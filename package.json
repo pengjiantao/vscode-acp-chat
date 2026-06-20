@@ -129,6 +129,11 @@
           "default": true,
           "description": "Whether to pass MCP server configurations to the agent via ACP newSession/loadSession requests."
         },
+        "vscode-acp-chat.enableDocumentSync": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send document open/close/change/save/focus notifications to the ACP agent. Requires agent support for NES document events."
+        },
         "vscode-acp-chat.customAgents": {
           "type": "array",
           "default": [],

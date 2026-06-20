@@ -5,6 +5,7 @@ import { ACPClient } from "../acp/client";
 import { getAgent, getFirstAvailableAgent } from "../acp/agents";
 import { DiffManager } from "../acp/diff-manager";
 import { AgentSessionManager, type SessionInfo } from "../acp/session-manager";
+import { DocumentSyncManager } from "../acp/document-sync";
 import {
   extractMentions,
   parseMentionsFromText,
@@ -125,6 +126,7 @@ export class ChatViewProvider
   private textDecoder = new TextDecoder();
   private textEncoder = new TextEncoder();
   private diffManager: DiffManager;
+  private documentSyncManager: DocumentSyncManager;
   private permissionQueue: Array<{
     id: string;
     params: RequestPermissionRequest;
@@ -144,6 +146,7 @@ export class ChatViewProvider
     this.globalState = globalState;
     this.diffManager = new DiffManager();
     this.sessionManager = new AgentSessionManager(acpClient);
+    this.documentSyncManager = new DocumentSyncManager(acpClient);
 
     vscode.workspace.registerTextDocumentContentProvider(
       "acp-old-content",
@@ -515,6 +518,7 @@ export class ChatViewProvider
         await this.acpClient.connect();
       }
       this.sessionManager.syncCapabilities();
+      this.documentSyncManager.syncCapabilities();
 
       // Set flag to indicate we're loading history
       this.isLoadingHistory = true;
@@ -937,6 +941,9 @@ export class ChatViewProvider
   public dispose(): void {
     if (this.diffManager) {
       this.diffManager.dispose();
+    }
+    if (this.documentSyncManager) {
+      this.documentSyncManager.dispose();
     }
     for (const terminal of this.terminals.values()) {
       this.killTerminalProcess(terminal);
@@ -1429,6 +1436,7 @@ export class ChatViewProvider
       this.hasRestoredModeModel = false;
       this.diffManager.clear();
       this.sessionManager.syncCapabilities();
+      this.documentSyncManager.syncCapabilities();
       this.postMessage({
         type: "agentChanged",
         agentId,
@@ -1473,6 +1481,7 @@ export class ChatViewProvider
         await this.acpClient.connect();
       }
       this.sessionManager.syncCapabilities();
+      this.documentSyncManager.syncCapabilities();
       if (!this.hasSession) {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         const workingDir = workspaceFolder?.uri.fsPath || process.cwd();
