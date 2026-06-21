@@ -1283,7 +1283,7 @@ export class WebviewController {
         }
       }
 
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !this.isGenerating) {
         e.preventDefault();
         this.send();
       } else if (e.key === "Escape") {
@@ -1906,6 +1906,7 @@ export class WebviewController {
   }
 
   private send(): void {
+    if (this.isGenerating) return;
     const inputEl = this.elements.inputEl;
     const mentions: Mention[] = [];
     const images: string[] = [];

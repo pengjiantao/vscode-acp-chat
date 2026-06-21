@@ -142,6 +142,9 @@ export class ChatViewProvider
   // Flag to track if we're currently loading history via loadSession
   private isLoadingHistory = false;
 
+  // Flag to track if the agent is currently generating a response
+  private isGenerating = false;
+
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly acpClient: ACPClient,
@@ -1461,6 +1464,9 @@ export class ChatViewProvider
       dataUrl?: string;
     }> = []
   ): Promise<void> {
+    if (this.isGenerating) return;
+    this.isGenerating = true;
+
     // Clear history restoration buffer on new user interaction
     this.userMessageBuffer = "";
     this.userMessageImages = [];
@@ -1502,6 +1508,8 @@ export class ChatViewProvider
       });
       this.postMessage({ type: "streamEnd", stopReason: "error" });
       this.stderrBuffer = "";
+    } finally {
+      this.isGenerating = false;
     }
   }
 
