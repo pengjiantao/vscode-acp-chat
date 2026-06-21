@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.8.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.8.0...v1.8.1) (2026-06-21)
+
+### Bug Fixes
+
+- only use IO block rendering for execute tools ([f1471aa](https://github.com/pengjiantao/vscode-acp-chat/commit/f1471aafa1b5d8cd9f33b4e7f0b30d5aa9e5d88a))
+
 ## [1.8.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.7.0...v1.8.0) (2026-06-21)
 
 ### Features
