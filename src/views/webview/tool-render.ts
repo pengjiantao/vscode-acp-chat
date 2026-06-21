@@ -384,26 +384,40 @@ const BaseRenderer: ToolRenderer = {
 };
 
 // 专用渲染器映射
+function renderFileEditDetails(info: ToolCallSummary): string {
+  let html = '<div class="tool-details-panel">';
+  const diffItem = info.content?.find((c) => c.type === "diff");
+  if (diffItem) {
+    html += renderDiff(diffItem.path, diffItem.oldText, diffItem.newText);
+  } else {
+    if (info.content) {
+      for (const item of info.content) {
+        if (item.type === "content" && item.content?.text) {
+          html += `<div class="code-block-wrapper"><pre class="tool-output">${escapeHtml(item.content.text)}</pre></div>`;
+        }
+      }
+    }
+    if (info.terminalOutput) {
+      const hasAnsi = hasAnsiCodes(info.terminalOutput);
+      const outputHtml = hasAnsi
+        ? ansiToHtml(info.terminalOutput)
+        : escapeHtml(info.terminalOutput);
+      const terminalClass = hasAnsi ? " terminal" : "";
+      html += `<div class="code-block-wrapper"><pre class="tool-output${terminalClass}">${outputHtml}</pre></div>`;
+    }
+  }
+  html += "</div>";
+  return html;
+}
+
 const Renderers: Partial<Record<ToolKind, ToolRenderer>> = {
   edit: {
     ...BaseRenderer,
-    renderSummary(info) {
-      const path = getIdentifier(info);
-      const statusIcon =
-        info.status === "failed"
-          ? '<span class="codicon codicon-close"></span>'
-          : info.status === "in_progress"
-            ? '<span class="codicon codicon-loading animate-spin"></span>'
-            : '<span class="codicon codicon-check"></span>';
-      const durationStr = info.duration
-        ? ` | ${formatDuration(info.duration)}`
-        : "";
-      return `
-        <span class="tool-status ${info.status === "failed" ? "failed" : info.status === "in_progress" ? "running" : "completed"}">${statusIcon}</span>
-        <span class="tool-kind-icon"><span class="codicon codicon-edit"></span></span>
-        <span class="tool-name"><strong>Edit:</strong> ${escapeHtml(path)}${durationStr}</span>
-      `;
-    },
+    renderDetails: renderFileEditDetails,
+  },
+  write: {
+    ...BaseRenderer,
+    renderDetails: renderFileEditDetails,
   },
   read: {
     ...BaseRenderer,
