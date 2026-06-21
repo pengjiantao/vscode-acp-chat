@@ -2228,6 +2228,59 @@ suite("Webview", () => {
       assert.ok(html.includes('class="codicon codicon-terminal"'));
     });
 
+    test("execute tool prefers intent (description) over locations path in summary", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "bash",
+        kind: "execute",
+        status: "completed",
+        locations: [{ path: "/home/user/project" }],
+        rawInput: {
+          command: "cd /home/user/project && git status",
+          description: "Check git status and recent commits",
+        },
+      });
+      assert.ok(html.includes("Check git status and recent commits"));
+      assert.ok(!html.includes("/home/user/project"));
+    });
+
+    test("execute tool prefers intent over command when no locations", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "bash",
+        kind: "execute",
+        status: "completed",
+        rawInput: {
+          command: "npm test --coverage",
+          description: "Run tests with coverage",
+        },
+      });
+      assert.ok(html.includes("Run tests with coverage"));
+      assert.ok(!html.includes("npm test --coverage"));
+    });
+
+    test("execute tool falls back to command when no intent", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "bash",
+        kind: "execute",
+        status: "completed",
+        rawInput: { command: "npm test" },
+      });
+      assert.ok(html.includes("npm test"));
+    });
+
+    test("execute tool falls back to locations path when no intent or command", () => {
+      const html = renderToolSummary({
+        toolCallId: "tool-1",
+        title: "bash",
+        kind: "execute",
+        status: "completed",
+        locations: [{ path: "/home/user/project" }],
+      });
+      assert.ok(html.includes("/home/user/project"));
+    });
+
     test("does not render kind icon when kind is undefined", () => {
       const html = renderToolSummary({
         toolCallId: "tool-1",

@@ -62,7 +62,26 @@ export function getToolKindIcon(kind?: string): string {
 
 // 通用信息提取助手
 function getIdentifier(info: ToolCallSummary): string {
-  const { locations, rawInput, title } = info;
+  const { locations, rawInput, title, kind } = info;
+
+  // 对于 execute 类型工具，优先使用 intent (description)
+  const lower = (kind || "").toLowerCase();
+  if (
+    lower.startsWith("execute") ||
+    lower.startsWith("run") ||
+    lower === "bash" ||
+    lower === "sh"
+  ) {
+    if (
+      rawInput &&
+      typeof rawInput.description === "string" &&
+      rawInput.description &&
+      !isTechnicalName(rawInput.description)
+    ) {
+      return rawInput.description;
+    }
+  }
+
   // 1. 优先从 locations 提取 (后端通常在处理完成后填充)
   if (locations && locations.length > 0) return locations[0].path;
 
