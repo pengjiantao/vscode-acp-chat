@@ -228,24 +228,16 @@ const BaseRenderer: ToolRenderer = {
     const iconClass = getToolKindIcon(kind);
     const icon = iconClass ? `<span class="${iconClass}"></span>` : "";
     const statusIcon =
-      status === "failed"
-        ? '<span class="codicon codicon-close"></span>'
-        : status === "in_progress"
-          ? '<span class="codicon codicon-loading animate-spin"></span>'
-          : '<span class="codicon codicon-check"></span>';
-    const statusClass =
-      status === "failed"
-        ? "failed"
-        : status === "in_progress"
-          ? "running"
-          : "completed";
+      status === "in_progress"
+        ? `<span class="tool-status running"><span class="codicon codicon-loading animate-spin"></span></span>`
+        : "";
     const durationStr = duration ? ` | ${formatDuration(duration)}` : "";
     const identifier = getIdentifier(info);
 
     let kindLabel = normalizeKindLabel(kind);
 
     return `
-      <span class="tool-status ${statusClass}">${statusIcon}</span>
+      ${statusIcon}
       ${icon ? `<span class="tool-kind-icon">${icon}</span> ` : ""}
       <span class="tool-name"><strong>${kindLabel}:</strong> ${escapeHtml(identifier)}${durationStr}</span>
     `;
@@ -426,16 +418,14 @@ const Renderers: Partial<Record<ToolKind, ToolRenderer>> = {
       const limit = info.rawInput?.limit;
       const suffix = limit ? ` (${limit} lines)` : "";
       const statusIcon =
-        info.status === "failed"
-          ? '<span class="codicon codicon-close"></span>'
-          : info.status === "in_progress"
-            ? '<span class="codicon codicon-loading animate-spin"></span>'
-            : '<span class="codicon codicon-check"></span>';
+        info.status === "in_progress"
+          ? `<span class="tool-status running"><span class="codicon codicon-loading animate-spin"></span></span>`
+          : "";
       const durationStr = info.duration
         ? ` | ${formatDuration(info.duration)}`
         : "";
       return `
-        <span class="tool-status ${info.status === "failed" ? "failed" : info.status === "in_progress" ? "running" : "completed"}">${statusIcon}</span>
+        ${statusIcon}
         <span class="tool-kind-icon"><span class="codicon codicon-file-text"></span></span>
         <span class="tool-name"><strong>Read:</strong> ${escapeHtml(path)}${suffix}${durationStr}</span>
       `;
@@ -446,16 +436,14 @@ const Renderers: Partial<Record<ToolKind, ToolRenderer>> = {
     renderSummary(info) {
       const query = getIdentifier(info);
       const statusIcon =
-        info.status === "failed"
-          ? '<span class="codicon codicon-close"></span>'
-          : info.status === "in_progress"
-            ? '<span class="codicon codicon-loading animate-spin"></span>'
-            : '<span class="codicon codicon-check"></span>';
+        info.status === "in_progress"
+          ? `<span class="tool-status running"><span class="codicon codicon-loading animate-spin"></span></span>`
+          : "";
       const durationStr = info.duration
         ? ` | ${formatDuration(info.duration)}`
         : "";
       return `
-        <span class="tool-status ${info.status === "failed" ? "failed" : info.status === "in_progress" ? "running" : "completed"}">${statusIcon}</span>
+        ${statusIcon}
         <span class="tool-kind-icon"><span class="codicon codicon-search"></span></span>
         <span class="tool-name"><strong>Search:</strong> "${escapeHtml(query)}"${durationStr}</span>
       `;

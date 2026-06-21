@@ -188,7 +188,7 @@ suite("Webview", () => {
       assert.ok(html.includes("running"));
     });
 
-    test("renders completed tool with checkmark", () => {
+    test("renders completed tool without status icon", () => {
       const html = renderToolSummary({
         toolCallId: "tool-1",
         title: "read_file",
@@ -196,12 +196,13 @@ suite("Webview", () => {
         status: "completed",
         rawInput: { path: "path/to/file" },
       });
-      assert.ok(html.includes('<span class="codicon codicon-check"></span>'));
+      assert.ok(!html.includes("codicon-check"));
+      assert.ok(!html.includes("codicon-close"));
       assert.ok(html.includes("Read:"));
       assert.ok(html.includes("path/to/file"));
     });
 
-    test("renders failed tool with X", () => {
+    test("renders failed tool without status icon", () => {
       const html = renderToolSummary({
         toolCallId: "tool-1",
         title: "write_file",
@@ -209,8 +210,9 @@ suite("Webview", () => {
         status: "failed",
         rawInput: { path: "test.txt" },
       });
-      assert.ok(html.includes('<span class="codicon codicon-close"></span>'));
-      assert.ok(html.includes("failed"));
+      assert.ok(!html.includes("codicon-check"));
+      assert.ok(!html.includes("codicon-close"));
+      assert.ok(html.includes("Edit:"));
     });
 
     test("escapes tool title to prevent XSS", () => {

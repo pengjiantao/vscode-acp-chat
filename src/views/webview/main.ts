@@ -3111,6 +3111,15 @@ export class WebviewController {
               summary.innerHTML = summaryHtml;
             }
 
+            // Update tool-item class based on status
+            const toolItem = block.element.querySelector(".tool-item");
+            if (toolItem) {
+              toolItem.classList.remove("tool-failed");
+              if (msg.status === "failed") {
+                toolItem.classList.add("tool-failed");
+              }
+            }
+
             const detailsHtml = renderToolDetails({
               toolCallId: msg.toolCallId,
               title: finalTitle,

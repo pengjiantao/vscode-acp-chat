@@ -2011,6 +2011,10 @@ kbd {
   opacity: 0.85;
 }
 
+.tool-item.tool-failed {
+  border-left-color: var(--vscode-errorForeground);
+}
+
 .tool-item summary {
   cursor: pointer;
   padding: 4px 12px;
