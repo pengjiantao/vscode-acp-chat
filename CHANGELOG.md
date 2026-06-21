@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.7.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.6.1...v1.7.0) (2026-06-21)
+
+### Features
+
+- add confirmation dialog when agent is generating ([b27bbf5](https://github.com/pengjiantao/vscode-acp-chat/commit/b27bbf56a0e7ed84c3709a1c7d51f3c4664a3bfc))
+
+### Bug Fixes
+
+- prevent duplicate message sends while agent is generating ([d54668a](https://github.com/pengjiantao/vscode-acp-chat/commit/d54668a43e7cd4654e0cb19b25772ba5621fef96))
+
 ### [1.6.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.6.0...v1.6.1) (2026-06-21)
 
 ### Bug Fixes
