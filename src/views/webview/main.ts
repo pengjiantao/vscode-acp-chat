@@ -1723,11 +1723,12 @@ export class WebviewController {
     } else if (block.type === "tool") {
       const details = block.element.querySelector("details");
       if (details) {
-        // Keep edit/write tools open if they are completed successfully
-        // This matches the user's request for "Zed-style" visibility
+        // Keep edit/write/execute tools open if they are completed successfully
         const isWriteOrEdit = block.kind === "edit" || block.kind === "write";
+        const isExecute = block.kind === "execute";
 
-        const shouldKeepOpen = isWriteOrEdit || block.status === "failed";
+        const shouldKeepOpen =
+          isWriteOrEdit || isExecute || block.status === "failed";
 
         if (!shouldKeepOpen) {
           details.removeAttribute("open");

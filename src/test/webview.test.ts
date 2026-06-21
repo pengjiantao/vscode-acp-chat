@@ -282,9 +282,8 @@ suite("Webview", () => {
         status: "completed",
         rawInput: { command: "npm test", description: "Run tests" },
       });
-      assert.ok(html.includes('<div class="tool-details-panel">'));
-      assert.ok(html.includes("Type:"));
-      assert.ok(html.includes("execute"));
+      assert.ok(html.includes('<div class="io-block">'));
+      assert.ok(html.includes("$ npm test"));
     });
 
     test("renders input parameters in details", () => {
@@ -295,7 +294,7 @@ suite("Webview", () => {
         status: "completed",
         rawInput: { command: "npm test", cwd: "/project" },
       });
-      assert.ok(html.includes("Input:"));
+      assert.ok(html.includes('<div class="io-block">'));
       assert.ok(html.includes("$ npm test"));
       assert.ok(html.includes("cwd:"));
     });
@@ -308,7 +307,7 @@ suite("Webview", () => {
         status: "completed",
         rawOutput: { output: "All tests passed" },
       });
-      assert.ok(html.includes("Output:"));
+      assert.ok(html.includes('<div class="io-block">'));
       assert.ok(html.includes("All tests passed"));
     });
 
@@ -320,7 +319,7 @@ suite("Webview", () => {
         status: "completed",
         terminalOutput: "\x1b[32m✓ Tests passed\x1b[0m",
       });
-      assert.ok(html.includes("Output:"));
+      assert.ok(html.includes('<div class="io-block">'));
       assert.ok(html.includes('class="tool-output terminal"'));
       assert.ok(html.includes('class="ansi-green"'));
       assert.ok(html.includes("✓ Tests passed"));
@@ -346,8 +345,11 @@ suite("Webview", () => {
         status: "completed",
         locations: [{ path: "/src/test.ts", line: 42 }],
       });
-      assert.ok(html.includes("Path:"));
-      assert.ok(html.includes("/src/test.ts:42"));
+      // Type/Path/Intent removed by design — only IO block remains
+      assert.ok(
+        html.includes('<div class="io-block">') ||
+          !html.includes("tool-details-panel")
+      );
     });
 
     test("renders intent/description in details", () => {
@@ -358,8 +360,11 @@ suite("Webview", () => {
         status: "completed",
         rawInput: { description: "Running unit tests" },
       });
-      assert.ok(html.includes("Intent:"));
-      assert.ok(html.includes("Running unit tests"));
+      // Type/Path/Intent removed by design — only IO block remains
+      assert.ok(
+        html.includes('<div class="io-block">') ||
+          !html.includes("tool-details-panel")
+      );
     });
   });
 

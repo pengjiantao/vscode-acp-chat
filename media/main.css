@@ -2536,6 +2536,43 @@ kbd {
   font-size: 11px;
 }
 
+/* Unified IO Block */
+.io-block {
+  margin-top: 8px;
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.io-block-input {
+  border-bottom: 2px solid var(--vscode-widget-border);
+  background: var(--vscode-editor-background);
+}
+
+.io-block-input .detail-input {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.io-block-output .tool-output {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--vscode-editor-background);
+}
+
+.io-block .code-block-wrapper {
+  margin: 0;
+}
+
+.io-cmd-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
 /* Diff Summary Area */
 .diff-summary-container {
   background-color: var(--vscode-editorWidget-background);

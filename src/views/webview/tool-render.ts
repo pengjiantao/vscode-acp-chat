@@ -241,6 +241,112 @@ function normalizeKindLabel(kind: string | undefined): string {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
+function renderIOBlock(info: ToolCallSummary): string {
+  const { rawInput, rawOutput, content, terminalOutput } = info;
+  let html = "";
+
+  const command =
+    rawInput?.command || rawInput?.cmd || rawInput?.script || rawInput?.pattern;
+
+  const skipInputKeys = [
+    "description",
+    "content",
+    "text",
+    "newContent",
+    "newText",
+    "new_string",
+    "old_string",
+    "replacement",
+    "path",
+    "file",
+    "filePath",
+    "file_path",
+    "filename",
+    "uri",
+  ];
+
+  const hasDiff = content?.some((c) => c.type === "diff");
+
+  const otherInputEntries = rawInput
+    ? Object.entries(rawInput).filter(([k, v]) => {
+        const skipCmdKeys = [
+          "description",
+          "command",
+          "cmd",
+          "script",
+          "pattern",
+        ];
+        if (skipCmdKeys.includes(k)) return false;
+        if (hasDiff && skipInputKeys.includes(k)) return false;
+        return v !== undefined;
+      })
+    : [];
+
+  let outputText = "";
+  let isTerminal = false;
+
+  if (content && content.length > 0) {
+    const terminalItem = content.find((c) => c.type === "terminal");
+    const contentItem = content.find(
+      (c) => c.type === "content" && c.content?.text
+    );
+    const diffItem = content.find((c) => c.type === "diff");
+
+    if (terminalItem) {
+      outputText = terminalOutput || "";
+      isTerminal = hasAnsiCodes(outputText);
+    } else if (contentItem && contentItem.type === "content") {
+      outputText = contentItem.content?.text || "";
+    } else if (diffItem) {
+      return renderDiff(diffItem.path, diffItem.oldText, diffItem.newText);
+    }
+  }
+
+  if (!outputText) {
+    if (terminalOutput) {
+      outputText = terminalOutput;
+      isTerminal = hasAnsiCodes(outputText);
+    } else if (rawOutput?.output) {
+      outputText = String(rawOutput.output);
+    }
+  }
+
+  const hasInput = command || otherInputEntries.length > 0;
+  const hasOutput = outputText.length > 0;
+
+  if (!hasInput && !hasOutput) return "";
+
+  html += '<div class="io-block">';
+
+  if (hasInput) {
+    html += '<div class="io-block-input">';
+    html += '<div class="code-block-wrapper"><pre class="detail-input">';
+    if (command) {
+      const fullCmd = escapeHtml(formatValueForDisplay(command));
+      const truncated =
+        fullCmd.length > 120 ? fullCmd.slice(0, 117) + "..." : fullCmd;
+      html += `<div class="io-cmd-line" acp-title="${fullCmd}"><strong>$ ${truncated}</strong></div>`;
+    }
+    for (const [key, value] of otherInputEntries) {
+      const displayValue = formatValueForDisplay(value);
+      html += `<div><span class="param-key">${key}:</span> ${escapeHtml(displayValue)}</div>`;
+    }
+    html +=
+      '</pre><button class="code-copy-btn" acp-title="Copy input"><span class="codicon codicon-copy"></span></button></div></div>';
+  }
+
+  if (hasOutput) {
+    const outputHtml = isTerminal
+      ? ansiToHtml(outputText)
+      : escapeHtml(outputText);
+    const terminalClass = isTerminal ? " terminal" : "";
+    html += `<div class="io-block-output"><div class="code-block-wrapper"><pre class="tool-output${terminalClass}">${outputHtml}</pre><button class="code-copy-btn" acp-title="Copy output"><span class="codicon codicon-copy"></span></button></div></div>`;
+  }
+
+  html += "</div>";
+  return html;
+}
+
 const BaseRenderer: ToolRenderer = {
   renderSummary(info: ToolCallSummary): string {
     const { kind, duration, status } = info;
@@ -263,134 +369,7 @@ const BaseRenderer: ToolRenderer = {
   },
 
   renderDetails(info: ToolCallSummary): string {
-    const { kind, locations, rawInput, rawOutput, content, terminalOutput } =
-      info;
-    let html = '<div class="tool-details-panel">';
-
-    // Type
-    html += `<div class="detail-section"><span class="detail-label">Type:</span> ${kind || "unknown"}</div>`;
-
-    // Locations
-    if (locations && locations.length > 0) {
-      html +=
-        '<div class="detail-section"><span class="detail-label">Path:</span>';
-      for (const loc of locations) {
-        html += `<div class="detail-path">${escapeHtml(loc.path)}${loc.line ? `:${loc.line}` : ""}</div>`;
-      }
-      html += "</div>";
-    } else {
-      const p =
-        rawInput?.path ||
-        rawInput?.file ||
-        rawInput?.filePath ||
-        rawInput?.file_path ||
-        rawInput?.uri ||
-        rawInput?.filename ||
-        rawInput?.target ||
-        rawInput?.target_file ||
-        rawInput?.destination ||
-        rawInput?.source;
-      if (typeof p === "string") {
-        html += `<div class="detail-section"><span class="detail-label">Path:</span> ${escapeHtml(p)}</div>`;
-      }
-    }
-
-    // Intent
-    if (rawInput?.description) {
-      html += `<div class="detail-section"><span class="detail-label">Intent:</span> ${escapeHtml(String(rawInput.description))}</div>`;
-    }
-
-    // Input Parameters
-    if (rawInput) {
-      const skipInputKeys = [
-        "description",
-        "content",
-        "text",
-        "newContent",
-        "newText",
-        "new_string",
-        "old_string",
-        "replacement",
-        "path",
-        "file",
-        "filePath",
-        "file_path",
-        "filename",
-        "uri",
-      ];
-
-      const hasDiff = content?.some((c) => c.type === "diff");
-
-      const hasMeaningfulInput = Object.keys(rawInput).some((k) => {
-        if (k === "description") return false;
-        if (hasDiff && skipInputKeys.includes(k)) return false;
-        return rawInput[k] !== undefined;
-      });
-
-      if (hasMeaningfulInput) {
-        html +=
-          '<div class="detail-section"><span class="detail-label">Input:</span>';
-        html += '<div class="code-block-wrapper"><pre class="detail-input">';
-        for (const [key, value] of Object.entries(rawInput)) {
-          if (key === "description") continue;
-          if (hasDiff && skipInputKeys.includes(key)) continue;
-
-          if (value !== undefined) {
-            const displayValue = formatValueForDisplay(value);
-            if (key === "command" || key === "pattern") {
-              html += `<div><strong>$ ${escapeHtml(displayValue)}</strong></div>`;
-            } else {
-              html += `<div><span class="param-key">${key}:</span> ${escapeHtml(displayValue)}</div>`;
-            }
-          }
-        }
-        html +=
-          '</pre><button class="code-copy-btn" acp-title="Copy input"><span class="codicon codicon-copy"></span></button></div></div>';
-      }
-    }
-
-    // Output / Content
-    let hasOutput = false;
-    if (content && content.length > 0) {
-      for (const item of content) {
-        if (item.type === "content" && item.content?.text) {
-          html += `<div class="detail-section"><span class="detail-label">Output:</span>`;
-          html += `<div class="code-block-wrapper"><pre class="tool-output">${escapeHtml(item.content.text)}</pre><button class="code-copy-btn" acp-title="Copy output"><span class="codicon codicon-copy"></span></button></div></div>`;
-          hasOutput = true;
-        } else if (item.type === "terminal") {
-          const output = terminalOutput || "";
-          const hasAnsi = hasAnsiCodes(output);
-          const outputHtml = hasAnsi ? ansiToHtml(output) : escapeHtml(output);
-          const terminalClass = hasAnsi ? " terminal" : "";
-          html += `<div class="detail-section"><span class="detail-label">Terminal:</span>`;
-          html += `<div class="code-block-wrapper"><pre class="tool-output${terminalClass}">${outputHtml}</pre><button class="code-copy-btn" acp-title="Copy terminal output"><span class="codicon codicon-copy"></span></button></div></div>`;
-          hasOutput = true;
-        } else if (item.type === "diff") {
-          html += renderDiff(item.path, item.oldText, item.newText);
-          hasOutput = true;
-        }
-      }
-    }
-
-    if (!hasOutput) {
-      let output = "";
-      if (terminalOutput) {
-        output = terminalOutput;
-      } else if (rawOutput?.output) {
-        output = String(rawOutput.output);
-      }
-
-      if (output) {
-        const hasAnsi = hasAnsiCodes(output);
-        const outputHtml = hasAnsi ? ansiToHtml(output) : escapeHtml(output);
-        const terminalClass = hasAnsi ? " terminal" : "";
-        html += `<div class="detail-section"><span class="detail-label">Output:</span>`;
-        html += `<div class="code-block-wrapper"><pre class="tool-output${terminalClass}">${outputHtml}</pre><button class="code-copy-btn" acp-title="Copy output"><span class="codicon codicon-copy"></span></button></div></div>`;
-      }
-    }
-
-    html += "</div>";
-    return html;
+    return renderIOBlock(info);
   },
 };
 
