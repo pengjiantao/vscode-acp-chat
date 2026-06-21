@@ -182,6 +182,8 @@ export interface ExtensionMessage {
   used?: number | null;
   size?: number | null;
   cost?: { amount: number; currency: string } | null;
+  action?: string;
+  actionLabel?: string;
 }
 
 export interface Mention {
@@ -1103,6 +1105,75 @@ export class WebviewController {
       reject_always: "Always Reject",
     };
     return labels[kind] || kind;
+  }
+
+  private showConfirmDialog(actionLabel: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const overlay = this.doc.createElement("div");
+      overlay.className = "confirm-dialog-overlay";
+
+      const dialog = this.doc.createElement("div");
+      dialog.className = "confirm-dialog";
+
+      const header = this.doc.createElement("div");
+      header.className = "confirm-dialog-header";
+      const icon = this.doc.createElement("span");
+      icon.className = "codicon codicon-warning";
+      const title = this.doc.createElement("span");
+      title.textContent = "Agent is generating";
+      header.appendChild(icon);
+      header.appendChild(title);
+
+      const body = this.doc.createElement("div");
+      body.className = "confirm-dialog-body";
+
+      const message = this.doc.createElement("div");
+      message.className = "confirm-dialog-message";
+      message.textContent = `The agent is currently generating a response. "${actionLabel}" will stop the current generation. Do you want to proceed?`;
+
+      const actions = this.doc.createElement("div");
+      actions.className = "confirm-dialog-actions";
+
+      const confirmBtn = this.doc.createElement("button");
+      confirmBtn.className = "confirm-dialog-btn confirm-dialog-btn-confirm";
+      confirmBtn.textContent = "Stop & Continue";
+
+      const cancelBtn = this.doc.createElement("button");
+      cancelBtn.className = "confirm-dialog-btn confirm-dialog-btn-cancel";
+      cancelBtn.textContent = "Cancel";
+
+      const cleanup = () => {
+        overlay.remove();
+      };
+
+      confirmBtn.addEventListener("click", () => {
+        cleanup();
+        resolve(true);
+      });
+
+      cancelBtn.addEventListener("click", () => {
+        cleanup();
+        resolve(false);
+      });
+
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) {
+          cleanup();
+          resolve(false);
+        }
+      });
+
+      actions.appendChild(confirmBtn);
+      actions.appendChild(cancelBtn);
+      body.appendChild(message);
+      body.appendChild(actions);
+      dialog.appendChild(header);
+      dialog.appendChild(body);
+      overlay.appendChild(dialog);
+
+      this.doc.body.appendChild(overlay);
+      confirmBtn.focus();
+    });
   }
 
   private updateInputState(): void {
@@ -2925,7 +2996,7 @@ export class WebviewController {
       });
   }
 
-  handleMessage(msg: ExtensionMessage): void {
+  async handleMessage(msg: ExtensionMessage): Promise<void> {
     console.log("[Webview] Message received:", msg.type, msg);
     switch (msg.type) {
       case "fileSearchResults":
@@ -3099,6 +3170,16 @@ export class WebviewController {
       case "triggerClearChat":
         this.vscode.postMessage({ type: "clearChat" });
         break;
+      case "confirmAction": {
+        const actionLabel = msg.actionLabel || msg.action || "this action";
+        const confirmed = await this.showConfirmDialog(actionLabel);
+        this.vscode.postMessage({
+          type: "confirmActionResponse",
+          requestId: msg.requestId,
+          confirmed,
+        });
+        break;
+      }
       case "sessionMetadata": {
         const hasModes =
           msg.modes &&

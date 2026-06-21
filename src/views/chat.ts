@@ -62,7 +62,8 @@ interface WebviewMessage {
     | "rollbackDiff"
     | "acceptAllDiffs"
     | "rollbackAllDiffs"
-    | "toggleModelStar";
+    | "toggleModelStar"
+    | "confirmActionResponse";
   text?: string;
   modeId?: string;
   modelId?: string;
@@ -82,6 +83,9 @@ interface WebviewMessage {
   range?: { startLine: number; endLine: number };
   requestId?: string;
   outcome?: { outcome: "selected" | "cancelled"; optionId?: string };
+  confirmed?: boolean;
+  action?: string;
+  actionLabel?: string;
 }
 
 export interface SelectionMention {
@@ -144,6 +148,12 @@ export class ChatViewProvider
 
   // Flag to track if the agent is currently generating a response
   private isGenerating = false;
+
+  // Pending confirmation requests from isGenerating guard
+  private pendingConfirmations = new Map<
+    string,
+    (confirmed: boolean) => void
+  >();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -438,6 +448,15 @@ export class ChatViewProvider
         case "rollbackAllDiffs":
           await this.diffManager.rollbackAll();
           break;
+        case "confirmActionResponse":
+          if (message.requestId && message.confirmed !== undefined) {
+            const resolver = this.pendingConfirmations.get(message.requestId);
+            if (resolver) {
+              resolver(message.confirmed);
+              this.pendingConfirmations.delete(message.requestId);
+            }
+          }
+          break;
         case "ready":
           this.postMessage({
             type: "connectionState",
@@ -514,6 +533,15 @@ export class ChatViewProvider
   public async loadHistorySession(sessionId: string): Promise<void> {
     if (this.acpClient.getCurrentSessionId() === sessionId) {
       return;
+    }
+
+    if (this.isGenerating) {
+      const ok = await this.ensureIdleIfGenerating(
+        `confirm-loadHistory-${Date.now()}`,
+        "loadHistory",
+        "Load History"
+      );
+      if (!ok) return;
     }
 
     this.userMessageBuffer = "";
@@ -1520,6 +1548,16 @@ export class ChatViewProvider
   private async handleAgentChange(agentId: string): Promise<void> {
     const agent = getAgent(agentId);
     if (agent) {
+      if (this.isGenerating) {
+        const currentAgentName = this.acpClient.getAgentName();
+        const ok = await this.ensureIdleIfGenerating(
+          `confirm-switchAgent-${Date.now()}`,
+          "switchAgent",
+          `Switch Agent: ${currentAgentName} → ${agent.name}`
+        );
+        if (!ok) return;
+      }
+
       this.acpClient.setAgent(agent);
       this.globalState.update(SELECTED_AGENT_KEY, agentId);
       this.hasSession = false;
@@ -1614,6 +1652,15 @@ export class ChatViewProvider
   }
 
   private async handleNewChat(): Promise<void> {
+    if (this.isGenerating) {
+      const ok = await this.ensureIdleIfGenerating(
+        `confirm-newChat-${Date.now()}`,
+        "newChat",
+        "New Chat"
+      );
+      if (!ok) return;
+    }
+
     this.userMessageBuffer = "";
     this.hasSession = false;
     this.hasRestoredModeModel = false;
@@ -1644,6 +1691,68 @@ export class ChatViewProvider
 
   private handleClearChat(): void {
     this.postMessage({ type: "chatCleared" });
+  }
+
+  private requestConfirmation(
+    requestId: string,
+    action: string,
+    actionLabel: string
+  ): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      this.pendingConfirmations.set(requestId, resolve);
+      this.postMessage({
+        type: "confirmAction",
+        requestId,
+        action,
+        actionLabel,
+      });
+    });
+  }
+
+  private waitForIdle(): Promise<boolean> {
+    if (!this.isGenerating) return Promise.resolve(true);
+    const timeoutMs = 10_000;
+    return new Promise<boolean>((resolve) => {
+      let resolved = false;
+      const done = (success: boolean) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        resolve(success);
+      };
+      const timer = setTimeout(() => done(false), timeoutMs);
+      const check = () => {
+        if (!this.isGenerating) {
+          done(true);
+        } else if (!resolved) {
+          setTimeout(check, 50);
+        }
+      };
+      check();
+    });
+  }
+
+  private async ensureIdleIfGenerating(
+    requestId: string,
+    action: string,
+    actionLabel: string
+  ): Promise<boolean> {
+    if (!this.isGenerating) return true;
+    const confirmed = await this.requestConfirmation(
+      requestId,
+      action,
+      actionLabel
+    );
+    if (!confirmed) return false;
+    await this.acpClient.cancel();
+    const idle = await this.waitForIdle();
+    if (!idle) {
+      vscode.window.showErrorMessage(
+        "Agent is still generating. Please try again later."
+      );
+      return false;
+    }
+    return true;
   }
 
   private sendSessionMetadata(): void {

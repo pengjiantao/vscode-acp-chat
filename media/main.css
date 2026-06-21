@@ -2701,3 +2701,105 @@ kbd {
   color: inherit !important;
   /* Force inherit from button to bypass global codicon colors */
 }
+
+/* Confirm Dialog Styles */
+.confirm-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.confirm-dialog {
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 8px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.2s ease-out;
+}
+
+.confirm-dialog-header {
+  padding: 12px 16px;
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.confirm-dialog-header .codicon {
+  font-size: 16px;
+  color: var(--vscode-charts-orange);
+}
+
+.confirm-dialog-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.confirm-dialog-message {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vscode-foreground);
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.confirm-dialog-btn {
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  transition: filter 0.1s;
+}
+
+.confirm-dialog-btn:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.confirm-dialog-btn-confirm {
+  border-left: 4px solid var(--vscode-charts-orange);
+  font-weight: 600;
+}
+
+.confirm-dialog-btn-cancel {
+  border-left: 4px solid var(--vscode-descriptionForeground);
+  opacity: 0.9;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
