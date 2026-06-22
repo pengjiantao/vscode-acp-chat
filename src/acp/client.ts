@@ -2,16 +2,15 @@ import { ChildProcess, spawn as nodeSpawn, SpawnOptions } from "child_process";
 import { Readable, Writable } from "stream";
 import * as vscode from "vscode";
 import {
-  ClientSideConnection,
   ndJsonStream,
-  type Client,
+  type ClientConnection,
+  type ClientContext,
   type SessionNotification,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
   type ReadTextFileRequest,
   type ReadTextFileResponse,
   type WriteTextFileRequest,
-  type InitializeRequest,
   type WriteTextFileResponse,
   type CreateTerminalRequest,
   type CreateTerminalResponse,
@@ -27,7 +26,6 @@ import {
   type NewSessionResponse,
   type PromptResponse,
   type SessionModeState,
-  type SessionModelState,
   type SessionConfigOption,
   type AvailableCommand,
   type LoadSessionRequest,
@@ -45,6 +43,7 @@ import {
   type Position,
   type Range,
 } from "@agentclientprotocol/sdk";
+import * as acp from "@agentclientprotocol/sdk";
 import {
   type AgentConfig,
   isAgentAvailable,
@@ -62,6 +61,14 @@ import {
   toMcpServerSse,
   type McpServerConfig,
 } from "../mcp";
+
+export interface SessionModelState {
+  availableModels: Array<{
+    modelId: string;
+    name: string;
+  }>;
+  currentModelId: string;
+}
 
 export interface GenericConfigOption {
   id: string;
@@ -248,7 +255,8 @@ export interface ACPClientOptions {
 
 export class ACPClient {
   private process: ChildProcess | null = null;
-  private connection: ClientSideConnection | null = null;
+  private connectionHandle: ClientConnection | null = null;
+  private agentCtx: ClientContext | null = null;
   private state: ACPConnectionState = "disconnected";
   private currentSessionId: string | null = null;
   private sessionMetadata: SessionMetadata | null = null;
@@ -452,8 +460,7 @@ export class ACPClient {
       currentProcess.on("exit", (code) => {
         if (this.process !== currentProcess) return;
         console.log("[ACP] Process exited with code:", code);
-        this.setState("disconnected");
-        this.connection = null;
+        this.teardownConnection();
         this.process = null;
       });
 
@@ -462,121 +469,183 @@ export class ACPClient {
         Readable.toWeb(currentProcess.stdout!) as ReadableStream<Uint8Array>
       );
 
-      const client: Client = {
-        requestPermission: (params: RequestPermissionRequest) =>
-          this.handleRequestPermission(params),
-        sessionUpdate: async (params: SessionNotification): Promise<void> => {
-          const updateType = params.update?.sessionUpdate ?? "unknown";
-          console.log(`[ACP] Session update: ${updateType}`);
-          if (updateType === "agent_message_chunk") {
-            console.log("[ACP] CHUNK:", JSON.stringify(params.update));
+      // Handler implementations for the Client interface
+      const handleSessionUpdate = async (
+        params: SessionNotification
+      ): Promise<void> => {
+        const updateType = params.update?.sessionUpdate ?? "unknown";
+        console.log(`[ACP] Session update: ${updateType}`);
+        if (updateType === "agent_message_chunk") {
+          console.log("[ACP] CHUNK:", JSON.stringify(params.update));
+        }
+        if (updateType === "available_commands_update") {
+          const update = params.update as {
+            availableCommands: AvailableCommand[];
+          };
+          if (this.sessionMetadata) {
+            this.sessionMetadata.commands = update.availableCommands;
+          } else {
+            this.pendingCommands = update.availableCommands;
           }
-          if (updateType === "available_commands_update") {
-            const update = params.update as {
-              availableCommands: AvailableCommand[];
-            };
-            if (this.sessionMetadata) {
-              this.sessionMetadata.commands = update.availableCommands;
-            } else {
-              this.pendingCommands = update.availableCommands;
-            }
-            console.log(
-              "[ACP] Commands updated:",
-              update.availableCommands.length
-            );
-          }
-          await Promise.all(
-            Array.from(this.sessionUpdateListeners).map(async (cb) => {
-              try {
-                await cb(params);
-              } catch (error) {
-                console.error("[ACP] Error in session update listener:", error);
-              }
-            })
+          console.log(
+            "[ACP] Commands updated:",
+            update.availableCommands.length
           );
-        },
-        readTextFile: async (
-          params: ReadTextFileRequest
-        ): Promise<ReadTextFileResponse> => {
-          console.log("[ACP] Read text file request:", params.path);
-          if (this.readTextFileHandler) {
-            return this.readTextFileHandler(params);
-          }
-          throw new Error("No readTextFile handler registered");
-        },
-        writeTextFile: async (
-          params: WriteTextFileRequest
-        ): Promise<WriteTextFileResponse> => {
-          console.log("[ACP] Write text file request:", params.path);
-          if (this.writeTextFileHandler) {
-            return this.writeTextFileHandler(params);
-          }
-          throw new Error("No writeTextFile handler registered");
-        },
-        createTerminal: async (
-          params: CreateTerminalRequest
-        ): Promise<CreateTerminalResponse> => {
-          console.log("[ACP] Create terminal request:", params.command);
-          if (this.createTerminalHandler) {
-            return this.createTerminalHandler(params);
-          }
-          throw new Error("No createTerminal handler registered");
-        },
-        terminalOutput: async (
-          params: TerminalOutputRequest
-        ): Promise<TerminalOutputResponse> => {
-          console.log("[ACP] Terminal output request:", params.terminalId);
-          if (this.terminalOutputHandler) {
-            return this.terminalOutputHandler(params);
-          }
-          throw new Error("No terminalOutput handler registered");
-        },
-        waitForTerminalExit: async (
-          params: WaitForTerminalExitRequest
-        ): Promise<WaitForTerminalExitResponse> => {
-          console.log("[ACP] Wait for terminal exit:", params.terminalId);
-          if (this.waitForTerminalExitHandler) {
-            return this.waitForTerminalExitHandler(params);
-          }
-          throw new Error("No waitForTerminalExit handler registered");
-        },
-        killTerminal: async (
-          params: KillTerminalRequest
-        ): Promise<KillTerminalResponse> => {
-          console.log("[ACP] Kill terminal:", params.terminalId);
-          if (this.killTerminalCommandHandler) {
-            return this.killTerminalCommandHandler(params);
-          }
-          throw new Error("No killTerminal handler registered");
-        },
-        releaseTerminal: async (
-          params: ReleaseTerminalRequest
-        ): Promise<ReleaseTerminalResponse> => {
-          console.log("[ACP] Release terminal:", params.terminalId);
-          if (this.releaseTerminalHandler) {
-            return this.releaseTerminalHandler(params);
-          }
-          throw new Error("No releaseTerminal handler registered");
-        },
+        }
+        await Promise.all(
+          Array.from(this.sessionUpdateListeners).map(async (cb) => {
+            try {
+              await cb(params);
+            } catch (error) {
+              console.error("[ACP] Error in session update listener:", error);
+            }
+          })
+        );
       };
 
-      this.connection = new ClientSideConnection(() => client, stream);
+      const handleReadTextFile = async (
+        params: ReadTextFileRequest
+      ): Promise<ReadTextFileResponse> => {
+        console.log("[ACP] Read text file request:", params.path);
+        if (this.readTextFileHandler) {
+          return this.readTextFileHandler(params);
+        }
+        throw new Error("No readTextFile handler registered");
+      };
 
-      const initResponse = await this.connection.initialize({
-        protocolVersion: 1,
-        clientCapabilities: {
-          fs: {
-            readTextFile: true,
-            writeTextFile: true,
+      const handleWriteTextFile = async (
+        params: WriteTextFileRequest
+      ): Promise<WriteTextFileResponse> => {
+        console.log("[ACP] Write text file request:", params.path);
+        if (this.writeTextFileHandler) {
+          return this.writeTextFileHandler(params);
+        }
+        throw new Error("No writeTextFile handler registered");
+      };
+
+      const handleCreateTerminal = async (
+        params: CreateTerminalRequest
+      ): Promise<CreateTerminalResponse> => {
+        console.log("[ACP] Create terminal request:", params.command);
+        if (this.createTerminalHandler) {
+          return this.createTerminalHandler(params);
+        }
+        throw new Error("No createTerminal handler registered");
+      };
+
+      const handleTerminalOutput = async (
+        params: TerminalOutputRequest
+      ): Promise<TerminalOutputResponse> => {
+        console.log("[ACP] Terminal output request:", params.terminalId);
+        if (this.terminalOutputHandler) {
+          return this.terminalOutputHandler(params);
+        }
+        throw new Error("No terminalOutput handler registered");
+      };
+
+      const handleWaitForTerminalExit = async (
+        params: WaitForTerminalExitRequest
+      ): Promise<WaitForTerminalExitResponse> => {
+        console.log("[ACP] Wait for terminal exit:", params.terminalId);
+        if (this.waitForTerminalExitHandler) {
+          return this.waitForTerminalExitHandler(params);
+        }
+        throw new Error("No waitForTerminalExit handler registered");
+      };
+
+      const handleKillTerminal = async (
+        params: KillTerminalRequest
+      ): Promise<KillTerminalResponse> => {
+        console.log("[ACP] Kill terminal:", params.terminalId);
+        if (this.killTerminalCommandHandler) {
+          return this.killTerminalCommandHandler(params);
+        }
+        throw new Error("No killTerminal handler registered");
+      };
+
+      const handleReleaseTerminal = async (
+        params: ReleaseTerminalRequest
+      ): Promise<ReleaseTerminalResponse> => {
+        console.log("[ACP] Release terminal:", params.terminalId);
+        if (this.releaseTerminalHandler) {
+          return this.releaseTerminalHandler(params);
+        }
+        throw new Error("No releaseTerminal handler registered");
+      };
+
+      // Create client app using new API
+      const clientApp = acp
+        .client({ name: "vscode-acp-chat" })
+        .onRequest(
+          acp.methods.client.session.requestPermission,
+          (ctx: { params: RequestPermissionRequest }) =>
+            this.handleRequestPermission(ctx.params)
+        )
+        .onNotification(
+          acp.methods.client.session.update,
+          (ctx: { params: SessionNotification }) =>
+            handleSessionUpdate(ctx.params)
+        )
+        .onRequest(
+          acp.methods.client.fs.readTextFile,
+          (ctx: { params: ReadTextFileRequest }) =>
+            handleReadTextFile(ctx.params)
+        )
+        .onRequest(
+          acp.methods.client.fs.writeTextFile,
+          (ctx: { params: WriteTextFileRequest }) =>
+            handleWriteTextFile(ctx.params)
+        )
+        .onRequest(
+          acp.methods.client.terminal.create,
+          (ctx: { params: CreateTerminalRequest }) =>
+            handleCreateTerminal(ctx.params)
+        )
+        .onRequest(
+          acp.methods.client.terminal.output,
+          (ctx: { params: TerminalOutputRequest }) =>
+            handleTerminalOutput(ctx.params)
+        )
+        .onRequest(
+          acp.methods.client.terminal.waitForExit,
+          (ctx: { params: WaitForTerminalExitRequest }) =>
+            handleWaitForTerminalExit(ctx.params)
+        )
+        .onRequest(
+          acp.methods.client.terminal.kill,
+          (ctx: { params: KillTerminalRequest }) =>
+            handleKillTerminal(ctx.params)
+        )
+        .onRequest(
+          acp.methods.client.terminal.release,
+          (ctx: { params: ReleaseTerminalRequest }) =>
+            handleReleaseTerminal(ctx.params)
+        );
+
+      // Connect using new API - returns ClientConnection with .agent for outbound calls
+      this.connectionHandle = clientApp.connect(stream);
+      const agentCtx = this.connectionHandle!.agent;
+
+      const initResponse = await agentCtx.request(
+        acp.methods.agent.initialize,
+        {
+          protocolVersion: 1,
+          clientCapabilities: {
+            fs: {
+              readTextFile: true,
+              writeTextFile: true,
+            },
+            terminal: true,
           },
-          terminal: true,
-          permissions: true,
-        } as InitializeRequest["clientCapabilities"] & { permissions: boolean },
-        clientInfo: {
-          name: "vscode-acp-chat",
-          version: "0.0.1",
-        },
-      });
+          clientInfo: {
+            name: "vscode-acp-chat",
+            version: "0.0.1",
+          },
+        }
+      );
+
+      // Store agent context for later use
+      this.agentCtx = agentCtx;
 
       this.setState("connected");
       await this.reloadMcpServers();
@@ -601,6 +670,16 @@ export class ACPClient {
   }
 
   /**
+   * Return the agent context for making outbound requests.
+   * Returns `null` if not yet connected.
+   *
+   * @internal Exposed as a test seam for intercepting outbound requests.
+   */
+  getAgentContext(): ClientContext | null {
+    return this.agentCtx;
+  }
+
+  /**
    * Load an existing session via the ACP `session/load` method.
    *
    * The agent is expected to stream the full conversation history back
@@ -613,7 +692,7 @@ export class ACPClient {
     sessionId: string;
     cwd: string;
   }): Promise<LoadSessionResponse> {
-    if (!this.connection) {
+    if (!this.agentCtx) {
       throw new Error("Not connected");
     }
 
@@ -632,7 +711,10 @@ export class ACPClient {
       ),
     };
 
-    const response = await this.connection.loadSession(request);
+    const response = await this.agentCtx.request(
+      acp.methods.agent.session.load,
+      request
+    );
     this.currentSessionId = params.sessionId;
 
     // Extract models/modes/generic config options from configOptions if available
@@ -661,7 +743,7 @@ export class ACPClient {
     cwd?: string;
     cursor?: string;
   }): Promise<ListSessionsResponse> {
-    if (!this.connection) {
+    if (!this.agentCtx) {
       throw new Error("Not connected");
     }
 
@@ -670,7 +752,7 @@ export class ACPClient {
       cursor: params?.cursor ?? null,
     };
 
-    return this.connection.listSessions(request);
+    return this.agentCtx.request(acp.methods.agent.session.list, request);
   }
 
   async handleRequestPermission(
@@ -721,17 +803,20 @@ export class ACPClient {
   }
 
   async newSession(workingDirectory: string): Promise<NewSessionResponse> {
-    if (!this.connection) {
+    if (!this.agentCtx) {
       throw new Error("Not connected");
     }
 
-    const response = await this.connection.newSession({
-      cwd: workingDirectory,
-      mcpServers: this.filterAndConvertMcpServers(
-        this.mcpServerConfigs,
-        this.agentCapabilities?.mcpCapabilities
-      ),
-    });
+    const response = await this.agentCtx.request(
+      acp.methods.agent.session.new,
+      {
+        cwd: workingDirectory,
+        mcpServers: this.filterAndConvertMcpServers(
+          this.mcpServerConfigs,
+          this.agentCapabilities?.mcpCapabilities
+        ),
+      }
+    );
 
     this.currentSessionId = response.sessionId;
 
@@ -748,7 +833,6 @@ export class ACPClient {
     }
 
     // Fall back to old format if configOptions didn't provide model/mode
-    models = models ?? response.models ?? null;
     modes = modes ?? response.modes ?? null;
 
     // Fall back to existing session metadata
@@ -807,23 +891,26 @@ export class ACPClient {
   }
 
   async setMode(modeId: string): Promise<void> {
-    if (!this.connection || !this.currentSessionId) {
+    if (!this.agentCtx || !this.currentSessionId) {
       throw new Error("No active session");
     }
 
     try {
       // Prefer setSessionConfigOption (returns configOptions for metadata update)
-      const response = await this.connection.setSessionConfigOption({
-        sessionId: this.currentSessionId,
-        configId: "mode",
-        value: modeId,
-      });
+      const response = await this.agentCtx.request(
+        acp.methods.agent.session.setConfigOption,
+        {
+          sessionId: this.currentSessionId,
+          configId: "mode",
+          value: modeId,
+        }
+      );
       if (response.configOptions) {
         this.updateSessionMetadataFromConfigOptions(response.configOptions);
       }
     } catch {
       // Fallback for agents that don't support setSessionConfigOption
-      await this.connection.setSessionMode({
+      await this.agentCtx.request(acp.methods.agent.session.setMode, {
         sessionId: this.currentSessionId,
         modeId,
       });
@@ -834,42 +921,37 @@ export class ACPClient {
   }
 
   async setModel(modelId: string): Promise<void> {
-    if (!this.connection || !this.currentSessionId) {
+    if (!this.agentCtx || !this.currentSessionId) {
       throw new Error("No active session");
     }
 
-    try {
-      // Prefer setSessionConfigOption (returns configOptions for metadata update)
-      const response = await this.connection.setSessionConfigOption({
+    // Use setSessionConfigOption (returns configOptions for metadata update)
+    const response = await this.agentCtx.request(
+      acp.methods.agent.session.setConfigOption,
+      {
         sessionId: this.currentSessionId,
         configId: "model",
         value: modelId,
-      });
-      if (response.configOptions) {
-        this.updateSessionMetadataFromConfigOptions(response.configOptions);
       }
-    } catch {
-      // Fallback for agents that don't support setSessionConfigOption
-      await this.connection.unstable_setSessionModel({
-        sessionId: this.currentSessionId,
-        modelId,
-      });
-      if (this.sessionMetadata?.models) {
-        this.sessionMetadata.models.currentModelId = modelId;
-      }
+    );
+    if (response.configOptions) {
+      this.updateSessionMetadataFromConfigOptions(response.configOptions);
     }
   }
 
   async setConfigOption(configId: string, value: string): Promise<void> {
-    if (!this.connection || !this.currentSessionId) {
+    if (!this.agentCtx || !this.currentSessionId) {
       throw new Error("No active session");
     }
 
-    const response = await this.connection.setSessionConfigOption({
-      sessionId: this.currentSessionId,
-      configId,
-      value,
-    });
+    const response = await this.agentCtx.request(
+      acp.methods.agent.session.setConfigOption,
+      {
+        sessionId: this.currentSessionId,
+        configId,
+        value,
+      }
+    );
     if (response.configOptions) {
       this.updateSessionMetadataFromConfigOptions(response.configOptions);
     }
@@ -880,7 +962,7 @@ export class ACPClient {
     images: string[] = [],
     mentions: Mention[] = []
   ): Promise<PromptResponse> {
-    if (!this.connection || !this.currentSessionId) {
+    if (!this.agentCtx || !this.currentSessionId) {
       throw new Error("No active session");
     }
 
@@ -916,10 +998,13 @@ export class ACPClient {
         });
       }
 
-      const response = await this.connection.prompt({
-        sessionId: this.currentSessionId,
-        prompt,
-      });
+      const response: PromptResponse = await this.agentCtx.request(
+        acp.methods.agent.session.prompt,
+        {
+          sessionId: this.currentSessionId,
+          prompt,
+        }
+      );
       console.log("[ACP] Prompt completed:", JSON.stringify(response, null, 2));
       return response;
     } catch (error) {
@@ -933,13 +1018,29 @@ export class ACPClient {
   }
 
   async cancel(): Promise<void> {
-    if (!this.connection || !this.currentSessionId) {
+    if (!this.agentCtx || !this.currentSessionId) {
       return;
     }
 
-    await this.connection.cancel({
+    await this.agentCtx.notify(acp.methods.agent.session.cancel, {
       sessionId: this.currentSessionId,
     });
+  }
+
+  /**
+   * Close and clean up the connection handle and agent context.
+   * Called from both process exit handler and dispose().
+   * Transitions state to "disconnected" if currently "connected".
+   */
+  private teardownConnection(): void {
+    if (this.connectionHandle) {
+      this.connectionHandle.close();
+      this.connectionHandle = null;
+    }
+    this.agentCtx = null;
+    if (this.state === "connected") {
+      this.setState("disconnected");
+    }
   }
 
   dispose(): void {
@@ -947,12 +1048,11 @@ export class ACPClient {
       this.process.kill();
       this.process = null;
     }
-    this.connection = null;
+    this.teardownConnection();
     this.currentSessionId = null;
     this.sessionMetadata = null;
     this.pendingCommands = null;
     this.agentCapabilities = null;
-    this.setState("disconnected");
   }
 
   /**
@@ -991,7 +1091,7 @@ export class ACPClient {
     languageId: string;
     version: number;
   }): Promise<void> {
-    if (!this.connection || !this.currentSessionId) {
+    if (!this.agentCtx || !this.currentSessionId) {
       return;
     }
     if (!this.getNesDocumentCapabilities().didOpen) {
@@ -1004,7 +1104,10 @@ export class ACPClient {
       languageId: params.languageId,
       version: params.version,
     };
-    await this.connection.unstable_didOpenDocument(notification);
+    await this.agentCtx.notify(
+      acp.methods.agent.document.didOpen,
+      notification
+    );
   }
 
   async notifyDidChangeDocument(params: {
@@ -1012,7 +1115,7 @@ export class ACPClient {
     contentChanges: Array<{ range?: Range | null; text: string }>;
     version: number;
   }): Promise<void> {
-    if (!this.connection || !this.currentSessionId) {
+    if (!this.agentCtx || !this.currentSessionId) {
       return;
     }
     const cap = this.getNesDocumentCapabilities().didChange;
@@ -1025,11 +1128,14 @@ export class ACPClient {
       contentChanges: params.contentChanges,
       version: params.version,
     };
-    await this.connection.unstable_didChangeDocument(notification);
+    await this.agentCtx.notify(
+      acp.methods.agent.document.didChange,
+      notification
+    );
   }
 
   async notifyDidCloseDocument(params: { uri: string }): Promise<void> {
-    if (!this.connection || !this.currentSessionId) {
+    if (!this.agentCtx || !this.currentSessionId) {
       return;
     }
     if (!this.getNesDocumentCapabilities().didClose) {
@@ -1039,11 +1145,14 @@ export class ACPClient {
       sessionId: this.currentSessionId,
       uri: params.uri,
     };
-    await this.connection.unstable_didCloseDocument(notification);
+    await this.agentCtx.notify(
+      acp.methods.agent.document.didClose,
+      notification
+    );
   }
 
   async notifyDidSaveDocument(params: { uri: string }): Promise<void> {
-    if (!this.connection || !this.currentSessionId) {
+    if (!this.agentCtx || !this.currentSessionId) {
       return;
     }
     if (!this.getNesDocumentCapabilities().didSave) {
@@ -1053,7 +1162,10 @@ export class ACPClient {
       sessionId: this.currentSessionId,
       uri: params.uri,
     };
-    await this.connection.unstable_didSaveDocument(notification);
+    await this.agentCtx.notify(
+      acp.methods.agent.document.didSave,
+      notification
+    );
   }
 
   async notifyDidFocusDocument(params: {
@@ -1062,7 +1174,7 @@ export class ACPClient {
     version: number;
     visibleRange: Range;
   }): Promise<void> {
-    if (!this.connection || !this.currentSessionId) {
+    if (!this.agentCtx || !this.currentSessionId) {
       return;
     }
     if (!this.getNesDocumentCapabilities().didFocus) {
@@ -1075,7 +1187,10 @@ export class ACPClient {
       version: params.version,
       visibleRange: params.visibleRange,
     };
-    await this.connection.unstable_didFocusDocument(notification);
+    await this.agentCtx.notify(
+      acp.methods.agent.document.didFocus,
+      notification
+    );
   }
 
   private setState(state: ACPConnectionState): void {

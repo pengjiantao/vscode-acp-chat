@@ -12,13 +12,19 @@ import { ACPClient } from "../acp/client";
 suite("Mentions Logic", () => {
   test("ACPClient formats different mention types correctly with new structured format", async () => {
     // We can't easily connect to a real server, but we can test the sendMessage prompt building
-    // by mocking the connection.
+    // by mocking the agent context.
     const client = new ACPClient({ skipAvailabilityCheck: true } as any);
-    (client as any).connection = {
-      prompt: async (params: any) => {
-        return params; // Return params to verify them
+    // Mock the agent context with the new API
+    const mockAgentCtx = {
+      request: async (method: string, params: any) => {
+        if (method === "session/prompt") {
+          return params; // Return params to verify them
+        }
+        return {};
       },
+      notify: async () => {},
     };
+    (client as any).agentCtx = mockAgentCtx;
     (client as any).currentSessionId = "test-session";
 
     const mentions: Mention[] = [

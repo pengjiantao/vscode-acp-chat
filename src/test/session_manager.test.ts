@@ -109,7 +109,7 @@ suite("SessionManager", () => {
         }, /not yet synced/);
       });
 
-      test("should return sessions from agent via unstable_listSessions", async () => {
+      test("should return sessions from agent via listSessions", async () => {
         await client.connect();
         manager.syncCapabilities();
 
@@ -465,12 +465,16 @@ suite("SessionManager", () => {
       await client.newSession("/test/dir");
 
       // Capture the prompt to verify placeholder replacement
-      const clientAny = client as any;
-      const originalPrompt = clientAny.connection.prompt;
+      const agentCtx = client.getAgentContext();
+      assert.ok(agentCtx, "Agent context should be available");
+      const originalRequest = agentCtx.request.bind(agentCtx);
       let capturedPrompt: any = null;
-      clientAny.connection.prompt = async (params: any) => {
-        capturedPrompt = params.prompt;
-        return { stopReason: "end_turn" };
+      agentCtx.request = async (method: string, params: any) => {
+        if (method === "session/prompt") {
+          capturedPrompt = params.prompt;
+          return { stopReason: "end_turn" };
+        }
+        return originalRequest(method, params);
       };
 
       try {
@@ -493,7 +497,7 @@ suite("SessionManager", () => {
         assert.ok(capturedPrompt[0].text.includes("file.ts"));
         assert.ok(capturedPrompt[0].text.includes("selection"));
       } finally {
-        clientAny.connection.prompt = originalPrompt;
+        agentCtx.request = originalRequest;
       }
     });
 
@@ -501,12 +505,16 @@ suite("SessionManager", () => {
       await client.connect();
       await client.newSession("/test/dir");
 
-      const clientAny = client as any;
-      const originalPrompt = clientAny.connection.prompt;
+      const agentCtx = client.getAgentContext();
+      assert.ok(agentCtx, "Agent context should be available");
+      const originalRequest = agentCtx.request.bind(agentCtx);
       let capturedPrompt: any = null;
-      clientAny.connection.prompt = async (params: any) => {
-        capturedPrompt = params.prompt;
-        return { stopReason: "end_turn" };
+      agentCtx.request = async (method: string, params: any) => {
+        if (method === "session/prompt") {
+          capturedPrompt = params.prompt;
+          return { stopReason: "end_turn" };
+        }
+        return originalRequest(method, params);
       };
 
       try {
@@ -514,7 +522,7 @@ suite("SessionManager", () => {
 
         assert.strictEqual(capturedPrompt[0].text, "Test __MENTION_99__");
       } finally {
-        clientAny.connection.prompt = originalPrompt;
+        agentCtx.request = originalRequest;
       }
     });
   });

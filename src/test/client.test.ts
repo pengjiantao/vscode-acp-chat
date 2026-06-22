@@ -160,9 +160,7 @@ suite("ACPClient with Mock Server", () => {
       const metadata = client.getSessionMetadata();
       assert.ok(metadata);
       assert.ok(metadata.modes);
-      assert.ok(metadata.models);
       assert.strictEqual(metadata.modes?.currentModeId, "code");
-      assert.strictEqual(metadata.models?.currentModelId, "claude-3-sonnet");
     });
 
     test("should receive available commands update", async () => {
@@ -235,25 +233,23 @@ suite("ACPClient with Mock Server", () => {
       await client.connect();
       await client.newSession("/test/dir");
 
-      // We need to access the private connection to verify the prompt
-      // or we can rely on the fact that sendMessage calls connection.prompt
-      // Since connection is private, we'll use a hack to intercept it if possible,
-      // or we can just trust the logic if we've manually verified it.
-      // Alternatively, we can mock the connection differently.
+      // Intercept the agent context's request method to capture the prompt
+      const agentCtx = client.getAgentContext();
+      assert.ok(agentCtx, "Agent context should be available");
+      const originalRequest = agentCtx.request.bind(agentCtx);
+
+      let capturedPrompt: any = null;
+      agentCtx.request = async (method: string, params: any) => {
+        if (method === "session/prompt") {
+          capturedPrompt = params.prompt;
+          return { stopReason: "end_turn" };
+        }
+        return originalRequest(method, params);
+      };
 
       const images = [
         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
       ];
-
-      // We'll use a dynamic property access to get the private connection
-      const clientAny = client as any;
-      const originalPrompt = clientAny.connection.prompt;
-
-      let capturedPrompt: any = null;
-      clientAny.connection.prompt = async (params: any) => {
-        capturedPrompt = params.prompt;
-        return { stopReason: "end_turn" };
-      };
 
       try {
         await client.sendMessage("Check this image", images);
@@ -271,7 +267,7 @@ suite("ACPClient with Mock Server", () => {
         // Verify it's NOT nested in an 'image' property
         assert.strictEqual(capturedPrompt[1].image, undefined);
       } finally {
-        clientAny.connection.prompt = originalPrompt;
+        agentCtx.request = originalRequest;
       }
     });
   });
@@ -339,6 +335,24 @@ suite("ACPClient with Mock Server", () => {
       assert.strictEqual(client.getState(), "disconnected");
       assert.strictEqual(client.isConnected(), false);
       assert.strictEqual(client.getSessionMetadata(), null);
+    });
+  });
+
+  suite("process exit", () => {
+    test("should transition to disconnected when agent process exits", async () => {
+      await client.connect();
+      assert.strictEqual(client.getState(), "connected");
+
+      // Simulate process exit by accessing the internal process and emitting 'exit'
+      const clientAny = client as any;
+      const mockProcess = clientAny.process;
+      assert.ok(mockProcess, "Process should exist after connect");
+
+      // Emit exit event to simulate agent process termination
+      mockProcess.emit("exit", 0);
+
+      assert.strictEqual(client.getState(), "disconnected");
+      assert.strictEqual(client.isConnected(), false);
     });
   });
 
@@ -570,7 +584,6 @@ suite("ACPClient with configOptions format", () => {
     const response = await client.newSession("/test/dir");
 
     assert.ok(response.configOptions);
-    assert.strictEqual(response.models, undefined);
     assert.strictEqual(response.modes, undefined);
 
     const metadata = client.getSessionMetadata();

@@ -113,9 +113,6 @@ export class MockACPServer {
       case "session/cancel":
         this.handleCancel(request.id, request.params);
         break;
-      case "_session/list":
-        this.handleListSessions(request.id);
-        break;
       case "session/list":
         this.handleListSessions(request.id);
         break;
@@ -160,13 +157,6 @@ export class MockACPServer {
           { id: "architect", name: "Architect" },
         ],
         currentModeId: "code",
-      },
-      models: {
-        availableModels: [
-          { modelId: "claude-3-sonnet", name: "Claude 3 Sonnet" },
-          { modelId: "claude-3-opus", name: "Claude 3 Opus" },
-        ],
-        currentModelId: "claude-3-sonnet",
       },
     };
 
@@ -217,7 +207,6 @@ export class MockACPServer {
         },
       ];
       // Remove old format fields to simulate new agents
-      delete response.models;
       delete response.modes;
     }
 
@@ -460,13 +449,6 @@ export class MockACPServer {
           { id: "architect", name: "Architect" },
         ],
         currentModeId: "code",
-      },
-      models: {
-        availableModels: [
-          { modelId: "claude-3-sonnet", name: "Claude 3 Sonnet" },
-          { modelId: "claude-3-opus", name: "Claude 3 Opus" },
-        ],
-        currentModelId: "claude-3-sonnet",
       },
     };
 
