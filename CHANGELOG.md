@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.9.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.9.0...v1.9.1) (2026-06-22)
+
+### Code Refactoring
+
+- migrate to @agentclientprotocol/sdk 0.29 fluent client API ([b5ca20e](https://github.com/pengjiantao/vscode-acp-chat/commit/b5ca20e0a6767875837e7e67e15c5415f4126769))
+
 ## [1.9.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.8.2...v1.9.0) (2026-06-22)
 
 ### Features
