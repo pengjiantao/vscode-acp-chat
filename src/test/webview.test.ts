@@ -2654,45 +2654,39 @@ suite("Webview", () => {
       assert.ok(result.includes("mod2"));
     });
 
-    test("renders hunk header with line range", () => {
+    test("renders change lines with prefixes", () => {
       const result = renderDiff(undefined, "old line", "new line");
-      assert.ok(result.includes('class="diff-hunk-header"'));
-      assert.ok(result.includes("@@ -1 +1 @@"));
       assert.ok(result.includes('class="diff-line-prefix">-</span>'));
       assert.ok(result.includes('class="diff-line-prefix">+</span>'));
+      assert.ok(!result.includes("diff-hunk-header"));
     });
 
-    test("renders hunk header with multi-line range", () => {
-      const oldText = "line1\nline2\nline3";
-      const newText = "line1\nmodified2\nmodified3\nline4";
-      const result = renderDiff(undefined, oldText, newText);
-      assert.ok(result.includes('class="diff-hunk-header"'));
-      assert.ok(result.includes("@@ -2-3 +2-4 @@"));
-    });
-
-    test("renders multiple hunks with gaps", () => {
+    test("renders multiple hunks with separator only when gaps exist", () => {
       const oldText = ["match1", ...Array(20).fill("context"), "match2"].join(
         "\n"
       );
       const newText = ["mod1", ...Array(20).fill("context"), "mod2"].join("\n");
       const result = renderDiff(undefined, oldText, newText);
-      const hunkHeaders = result.match(/class="diff-hunk-header"/g);
-      assert.ok(hunkHeaders);
-      assert.strictEqual(hunkHeaders.length, 2);
+      const separators = result.match(/class="diff-hunk-separator"/g);
+      assert.ok(separators);
+      assert.ok(separators.length >= 1);
+      assert.ok(!result.includes("diff-hunk-header"));
     });
 
-    test("renders hunk header for additions-only", () => {
-      const result = renderDiff(undefined, null, "new line");
-      assert.ok(result.includes('class="diff-hunk-header"'));
-      assert.ok(result.includes("@@ -1 +1 @@"));
-      assert.ok(result.includes('class="diff-line-prefix">+</span>'));
+    test("no separator between adjacent hunks", () => {
+      const oldText = "line1\nline2\nline3";
+      const newText = "mod1\nmod2\nmod3";
+      const result = renderDiff(undefined, oldText, newText);
+      assert.ok(!result.includes("diff-hunk-separator"));
     });
 
-    test("renders hunk header for removals-only", () => {
-      const result = renderDiff(undefined, "old line", null);
-      assert.ok(result.includes('class="diff-hunk-header"'));
-      assert.ok(result.includes("@@ -1 +1 @@"));
-      assert.ok(result.includes('class="diff-line-prefix">-</span>'));
+    test("renders clickable change lines with data attributes", () => {
+      const result = renderDiff("/test/file.ts", "old line", "new line");
+      assert.ok(result.includes("diff-clickable"));
+      assert.ok(result.includes('data-diff-path="'));
+      assert.ok(result.includes("data-diff-start"));
+      assert.ok(result.includes("data-diff-end"));
+      assert.ok(result.includes("diff-change-block"));
     });
   });
 });

@@ -460,38 +460,83 @@ export function renderDiff(
   }
 
   // Render hunks
+  type ChangeBlock = { type: "change"; startIdx: number; endIdx: number };
+  type ContextLine = { type: "context"; idx: number };
+
   for (let hunkIdx = 0; hunkIdx < hunks.length; hunkIdx++) {
     const hunk = hunks[hunkIdx];
 
-    // Add separator between hunks
+    // Add separator only when there are skipped diff lines between hunks
     if (hunkIdx > 0) {
-      html += '<div class="diff-hunk-separator">...</div>';
+      const prevEndIdx = hunks[hunkIdx - 1].endIdx;
+      if (hunk.startIdx - prevEndIdx > 1) {
+        html += '<div class="diff-hunk-separator">...</div>';
+      }
     }
 
-    // Add hunk header with line range info
-    if (hunk.hasChanges) {
-      const oldRange =
-        hunk.oldLines > 1
-          ? `${hunk.oldStart}-${hunk.oldStart + hunk.oldLines - 1}`
-          : `${hunk.oldStart}`;
-      const newRange =
-        hunk.newLines > 1
-          ? `${hunk.newStart}-${hunk.newStart + hunk.newLines - 1}`
-          : `${hunk.newStart}`;
-      html += `<div class="diff-hunk-header">@@ -${oldRange} +${newRange} @@</div>`;
-    }
+    // Group consecutive add/remove lines into change blocks
+    const groups: Array<ChangeBlock | ContextLine> = [];
+    let currentChange: ChangeBlock | null = null;
 
-    // Render lines in this hunk
     for (let i = hunk.startIdx; i <= hunk.endIdx; i++) {
-      const diffLine = diffLines[i];
-      const prefix =
-        diffLine.type === "add" ? "+" : diffLine.type === "remove" ? "-" : " ";
-      const className = "diff-line diff-" + diffLine.type;
+      if (diffLines[i].type !== "context") {
+        if (currentChange) {
+          currentChange.endIdx = i;
+        } else {
+          currentChange = { type: "change", startIdx: i, endIdx: i };
+          groups.push(currentChange);
+        }
+      } else {
+        currentChange = null;
+        groups.push({ type: "context", idx: i });
+      }
+    }
 
-      html += `<div class="${className}">`;
-      html += `<span class="diff-line-prefix">${prefix}</span>`;
-      html += `<span class="diff-line-code">${escapeHtml(diffLine.line)}</span>`;
-      html += `</div>`;
+    // Render each group
+    for (const group of groups) {
+      if (group.type === "context") {
+        const dl = diffLines[group.idx];
+        html += `<div class="diff-line diff-context">`;
+        html += `<span class="diff-line-prefix"> </span>`;
+        html += `<span class="diff-line-code">${escapeHtml(dl.line)}</span>`;
+        html += `</div>`;
+      } else {
+        // Compute line range for this change block.
+        // The diff algorithm always groups removals before additions,
+        // so once hasAdds flips true, no more removes will appear.
+        let blockStart = Infinity;
+        let blockEnd = 0;
+        let hasAdds = false;
+        for (let i = group.startIdx; i <= group.endIdx; i++) {
+          const dl = diffLines[i];
+          if (dl.type === "add" && dl.newLineNumber != null) {
+            hasAdds = true;
+            blockStart = Math.min(blockStart, dl.newLineNumber);
+            blockEnd = Math.max(blockEnd, dl.newLineNumber);
+          } else if (dl.type === "remove" && dl.oldLineNumber != null) {
+            if (!hasAdds) {
+              blockStart = Math.min(blockStart, dl.oldLineNumber);
+              blockEnd = Math.max(blockEnd, dl.oldLineNumber);
+            }
+          }
+        }
+        if (blockStart === Infinity) blockStart = 1;
+
+        const dataAttrs = path
+          ? ` data-diff-path="${escapeHtml(path)}" data-diff-start="${blockStart}" data-diff-end="${blockEnd}"`
+          : "";
+
+        html += `<div class="diff-change-block${path ? " diff-clickable" : ""}"${dataAttrs}>`;
+        for (let i = group.startIdx; i <= group.endIdx; i++) {
+          const dl = diffLines[i];
+          const prefix = dl.type === "add" ? "+" : "-";
+          html += `<div class="diff-line diff-${dl.type}">`;
+          html += `<span class="diff-line-prefix">${prefix}</span>`;
+          html += `<span class="diff-line-code">${escapeHtml(dl.line)}</span>`;
+          html += `</div>`;
+        }
+        html += `</div>`;
+      }
     }
   }
 
@@ -868,6 +913,24 @@ export class WebviewController {
         }, 1500);
       } catch (err) {
         console.error("Failed to copy:", err);
+      }
+    });
+
+    // Delegated click handler for diff change blocks
+    this.elements.messagesEl.addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest?.(
+        ".diff-clickable"
+      ) as HTMLElement | null;
+      if (!target) return;
+      const filePath = target.dataset.diffPath;
+      const startLine = Number(target.dataset.diffStart);
+      const endLine = Number(target.dataset.diffEnd);
+      if (filePath && startLine != null && !isNaN(startLine)) {
+        this.vscode.postMessage({
+          type: "openFile",
+          path: filePath,
+          range: { startLine, endLine: endLine || startLine },
+        });
       }
     });
   }
