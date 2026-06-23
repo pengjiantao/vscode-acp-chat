@@ -1174,7 +1174,12 @@ export class ChatViewProvider
               return;
             }
 
-            if (oldText === undefined) {
+            // Only re-capture if we never attempted it during tool_call.
+            // If oldTextPromise exists but resolved to undefined, the file
+            // didn't exist at capture time (new file). Re-reading now would
+            // pick up content already written by the agent, making oldText
+            // equal to newText and producing an empty diff.
+            if (oldText === undefined && !oldTextPromise) {
               oldText = await this.captureBaseContent(kind, title, rawInput);
               if (!this.pendingToolCalls.has(update.toolCallId)) {
                 return;
