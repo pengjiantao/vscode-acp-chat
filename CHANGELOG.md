@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.9.2](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.9.1...v1.9.2) (2026-06-24)
+
+### Bug Fixes
+
+- empty diff for new files written by some agents ([36acf96](https://github.com/pengjiantao/vscode-acp-chat/commit/36acf9650247b2b11fc5fdf0edc9c7784106ae8e))
+- support plus-bracket ANSI escape codes in bash output ([0aa8739](https://github.com/pengjiantao/vscode-acp-chat/commit/0aa8739b385e50b40b3f6a5619d568faee59b252))
+
+### Code Refactoring
+
+- make diff change blocks clickable to open file at line ([111c432](https://github.com/pengjiantao/vscode-acp-chat/commit/111c4328c0a7b283fdb725913cc8a1362af11a75))
+- replace line numbers with hunk headers in diff view ([f8930d5](https://github.com/pengjiantao/vscode-acp-chat/commit/f8930d57fa9e72f1065683020f170f67770644ea))
+
 ### [1.9.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.9.0...v1.9.1) (2026-06-22)
 
 ### Code Refactoring
