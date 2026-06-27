@@ -1185,7 +1185,9 @@ suite("ChatViewProvider", () => {
   suite("openFile Message Handling", () => {
     let originalShowTextDocument: any;
     let originalWorkspaceFolders: any;
+    let originalShowErrorMessage: any;
     let showTextDocumentCalls: any[] = [];
+    let showErrorMessageCalls: string[] = [];
 
     setup(() => {
       originalShowTextDocument = vscode.window.showTextDocument;
@@ -1196,6 +1198,17 @@ suite("ChatViewProvider", () => {
           options?: vscode.TextDocumentShowOptions
         ) => {
           showTextDocumentCalls.push({ uri, options });
+          return {} as any;
+        },
+        configurable: true,
+        writable: true,
+      });
+
+      originalShowErrorMessage = vscode.window.showErrorMessage;
+      showErrorMessageCalls = [];
+      Object.defineProperty(vscode.window, "showErrorMessage", {
+        value: async (message: string) => {
+          showErrorMessageCalls.push(message);
           return {} as any;
         },
         configurable: true,
@@ -1213,6 +1226,11 @@ suite("ChatViewProvider", () => {
     teardown(() => {
       Object.defineProperty(vscode.window, "showTextDocument", {
         value: originalShowTextDocument,
+        configurable: true,
+        writable: true,
+      });
+      Object.defineProperty(vscode.window, "showErrorMessage", {
+        value: originalShowErrorMessage,
         configurable: true,
         writable: true,
       });
@@ -1348,6 +1366,49 @@ suite("ChatViewProvider", () => {
       );
       // options should be undefined because it fell back to catch block
       assert.strictEqual(call.options, undefined);
+    });
+
+    test("should show error message and not call showTextDocument when checkExists is true and file does not exist", async () => {
+      const provider = new ChatViewProvider(
+        vscode.Uri.file("/test"),
+        new TestACPClient() as any,
+        new TestMemento() as any
+      );
+      const { messageHandler } = resolveView(provider);
+
+      // Fire openFile message with a non-existent file and checkExists = true
+      await messageHandler({
+        type: "openFile",
+        path: "/non/existent/file.ts",
+        checkExists: true,
+      });
+
+      assert.strictEqual(showTextDocumentCalls.length, 0);
+      assert.strictEqual(showErrorMessageCalls.length, 1);
+      assert.ok(showErrorMessageCalls[0].includes("File does not exist"));
+    });
+
+    test("should open file and not show error message when checkExists is true and file exists", async () => {
+      const provider = new ChatViewProvider(
+        vscode.Uri.file("/test"),
+        new TestACPClient() as any,
+        new TestMemento() as any
+      );
+      const { messageHandler } = resolveView(provider);
+
+      // Fire openFile message with a file that exists (like __filename) and checkExists = true
+      await messageHandler({
+        type: "openFile",
+        path: __filename,
+        checkExists: true,
+      });
+
+      assert.strictEqual(showErrorMessageCalls.length, 0);
+      assert.strictEqual(showTextDocumentCalls.length, 1);
+      assert.strictEqual(
+        showTextDocumentCalls[0].uri.fsPath,
+        vscode.Uri.file(__filename).fsPath
+      );
     });
   });
 });

@@ -2176,6 +2176,16 @@ kbd {
   font-family: var(--vscode-font-family);
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.diff-header:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-foreground);
 }
 
 .diff-path {

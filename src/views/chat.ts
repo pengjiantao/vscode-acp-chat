@@ -88,6 +88,7 @@ interface WebviewMessage {
   confirmed?: boolean;
   action?: string;
   actionLabel?: string;
+  checkExists?: boolean;
 }
 
 export interface SelectionMention {
@@ -450,9 +451,21 @@ export class ChatViewProvider
             }
 
             if (uri) {
+              let stat: vscode.FileStat | undefined;
+              if (message.checkExists) {
+                try {
+                  stat = await vscode.workspace.fs.stat(uri);
+                } catch {
+                  vscode.window.showErrorMessage(
+                    `File does not exist: ${uri.fsPath}`
+                  );
+                  return;
+                }
+              }
+
               try {
-                const stat = await vscode.workspace.fs.stat(uri);
-                if (stat.type === vscode.FileType.Directory) {
+                const fileStat = stat || (await vscode.workspace.fs.stat(uri));
+                if (fileStat.type === vscode.FileType.Directory) {
                   await vscode.commands.executeCommand("revealInExplorer", uri);
                 } else {
                   const options: vscode.TextDocumentShowOptions = {

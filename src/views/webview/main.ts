@@ -396,7 +396,7 @@ export function renderDiff(
 
   if (path) {
     const filename = path.split("/").pop() || path;
-    html += `<div class="diff-header" acp-title="${escapeHtml(path)}">
+    html += `<div class="diff-header" acp-title="${escapeHtml(path)}" data-file-path="${escapeHtml(path)}">
     <span class="codicon codicon-file-text"></span>
     <span class="diff-path">${escapeHtml(filename)}</span>
   </div>`;
@@ -849,6 +849,7 @@ export class WebviewController {
     this.setupTooltip();
     this.setupCodeCopyHandler();
     this.setupFileLinkHandler();
+    this.setupDiffHeaderClickHandler();
   }
 
   private setupCodeCopyHandler(): void {
@@ -931,6 +932,27 @@ export class WebviewController {
         this.vscode.postMessage({
           type: "openFile",
           href: href,
+        });
+      }
+    });
+  }
+
+  private setupDiffHeaderClickHandler(): void {
+    // Delegated click handler for diff headers
+    this.elements.messagesEl.addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest(
+        ".diff-header"
+      ) as HTMLElement | null;
+      if (!target) return;
+
+      const path = target.getAttribute("data-file-path");
+      if (path) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.vscode.postMessage({
+          type: "openFile",
+          path: path,
+          checkExists: true,
         });
       }
     });

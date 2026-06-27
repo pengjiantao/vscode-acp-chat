@@ -1084,6 +1084,49 @@ suite("Webview", () => {
         assert.strictEqual(messages.length, 0);
       });
 
+      test("Clicking a diff-header posts an openFile message with path and checkExists", () => {
+        controller.handleMessage({
+          type: "toolCallStart",
+          toolCallId: "tool-diff-test",
+          name: "write",
+          kind: "write",
+        });
+        controller.handleMessage({
+          type: "toolCallComplete",
+          toolCallId: "tool-diff-test",
+          status: "completed",
+          title: "Write file",
+          content: [
+            {
+              type: "diff",
+              path: "/home/fiyqkrc/Documents/project/vscode-acp/src/extension.ts",
+              oldText: "old content",
+              newText: "new content",
+            },
+          ],
+        });
+
+        const diffHeader = elements.messagesEl.querySelector(
+          ".diff-header"
+        ) as HTMLElement;
+        assert.ok(diffHeader, "expected a diff-header");
+
+        mockVsCode._clearMessages();
+        diffHeader.dispatchEvent(
+          new dom.window.MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+        const messages = mockVsCode._getMessages();
+        assert.strictEqual(messages.length, 1);
+        assert.deepStrictEqual(messages[0], {
+          type: "openFile",
+          path: "/home/fiyqkrc/Documents/project/vscode-acp/src/extension.ts",
+          checkExists: true,
+        });
+      });
+
       test("Turn separation: each turn gets its own container and toolbar", () => {
         // First Turn
         controller.handleMessage({ type: "userMessage", text: "Question 1" });
@@ -2735,6 +2778,7 @@ suite("Webview", () => {
     test("renders file path header when provided", () => {
       const result = renderDiff("/path/to/file.ts", null, "new content");
       assert.ok(result.includes("diff-header"));
+      assert.ok(result.includes('data-file-path="/path/to/file.ts"'));
       assert.ok(result.includes("/path/to/file.ts"));
     });
 
