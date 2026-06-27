@@ -38,7 +38,7 @@ export const AGENTS: AgentConfig[] = [
     id: "codex",
     name: "Codex CLI",
     command: "npx",
-    args: ["@zed-industries/codex-acp"],
+    args: ["@agentclientprotocol/codex-acp"],
   },
   {
     id: "gemini",
