@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.12.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.12.0...v1.12.1) (2026-06-29)
+
+### Bug Fixes
+
+- correct test expectation for mention placeholder replacement ([13ca015](https://github.com/pengjiantao/vscode-acp-chat/commit/13ca0153dcf6fe02803cf04fbde813a1de8b3062))
+
 ## [1.12.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.9.2...v1.12.0) (2026-06-29)
 
 ### Features
