@@ -224,10 +224,12 @@ suite("History Restoration Order Integration", () => {
       `Expected 1 user message but got ${userMessages.length}`
     );
 
-    // The single user message should contain all text merged
+    // The single user message should contain all text merged.
+    // "image.png" in the plain text is replaced by the placeholder since it
+    // matches the mention name extracted from the <mention> tag.
     assert.strictEqual(
       userMessages[0].text,
-      "image.png __MENTION_0__",
+      "__MENTION_0__",
       "User message should contain merged text with mention placeholder"
     );
 
