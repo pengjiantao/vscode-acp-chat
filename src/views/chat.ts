@@ -1434,8 +1434,20 @@ export class ChatViewProvider
       return;
     }
 
-    // Any non-user chunk should trigger a flush of the user message buffer
-    if (update.sessionUpdate !== "user_message_chunk") {
+    // Only content-bearing chunks that represent a new assistant turn should
+    // trigger a flush of the user message buffer. Metadata updates
+    // (available_commands_update, config_option_update, usage_update, etc.)
+    // must NOT trigger flush because opencode may send them via setTimeout
+    // between user message chunks during history replay, which would split
+    // a single user message into two.
+    const isContentChunk = [
+      "agent_message_chunk",
+      "agent_thought_chunk",
+      "tool_call",
+      "tool_call_update",
+    ].includes(update.sessionUpdate);
+
+    if (update.sessionUpdate !== "user_message_chunk" && isContentChunk) {
       this.flushUserMessageBuffer();
     }
 

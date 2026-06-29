@@ -140,4 +140,107 @@ suite("History Restoration Order Integration", () => {
     assert.strictEqual(messages[userMsgIndex].text, "Explain this code.");
     assert.strictEqual(messages[thoughtChunkIndex].text, "Thinking...");
   });
+
+  test("should not split user message when available_commands_update arrives between chunks", async () => {
+    const memento = new MockMemento();
+    const mockAcpClient = {
+      setAgent: () => {},
+      getAgentId: () => "test-agent",
+      setOnStateChange: () => () => {},
+      setOnSessionUpdate: (cb: any) => {
+        mockAcpClient.sessionUpdateHandler = cb;
+        return () => {};
+      },
+      setOnStderr: () => () => {},
+      setOnReadTextFile: () => {},
+      setOnWriteTextFile: () => {},
+      setOnCreateTerminal: () => {},
+      setOnTerminalOutput: () => {},
+      setOnWaitForTerminalExit: () => {},
+      setOnKillTerminalCommand: () => {},
+      setOnReleaseTerminal: () => {},
+      setOnPermissionRequest: () => {},
+      isConnected: () => true,
+      connect: async () => {},
+      newSession: async () => {},
+      sessionUpdateHandler: (_update: any) => {},
+      dispose: () => {},
+    };
+
+    const provider = new ChatViewProvider(
+      vscode.Uri.file("/test"),
+      mockAcpClient as any,
+      memento
+    );
+
+    const mockView = new MockWebviewView();
+    provider.resolveWebviewView(mockView, {} as any, {} as any);
+    (provider as any).isLoadingHistory = true;
+
+    const handler = mockAcpClient.sessionUpdateHandler;
+
+    // 1. User text chunk
+    await handler({
+      update: {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "image.png " },
+      },
+    });
+
+    // 2. Metadata update arrives between user chunks (the bug trigger)
+    await handler({
+      update: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [{ name: "test", description: "test command" }],
+      },
+    });
+
+    // 3. More user text with mention tags
+    await handler({
+      update: {
+        sessionUpdate: "user_message_chunk",
+        content: {
+          type: "text",
+          text: '<mention type="image" name="image.png" />',
+        },
+      },
+    });
+
+    // 4. Agent chunk triggers flush
+    await handler({
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Here is the answer." },
+      },
+    });
+
+    const messages = mockView.webview.messages;
+    const userMessages = messages.filter((m: any) => m.type === "userMessage");
+
+    // Should be exactly ONE user message, not two
+    assert.strictEqual(
+      userMessages.length,
+      1,
+      `Expected 1 user message but got ${userMessages.length}`
+    );
+
+    // The single user message should contain all text merged
+    assert.strictEqual(
+      userMessages[0].text,
+      "image.png __MENTION_0__",
+      "User message should contain merged text with mention placeholder"
+    );
+
+    // Should have 1 mention (the image)
+    assert.strictEqual(
+      userMessages[0].mentions?.length,
+      1,
+      "Should have 1 mention"
+    );
+    assert.strictEqual(
+      userMessages[0].mentions?.[0]?.type,
+      "image",
+      "Mention should be of type image"
+    );
+  });
 });
