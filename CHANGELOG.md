@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.12.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.9.2...v1.12.0) (2026-06-29)
+
+### Features
+
+- **chat:** allow clicking markdown file links to open them in editor ([fd96f47](https://github.com/pengjiantao/vscode-acp-chat/commit/fd96f47a99c2f470911f966fe5889bf2f21fda5d))
+- **chat:** support codex-acp terminal output metadata streaming ([bcbc725](https://github.com/pengjiantao/vscode-acp-chat/commit/bcbc72505fe27d141f99c9c24e95644a1c51ec2e))
+- sanitize MCP server names for agent compatibility ([40b3848](https://github.com/pengjiantao/vscode-acp-chat/commit/40b38489f697a6382046e140e4e0b68affcfdc99))
+- support completed status directly on tool_call notifications ([3f298b3](https://github.com/pengjiantao/vscode-acp-chat/commit/3f298b311a57d93d6d594c12bda0d8ad2846d68d))
+- **webview:** make diff headers clickable to open files ([c619ee3](https://github.com/pengjiantao/vscode-acp-chat/commit/c619ee3b765d7487f92db6f076cb9cff88354c40))
+- **webview:** remove dropdown min-width and show metadata in tooltip ([73cd3fb](https://github.com/pengjiantao/vscode-acp-chat/commit/73cd3fb64f490c50bb4b88ec63a092c22a081ee3))
+
+### Bug Fixes
+
+- prevent metadata chunks from splitting user messages during history replay ([2796b5b](https://github.com/pengjiantao/vscode-acp-chat/commit/2796b5b6d50048d4574e294d134f2e880b7d3e41))
+
+### Code Refactoring
+
+- remove diff hunk click-to-jump and line selection features ([c656898](https://github.com/pengjiantao/vscode-acp-chat/commit/c656898d16938a451c54fdb87aae6f56e5f90774))
+
 ## [1.11.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.10.1...v1.11.0) (2026-06-27)
 
 ### Features
