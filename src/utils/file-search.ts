@@ -24,29 +24,30 @@ const COMMON_EXCLUDE_FOLDERS = [
 ];
 
 /**
- * 解析 .gitignore 文件内容，返回排除的文件夹列表
+ * Parse the contents of a .gitignore file and return the list of
+ * excluded folders.
  */
 function parseGitignore(content: string): string[] {
   return content
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#")) // 过滤空行和注释
+    .filter((line) => line && !line.startsWith("#")) // drop empty lines and comments
     .map((line) => {
-      // 移除开头和结尾的 /
+      // strip leading and trailing slashes
       const pattern = line.replace(/^\/|\/$/g, "");
-      // 只返回目录模式（以 / 结尾的在 gitignore 中通常是目录）
+      // only keep directory patterns (those ending with / in gitignore are usually dirs)
       return pattern;
     })
     .filter((pattern) => {
-      // 过滤掉纯文件模式，只保留可能是目录的模式
-      // 如果包含 / 或者没有扩展名，可能是目录
+      // drop pure file patterns; keep only patterns that may be directories
+      // (patterns containing / or lacking an extension are likely directories)
       return !pattern.includes(".") || pattern.endsWith("/");
     })
-    .map((pattern) => pattern.replace(/\/$/, "")); // 移除结尾的 /
+    .map((pattern) => pattern.replace(/\/$/, "")); // strip trailing slash
 }
 
 /**
- * 从工作区根目录读取 .gitignore 文件
+ * Read the .gitignore file from the workspace root.
  */
 async function getExcludeFolders(): Promise<string[]> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -63,12 +64,12 @@ async function getExcludeFolders(): Promise<string[]> {
     const gitignoreContent = new TextDecoder().decode(content);
     const gitignoreFolders = parseGitignore(gitignoreContent);
 
-    // 与常见排除目录做并集
+    // union with the common exclude folders
     const combined = new Set([...COMMON_EXCLUDE_FOLDERS, ...gitignoreFolders]);
 
     return Array.from(combined);
   } catch {
-    // 如果没有 .gitignore 文件或者读取失败，使用默认排除列表
+    // fall back to the default exclude list if .gitignore is missing or unreadable
     return COMMON_EXCLUDE_FOLDERS;
   }
 }
@@ -80,19 +81,19 @@ const DEFAULT_OPTIONS: Required<SearchOptions> = {
 };
 
 /**
- * 递归搜索工作区中的文件和文件夹
- * 使用 vscode.workspace.fs API 以保持良好的跨平台兼容性
+ * Recursively search files and folders in the workspace.
+ * Uses the vscode.workspace.fs API for good cross-platform compatibility.
  *
- * 排除规则：
- * 1. 从项目 .gitignore 文件动态读取
- * 2. 与常见排除目录（node_modules, .git 等）做并集
- * 3. 如果没有 .gitignore，使用默认的常见排除目录
+ * Exclusion rules:
+ * 1. Dynamically read from the project's .gitignore file.
+ * 2. Union with common exclude folders (node_modules, .git, etc.).
+ * 3. Fall back to the common exclude folders if no .gitignore exists.
  */
 export async function searchWorkspaceFiles(
   query: string,
   options: SearchOptions = {}
 ): Promise<SearchResult[]> {
-  // 动态获取排除文件夹列表
+  // dynamically resolve the exclude folder list
   const excludeFolders = options.excludeFolders || (await getExcludeFolders());
 
   const maxResults = options.maxResults ?? DEFAULT_OPTIONS.maxResults;
@@ -105,10 +106,10 @@ export async function searchWorkspaceFiles(
     return [];
   }
 
-  // 遍历所有工作区文件夹
+  // iterate over all workspace folders
   for (const workspaceFolder of workspaceFolders) {
     if (results.length >= maxResults * 2) {
-      // 稍微多搜一点以便排序
+      // fetch a few extra results to improve sorting quality
       break;
     }
 
@@ -118,20 +119,20 @@ export async function searchWorkspaceFiles(
       query,
       results,
       {
-        maxResults: maxResults * 2, // 搜索更多结果以保证排序质量
+        maxResults: maxResults * 2, // search more results to ensure sort quality
         excludeFolders,
         includeHidden,
       }
     );
   }
 
-  // 去重
+  // deduplicate
   const uniqueResults = results.filter(
     (result, index, self) =>
       index === self.findIndex((r) => r.path === result.path)
   );
 
-  // 排序逻辑
+  // sorting logic
   const normalizedQuery = query.replace(/\\/g, "/").toLowerCase();
   uniqueResults.sort((a, b) => {
     const aLowerName = a.name.toLowerCase();
@@ -139,13 +140,13 @@ export async function searchWorkspaceFiles(
     const aLowerPath = a.path.toLowerCase();
     const bLowerPath = b.path.toLowerCase();
 
-    // 1. 精确匹配文件名/文件夹名
+    // 1. exact file/folder name match
     if (aLowerName === normalizedQuery && bLowerName !== normalizedQuery)
       return -1;
     if (bLowerName === normalizedQuery && aLowerName !== normalizedQuery)
       return 1;
 
-    // 2. 前缀匹配文件名
+    // 2. file name prefix match
     if (
       aLowerName.startsWith(normalizedQuery) &&
       !bLowerName.startsWith(normalizedQuery)
@@ -157,17 +158,17 @@ export async function searchWorkspaceFiles(
     )
       return 1;
 
-    // 3. 路径包含匹配
+    // 3. path substring match
     const aPathScore = aLowerPath.includes(normalizedQuery) ? 1 : 0;
     const bPathScore = bLowerPath.includes(normalizedQuery) ? 1 : 0;
     if (aPathScore !== bPathScore) return bPathScore - aPathScore;
 
-    // 4. 深度排序（路径短的优先）
+    // 4. depth sort (shorter paths first)
     const aDepth = a.path.split("/").length;
     const bDepth = b.path.split("/").length;
     if (aDepth !== bDepth) return aDepth - bDepth;
 
-    // 5. 字母顺序
+    // 5. alphabetical order
     return a.path.localeCompare(b.path);
   });
 
@@ -175,7 +176,7 @@ export async function searchWorkspaceFiles(
 }
 
 /**
- * 递归搜索目录
+ * Recursively search a directory.
  */
 async function searchDirectory(
   dirUri: vscode.Uri,
@@ -196,23 +197,24 @@ async function searchDirectory(
         return;
       }
 
-      // 跳过隐藏文件/文件夹（除非配置包含）
-      if (!options.includeHidden && name.startsWith(".")) {
+      // .git is always hidden; other hidden files/folders are skipped
+      // only when includeHidden is disabled
+      if (name === ".git" || (!options.includeHidden && name.startsWith("."))) {
         continue;
       }
 
       const uri = vscode.Uri.joinPath(dirUri, name);
-      // 手动计算相对路径以确保一致性
+      // compute the relative path manually to ensure consistency
       const rootPath = workspaceRootUri.fsPath;
       const entryPath = uri.fsPath;
       let relativePath = entryPath.startsWith(rootPath)
         ? entryPath.slice(rootPath.length)
         : entryPath;
 
-      // 移除开头的斜杠并统一使用正斜杠
+      // strip leading slashes and normalize to forward slashes
       relativePath = relativePath.replace(/^[/\\]+/, "").replace(/\\/g, "/");
 
-      // 检查是否匹配查询（空查询匹配所有）
+      // check whether the entry matches the query (empty query matches all)
       let isMatch = false;
       if (!query) {
         isMatch = true;
@@ -222,10 +224,10 @@ async function searchDirectory(
         const lowerRelativePath = relativePath.toLowerCase();
 
         if (normalizedQuery.includes("/")) {
-          // 如果查询包含路径分隔符，匹配相对路径
+          // if the query contains a path separator, match against the relative path
           isMatch = lowerRelativePath.includes(normalizedQuery);
         } else {
-          // 否则只匹配文件名/文件夹名
+          // otherwise match only the file/folder name
           isMatch = lowerName.includes(normalizedQuery);
         }
       }
@@ -253,7 +255,7 @@ async function searchDirectory(
         }
       }
 
-      // 如果是文件夹且不在排除列表中，递归搜索
+      // recurse into folders that are not in the exclude list
       if (
         type === vscode.FileType.Directory &&
         !options.excludeFolders.includes(name)
@@ -269,6 +271,6 @@ async function searchDirectory(
       }
     }
   } catch {
-    // 忽略权限错误或无法访问的目录
+    // ignore permission errors or inaccessible directories
   }
 }

@@ -413,9 +413,10 @@ export class ChatViewProvider
         case "searchFiles":
           if (message.text !== undefined) {
             const query = message.text;
-            // 使用新的搜索工具函数，支持文件和文件夹搜索
+            // use the search helper that supports both files and folders
             const results = await searchWorkspaceFiles(query, {
               maxResults: 20,
+              includeHidden: true,
             });
 
             this.postMessage({
