@@ -21,6 +21,7 @@ import {
 } from "../views/webview/tool-render";
 import { computeLineDiff } from "../utils/diff";
 import { EventBus } from "../views/webview/event-bus";
+import { TooltipManager } from "../views/webview/widget/tooltip";
 
 function createMockVsCodeApi(): VsCodeApi & {
   _getMessages: () => unknown[];
@@ -561,6 +562,61 @@ suite("Webview", () => {
       // Execute tools should use IO block
       assert.ok(html.includes('<div class="io-block">'));
       assert.ok(html.includes("Running unit tests"));
+    });
+  });
+
+  suite("TooltipManager", () => {
+    test("measures a new tooltip from a neutral position", () => {
+      const dom = new JSDOM("<!DOCTYPE html><body></body>", {
+        url: "https://localhost",
+      });
+      const doc = dom.window.document;
+      const action = doc.createElement("button");
+      const dropdown = doc.createElement("button");
+      action.setAttribute("acp-title", "Copy response");
+      dropdown.setAttribute(
+        "acp-title",
+        "Reasoning effort\nHow much reasoning effort the model should use"
+      );
+      doc.body.append(action, dropdown);
+
+      const originalSetTimeout = global.setTimeout;
+      (global as typeof globalThis).setTimeout = ((callback: () => void) => {
+        callback();
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout;
+
+      try {
+        new TooltipManager(doc, dom.window as unknown as Window).setup();
+        const tooltip = doc.querySelector(".acp-tooltip") as HTMLElement;
+        let measuredLeft = "";
+        tooltip.getBoundingClientRect = () => {
+          measuredLeft = tooltip.style.left;
+          return { width: 180, height: 40 } as DOMRect;
+        };
+        action.getBoundingClientRect = () =>
+          ({ left: 20, top: 20, width: 40, height: 20, bottom: 40 }) as DOMRect;
+        dropdown.getBoundingClientRect = () =>
+          ({
+            left: 300,
+            top: 300,
+            width: 80,
+            height: 20,
+            bottom: 320,
+          }) as DOMRect;
+
+        action.dispatchEvent(
+          new dom.window.MouseEvent("mouseover", { bubbles: true })
+        );
+        tooltip.style.left = "120px";
+        dropdown.dispatchEvent(
+          new dom.window.MouseEvent("mouseover", { bubbles: true })
+        );
+
+        assert.strictEqual(measuredLeft, "0px");
+      } finally {
+        global.setTimeout = originalSetTimeout;
+      }
     });
   });
 

@@ -69,13 +69,16 @@ export class TooltipManager {
         if (title) {
           currentTarget = target;
           tooltipTimeout = setTimeout(() => {
-            if (!target.isConnected) {
-              currentTarget = null;
+            if (!target.isConnected || target !== currentTarget) {
               return;
             }
             tooltipElement.textContent = title;
-            tooltipElement.classList.add("visible");
+            // Reset the previous placement before measuring. With auto width,
+            // an old left offset can change wrapping and produce a stale height.
+            tooltipElement.style.left = "0px";
+            tooltipElement.style.top = "0px";
             this.updatePosition(target, tooltipElement);
+            tooltipElement.classList.add("visible");
           }, 400); // VSCode native hover delay
         }
       }
