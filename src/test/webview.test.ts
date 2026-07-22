@@ -22,6 +22,7 @@ import {
 import { computeLineDiff } from "../utils/diff";
 import { EventBus } from "../views/webview/event-bus";
 import { TooltipManager } from "../views/webview/widget/tooltip";
+import { marked } from "../views/webview/marked-config";
 
 function createMockVsCodeApi(): VsCodeApi & {
   _getMessages: () => unknown[];
@@ -617,6 +618,36 @@ suite("Webview", () => {
       } finally {
         global.setTimeout = originalSetTimeout;
       }
+    });
+
+    test("adds acp-title to markdown links for tooltip", () => {
+      const markdown1 = "[file link](file:///path/to/file.ts:10-20)";
+      const html1 = marked.parse(markdown1) as string;
+      assert.ok(html1.includes('acp-title="file:///path/to/file.ts:10-20"'));
+
+      const markdown2 = '[web link](https://example.com "Custom Title")';
+      const html2 = marked.parse(markdown2) as string;
+      assert.ok(html2.includes('acp-title="Custom Title"'));
+    });
+
+    test("escapes attributes in markdown links to prevent XSS", () => {
+      const markdown = '[test](https://example.com/foo"bar)';
+      const html = marked.parse(markdown) as string;
+      assert.ok(!html.includes('href="https://example.com/foo"bar"'));
+      assert.ok(html.includes("&quot;"));
+    });
+
+    test("filters dangerous URI schemes in markdown links", () => {
+      const jsMarkdown = "[click me](javascript:alert(1))";
+      const jsHtml = marked.parse(jsMarkdown) as string;
+      assert.ok(!jsHtml.includes("<a "));
+      assert.ok(jsHtml.includes("click me"));
+
+      const dataMarkdown =
+        "[click me](data:text/html,<script>alert(1)</script>)";
+      const dataHtml = marked.parse(dataMarkdown) as string;
+      assert.ok(!dataHtml.includes("<a "));
+      assert.ok(dataHtml.includes("click me"));
     });
   });
 
