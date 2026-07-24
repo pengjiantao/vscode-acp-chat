@@ -288,18 +288,40 @@ export function activate(context: vscode.ExtensionContext) {
         label: a.name,
         description: a.id,
         id: a.id,
-        picked: a.id === currentAgentId,
         detail: a.id === currentAgentId ? "$(check) Currently selected" : "",
       }));
 
-      const selected = await vscode.window.showQuickPick(items, {
-        placeHolder: "Select an AI agent",
-        title: "VSCode ACP: Select Agent",
+      const quickPick = vscode.window.createQuickPick<(typeof items)[number]>();
+      quickPick.items = items;
+      quickPick.placeholder = "Select an AI agent";
+      quickPick.title = "VSCode ACP: Select Agent";
+
+      if (currentAgentId) {
+        const activeItem = items.find((item) => item.id === currentAgentId);
+        if (activeItem) {
+          quickPick.activeItems = [activeItem];
+        }
+      }
+
+      quickPick.onDidAccept(async () => {
+        const selected = quickPick.selectedItems[0];
+        quickPick.dispose();
+        if (selected) {
+          try {
+            await chatProvider?.switchAgent(selected.id);
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(
+              `Failed to switch agent: ${message}`
+            );
+          }
+        }
       });
 
-      if (selected) {
-        await chatProvider?.switchAgent(selected.id);
-      }
+      quickPick.onDidHide(() => quickPick.dispose());
+
+      quickPick.show();
     })
   );
 
