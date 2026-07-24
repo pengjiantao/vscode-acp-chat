@@ -55,7 +55,7 @@ function createWebviewHTML(): string {
 </head>
 <body>
   <div id="welcome-view" class="welcome-view">
-    <img src="logo.svg" class="welcome-logo">
+    <div class="welcome-logo" style="mask-image: url(logo.svg); -webkit-mask-image: url(logo.svg);" role="img" aria-label="VSCode ACP Logo"></div>
     <h3>Welcome to VSCode ACP</h3>
   </div>
 

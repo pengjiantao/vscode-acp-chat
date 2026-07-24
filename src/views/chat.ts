@@ -1951,7 +1951,7 @@ export class ChatViewProvider
 </head>
 <body>
   <div id="welcome-view" class="welcome-view" role="main" aria-label="Welcome">
-    <img src="${logoUri}" alt="VSCode ACP Logo" class="welcome-logo">
+    <div class="welcome-logo" style="mask-image: url(${logoUri}); -webkit-mask-image: url(${logoUri});" role="img" aria-label="VSCode ACP Logo"></div>
     <h3>Welcome to VSCode ACP</h3>
     <p>Chat with AI coding agents directly in VS Code.</p>
   </div>

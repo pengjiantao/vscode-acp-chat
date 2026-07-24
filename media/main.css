@@ -29,6 +29,13 @@ body {
   height: 64px;
   margin-bottom: 20px;
   opacity: 0.8;
+  background-color: var(--vscode-foreground);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
 }
 
 .welcome-view h3 {
