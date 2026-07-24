@@ -680,6 +680,7 @@ body {
 #chat-input-area:focus-within {
   border-color: var(--vscode-focusBorder);
   box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+  z-index: 1;
 }
 
 /* Rich Text Input Support */
