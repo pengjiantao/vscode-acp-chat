@@ -52,6 +52,7 @@ import {
   getFirstAvailableAgent,
 } from "./agents";
 import { getGlobalBinPaths } from "../utils/bin-paths";
+import { killProcessTree, DEFAULT_NPX_ENV } from "../utils/process-utils";
 import {
   serializeMentionsWithContext,
   type Mention,
@@ -538,14 +539,19 @@ export class ACPClient {
         .filter((p) => !!p)
         .join(separator);
 
+      const defaultNpxEnv =
+        this.agentConfig.command === "npx" ? DEFAULT_NPX_ENV : {};
+
       const currentProcess = this.spawnFn(
         this.agentConfig.command,
         this.agentConfig.args,
         {
           stdio: ["pipe", "pipe", "pipe"],
           cwd,
+          detached: process.platform !== "win32",
           env: {
             ...process.env,
+            ...defaultNpxEnv,
             ...this.agentConfig.env,
             [pathEnvName]: newPath,
           },
@@ -1154,7 +1160,7 @@ export class ACPClient {
     this.debugConfigListener?.dispose();
     this.debugConfigListener = null;
     if (this.process) {
-      this.process.kill();
+      killProcessTree(this.process);
       this.process = null;
     }
     this.teardownConnection();

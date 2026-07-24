@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { spawn } from "child_process";
+import { killProcessTree } from "../utils/process-utils";
 import type {
   CreateTerminalRequest,
   CreateTerminalResponse,
@@ -220,49 +221,7 @@ export class TerminalHandler {
     proc: ReturnType<typeof spawn>,
     signal: NodeJS.Signals
   ): void {
-    const pid = proc.pid;
-    if (pid === undefined) {
-      return;
-    }
-
-    if (process.platform === "win32") {
-      if (signal === "SIGKILL") {
-        this.killWindowsProcessTree(pid);
-        return;
-      }
-      try {
-        proc.kill(signal);
-      } catch {}
-      return;
-    }
-
-    // Negative PID targets the whole detached process group on POSIX.
-    try {
-      process.kill(-pid, signal);
-    } catch {
-      try {
-        proc.kill(signal);
-      } catch {}
-    }
-  }
-
-  private killWindowsProcessTree(pid: number): void {
-    try {
-      // taskkill /t is the Windows equivalent of killing the terminal process tree.
-      const killer = spawn("taskkill", ["/pid", String(pid), "/t", "/f"], {
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      killer.on("error", () => {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {}
-      });
-    } catch {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {}
-    }
+    killProcessTree(proc, signal);
   }
 
   private clearForceKillTimer(terminal: ManagedTerminal): void {

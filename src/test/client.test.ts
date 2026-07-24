@@ -183,6 +183,7 @@ suite("ACPClient with Mock Server", () => {
         assert.deepStrictEqual(capturedOptions, {
           stdio: ["pipe", "pipe", "pipe"],
           cwd: "/workspace/project",
+          detached: process.platform !== "win32",
           env: (capturedOptions as any).env,
         });
       } finally {
@@ -215,6 +216,40 @@ suite("ACPClient with Mock Server", () => {
       try {
         await localClient.connect();
         assert.strictEqual((capturedOptions as any).cwd, undefined);
+      } finally {
+        localClient.dispose();
+      }
+    });
+
+    test("should pass DEFAULT_NPX_ENV when command is npx", async () => {
+      let capturedOptions: any;
+      const localSpawn: SpawnFunction = (
+        _command: string,
+        _args: string[],
+        options: unknown
+      ): ChildProcess => {
+        capturedOptions = options;
+        return createMockProcess({}) as unknown as ChildProcess;
+      };
+
+      const localClient = new ACPClient({
+        agentConfig: {
+          id: "codex",
+          name: "Codex CLI",
+          command: "npx",
+          args: ["-y", "@agentclientprotocol/codex-acp@latest"],
+        },
+        spawn: localSpawn,
+        skipAvailabilityCheck: true,
+      });
+
+      try {
+        await localClient.connect();
+        assert.strictEqual(
+          capturedOptions.env.NPM_CONFIG_FETCH_TIMEOUT,
+          "10000"
+        );
+        assert.strictEqual(capturedOptions.env.NO_UPDATE_NOTIFIER, "1");
       } finally {
         localClient.dispose();
       }
