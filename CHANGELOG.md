@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.19.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.18.7...v1.19.0) (2026-07-24)
+
+### Features
+
+- auto-create missing parent directories on writeTextFile ([e42d5a0](https://github.com/pengjiantao/vscode-acp-chat/commit/e42d5a0b90d739605f504949740a10fe20c4ff93))
+- **webview:** add tooltips for markdown file and hyperlink references ([7e6127b](https://github.com/pengjiantao/vscode-acp-chat/commit/7e6127b42dc6ef1fc21c078cc7267c7a0a9bbd95))
+
+### Bug Fixes
+
+- **acp:** prevent npx hangs and clean up process trees ([abdbdea](https://github.com/pengjiantao/vscode-acp-chat/commit/abdbdeaf104f793140775f1543ddac8e27052d80))
+- **extension:** pre-select current agent in QuickPick menu ([af03aea](https://github.com/pengjiantao/vscode-acp-chat/commit/af03aeac828b7c71e972f93276aee88be6d00de6))
+- include hidden files in autocomplete file search and always exclude .git ([e6f14e9](https://github.com/pengjiantao/vscode-acp-chat/commit/e6f14e94ebb78d7fc1e4f0d45fd06972e4914943))
+- **ui:** adapt welcome logo color to VSCode light and dark themes via CSS mask ([68b33b4](https://github.com/pengjiantao/vscode-acp-chat/commit/68b33b42c651f2e941b437aa7cc6f871e53d7596))
+- **webview:** elevate chat input z-index on focus to prevent top border clipping ([4168d4b](https://github.com/pengjiantao/vscode-acp-chat/commit/4168d4b74ba8e7e16b2493f713b2d663f98215ea))
+- **webview:** stabilize tooltip placement ([ac17a86](https://github.com/pengjiantao/vscode-acp-chat/commit/ac17a86174e08aa1ad919c6e4c805e29e4479f48))
+
 ### [1.18.7](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.18.6...v1.18.7) (2026-07-09)
 
 ### Bug Fixes
