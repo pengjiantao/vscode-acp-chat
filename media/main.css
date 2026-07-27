@@ -679,6 +679,7 @@ body {
   flex-direction: column;
   flex-shrink: 0;
   position: relative;
+  z-index: 20;
   transition:
     border-color 0.2s,
     box-shadow 0.2s;
@@ -687,7 +688,6 @@ body {
 #chat-input-area:focus-within {
   border-color: var(--vscode-focusBorder);
   box-shadow: 0 0 0 1px var(--vscode-focusBorder);
-  z-index: 1;
 }
 
 /* Rich Text Input Support */
