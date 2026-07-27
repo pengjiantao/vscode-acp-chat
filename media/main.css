@@ -1581,6 +1581,42 @@ body {
   animation: popoverFadeIn 0.1s ease-out;
 }
 
+/* Dropdown Item Description Popover */
+.acp-dropdown-item-desc-popover {
+  position: fixed;
+  z-index: 2000;
+  max-width: 280px;
+  min-width: 80px;
+  padding: 8px 12px;
+  background: var(
+    --vscode-editorHoverWidget-background,
+    var(--vscode-editor-background, #252526)
+  );
+  color: var(
+    --vscode-editorHoverWidget-foreground,
+    var(--vscode-editor-foreground, #cccccc)
+  );
+  border: 1px solid
+    var(--vscode-editorHoverWidget-border, var(--vscode-widget-border, #454545));
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+  pointer-events: none;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.05s ease-in-out;
+}
+
+.acp-dropdown-item-desc-popover.visible {
+  display: block;
+  opacity: 1;
+}
+
 /* Context Usage Ring */
 .context-usage {
   display: inline-flex;

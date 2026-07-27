@@ -19,6 +19,8 @@
 export class TooltipManager {
   private doc: Document;
   private win: Window;
+  private isSetup = false;
+  private destroyFn?: () => void;
 
   constructor(doc: Document, win: Window) {
     this.doc = doc;
@@ -26,10 +28,31 @@ export class TooltipManager {
   }
 
   /**
-   * Create the tooltip DOM element and wire up the global hover listeners.
-   * Call this once during webview initialisation.
+   * Static helper to immediately hide any active floating acp-title tooltip in the document.
+   * Serves as a single source of truth for external widgets (like Dropdown) without
+   * tight CSS class coupling.
+   */
+  static hideActive(doc: Document): void {
+    const activeTooltip = doc.querySelector(".acp-tooltip.visible");
+    if (activeTooltip) {
+      activeTooltip.classList.remove("visible");
+    }
+  }
+
+  /** Instance helper to hide active tooltip. */
+  hideActive(): void {
+    TooltipManager.hideActive(this.doc);
+  }
+
+  /**
+   * Create the tooltip DOM element and wire up the global hover/click listeners.
+   * Idempotent: safe to call multiple times (cleans up previous listeners).
    */
   setup(): void {
+    if (this.isSetup) {
+      this.destroy();
+    }
+
     const tooltipElement = this.doc.createElement("div");
     tooltipElement.className = "acp-tooltip";
     this.doc.body.appendChild(tooltipElement);
@@ -43,9 +66,9 @@ export class TooltipManager {
       currentTarget = null;
     };
 
-    // Auto-hide when the target element is removed from the DOM.
+    let observer: MutationObserver | undefined;
     if (typeof MutationObserver !== "undefined") {
-      const observer = new MutationObserver(() => {
+      observer = new MutationObserver(() => {
         if (currentTarget && !currentTarget.isConnected) {
           hide();
         }
@@ -53,7 +76,7 @@ export class TooltipManager {
       observer.observe(this.doc.body, { childList: true, subtree: true });
     }
 
-    this.doc.addEventListener("mouseover", (e) => {
+    const onMouseOver = (e: Event) => {
       const target = (e.target as HTMLElement).closest(
         "[acp-title]"
       ) as HTMLElement;
@@ -65,11 +88,34 @@ export class TooltipManager {
       hide();
 
       if (target) {
+        // Stage 1 (Immediate Interception): Suppress acp-title tooltips immediately if
+        // the target element or its ancestor is open (e.g. an open dropdown wrapper),
+        // or inside a dropdown menu popover or item description popover.
+        if (
+          target.classList.contains("open") ||
+          target.closest(".open") ||
+          target.closest(".dropdown-popover") ||
+          target.closest(".acp-dropdown-item-desc-popover")
+        ) {
+          return;
+        }
+
         const title = target.getAttribute("acp-title");
         if (title) {
           currentTarget = target;
           tooltipTimeout = setTimeout(() => {
-            if (!target.isConnected || target !== currentTarget) {
+            // Stage 2 (Delayed Verification): Re-check conditions after 400ms delay to guard against race conditions:
+            // 1. Target element detached from DOM.
+            // 2. Hover target changed.
+            // 3. Target or parent element became open (e.g. user clicked to open dropdown during 400ms delay).
+            // 4. acp-title attribute was removed (e.g. stripped on dropdown open).
+            if (
+              !target.isConnected ||
+              target !== currentTarget ||
+              target.classList.contains("open") ||
+              !target.hasAttribute("acp-title") ||
+              target.closest(".open")
+            ) {
               return;
             }
             tooltipElement.textContent = title;
@@ -82,18 +128,44 @@ export class TooltipManager {
           }, 400); // VSCode native hover delay
         }
       }
-    });
+    };
 
-    this.doc.addEventListener("mouseout", (e) => {
+    const onMouseOut = (e: Event) => {
       if (currentTarget) {
-        const relatedTarget = e.relatedTarget as HTMLElement;
+        const relatedTarget = (e as MouseEvent).relatedTarget as HTMLElement;
         if (!relatedTarget || !currentTarget.contains(relatedTarget)) {
           hide();
         }
       }
-    });
+    };
 
-    this.win.addEventListener("blur", hide);
+    const onMouseDown = () => hide();
+    const onBlur = () => hide();
+
+    this.doc.addEventListener("mouseover", onMouseOver);
+    this.doc.addEventListener("mouseout", onMouseOut);
+    this.doc.addEventListener("mousedown", onMouseDown);
+    this.win.addEventListener("blur", onBlur);
+
+    this.isSetup = true;
+    this.destroyFn = () => {
+      hide();
+      observer?.disconnect();
+      this.doc.removeEventListener("mouseover", onMouseOver);
+      this.doc.removeEventListener("mouseout", onMouseOut);
+      this.doc.removeEventListener("mousedown", onMouseDown);
+      this.win.removeEventListener("blur", onBlur);
+      tooltipElement.remove();
+      this.isSetup = false;
+    };
+  }
+
+  /** Clean up event listeners and DOM elements created by setup(). */
+  destroy(): void {
+    if (this.destroyFn) {
+      this.destroyFn();
+      this.destroyFn = undefined;
+    }
   }
 
   /**

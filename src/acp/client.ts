@@ -25,7 +25,6 @@ import {
   type InitializeResponse,
   type NewSessionResponse,
   type PromptResponse,
-  type SessionModeState,
   type SessionConfigOption,
   type AvailableCommand,
   type LoadSessionRequest,
@@ -65,12 +64,26 @@ import {
   type McpServerConfig,
 } from "../mcp";
 
+export interface SessionModeState {
+  availableModes: Array<{
+    id: string;
+    name: string;
+    description?: string | null;
+  }>;
+  currentModeId: string;
+  name?: string | null;
+  description?: string | null;
+}
+
 export interface SessionModelState {
   availableModels: Array<{
     modelId: string;
     name: string;
+    description?: string | null;
   }>;
   currentModelId: string;
+  name?: string | null;
+  description?: string | null;
 }
 
 export interface GenericConfigOption {
@@ -135,8 +148,11 @@ export function extractConfigOptions(
         availableModels: flatOptions.map((o) => ({
           modelId: o.value,
           name: o.name || o.value,
+          description: o.description ?? null,
         })),
         currentModelId: opt.currentValue,
+        name: opt.name || "Model",
+        description: opt.description ?? null,
       };
       continue;
     }
@@ -146,8 +162,11 @@ export function extractConfigOptions(
         availableModes: flatOptions.map((o) => ({
           id: o.value,
           name: o.name || o.value,
+          description: o.description ?? null,
         })),
         currentModeId: opt.currentValue,
+        name: opt.name || "Mode",
+        description: opt.description ?? null,
       };
       continue;
     }

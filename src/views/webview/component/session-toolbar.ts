@@ -21,6 +21,20 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 
 /**
+ * Construct top-level property description title text for tooltips.
+ * Format: "Name\nDescription" if description is present, otherwise "Name".
+ */
+function buildCustomTitle(
+  name: string | null | undefined,
+  description: string | null | undefined,
+  fallbackName: string
+): string {
+  const displayName = name || fallbackName;
+  const trimmedDesc = description ? description.trim() : "";
+  return trimmedDesc ? `${displayName}\n${trimmedDesc}` : displayName;
+}
+
+/**
  * Owns the session option strip: mode/model pickers, generic ACP config
  * options, and context usage.
  *
@@ -103,10 +117,14 @@ export class SessionToolbarComponent implements MessageHandler {
 
     if (hasModes && msg.modes) {
       this.elements.modeDropdown.style.display = "flex";
+      this.modeDropdown?.setCustomTitle(
+        buildCustomTitle(msg.modes.name, msg.modes.description, "Mode")
+      );
       this.modeDropdown?.setOptions(
         msg.modes.availableModes.map((mode) => ({
           id: mode.id,
           name: mode.name || mode.id,
+          description: mode.description ?? null,
         })),
         msg.modes.currentModeId
       );
@@ -116,6 +134,9 @@ export class SessionToolbarComponent implements MessageHandler {
 
     if (hasModels && msg.models) {
       this.elements.modelDropdown.style.display = "flex";
+      this.modelDropdown?.setCustomTitle(
+        buildCustomTitle(msg.models.name, msg.models.description, "Model")
+      );
       this.updateModelDropdown(msg.models);
     } else {
       this.elements.modelDropdown.style.display = "none";
@@ -180,6 +201,7 @@ export class SessionToolbarComponent implements MessageHandler {
         options.push({
           id: model.modelId,
           name: model.name || model.modelId,
+          description: model.description ?? null,
           isStarred: true,
           canStar: true,
         });
@@ -192,6 +214,7 @@ export class SessionToolbarComponent implements MessageHandler {
       options.push({
         id: model.modelId,
         name: model.name || model.modelId,
+        description: model.description ?? null,
         isStarred: this.starredModels.has(model.modelId),
         canStar: true,
       });
@@ -228,14 +251,14 @@ export class SessionToolbarComponent implements MessageHandler {
       }
 
       const dropdown = this.ensureConfigOptionDropdown(option.id, wrapper);
-      const titleText = option.description
-        ? `${option.name}\n${option.description}`
-        : option.name;
-      dropdown.setCustomTitle(titleText);
+      dropdown.setCustomTitle(
+        buildCustomTitle(option.name, option.description, option.id)
+      );
       dropdown.setOptions(
         option.options.map((item) => ({
           id: item.value,
           name: item.name || item.value,
+          description: item.description ?? null,
         })),
         option.currentValue
       );

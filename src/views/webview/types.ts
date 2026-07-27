@@ -156,12 +156,24 @@ export interface ExtensionMessage {
   configId?: string;
   value?: string;
   modes?: {
-    availableModes: Array<{ id: string; name: string }>;
+    availableModes: Array<{
+      id: string;
+      name: string;
+      description?: string | null;
+    }>;
     currentModeId: string;
+    name?: string | null;
+    description?: string | null;
   } | null;
   models?: {
-    availableModels: Array<{ modelId: string; name: string }>;
+    availableModels: Array<{
+      modelId: string;
+      name: string;
+      description?: string | null;
+    }>;
     currentModelId: string;
+    name?: string | null;
+    description?: string | null;
   } | null;
   genericConfigOptions?: Array<{
     id: string;
@@ -257,6 +269,7 @@ export interface WebviewEventMap {
 export interface DropdownOption {
   id: string;
   name: string;
+  description?: string | null;
   type?: "item" | "header" | "divider";
   isStarred?: boolean;
   canStar?: boolean;

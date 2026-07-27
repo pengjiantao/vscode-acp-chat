@@ -620,6 +620,97 @@ suite("Webview", () => {
       }
     });
 
+    test("does not show tooltip if acp-title is removed before 400ms timer fires", () => {
+      const dom = new JSDOM("<!DOCTYPE html><body></body>", {
+        url: "https://localhost",
+      });
+      const doc = dom.window.document;
+      const button = doc.createElement("button");
+      button.setAttribute("acp-title", "Test Title");
+      doc.body.appendChild(button);
+
+      let pendingTimerCallback: (() => void) | undefined;
+      const originalSetTimeout = global.setTimeout;
+      (global as typeof globalThis).setTimeout = ((callback: () => void) => {
+        pendingTimerCallback = callback;
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout;
+
+      try {
+        const manager = new TooltipManager(
+          doc,
+          dom.window as unknown as Window
+        );
+        manager.setup();
+
+        button.dispatchEvent(
+          new dom.window.MouseEvent("mouseover", { bubbles: true })
+        );
+        assert.ok(pendingTimerCallback, "Timer callback should be scheduled");
+
+        // Simulate acp-title being removed before timer callback fires (e.g. dropdown open)
+        button.removeAttribute("acp-title");
+        pendingTimerCallback();
+
+        const tooltip = doc.querySelector(".acp-tooltip");
+        assert.strictEqual(
+          tooltip?.classList.contains("visible"),
+          false,
+          "Tooltip should not be visible when acp-title was removed before timer callback"
+        );
+        manager.destroy();
+      } finally {
+        global.setTimeout = originalSetTimeout;
+      }
+    });
+
+    test("hides active tooltip on mousedown and unbinds listeners on destroy", () => {
+      const dom = new JSDOM("<!DOCTYPE html><body></body>", {
+        url: "https://localhost",
+      });
+      const doc = dom.window.document;
+      const button = doc.createElement("button");
+      button.setAttribute("acp-title", "Test Title");
+      doc.body.appendChild(button);
+
+      const originalSetTimeout = global.setTimeout;
+      (global as typeof globalThis).setTimeout = ((callback: () => void) => {
+        callback();
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout;
+
+      try {
+        const manager = new TooltipManager(
+          doc,
+          dom.window as unknown as Window
+        );
+        manager.setup();
+
+        button.dispatchEvent(
+          new dom.window.MouseEvent("mouseover", { bubbles: true })
+        );
+
+        const tooltip = doc.querySelector(".acp-tooltip");
+        assert.strictEqual(tooltip?.classList.contains("visible"), true);
+
+        // Dispatch mousedown -> should hide tooltip
+        doc.dispatchEvent(
+          new dom.window.MouseEvent("mousedown", { bubbles: true })
+        );
+        assert.strictEqual(tooltip?.classList.contains("visible"), false);
+
+        // Test destroy
+        manager.destroy();
+        assert.strictEqual(
+          doc.querySelector(".acp-tooltip"),
+          null,
+          "Tooltip element should be removed from DOM on destroy"
+        );
+      } finally {
+        global.setTimeout = originalSetTimeout;
+      }
+    });
+
     test("adds acp-title to markdown links for tooltip", () => {
       const markdown1 = "[file link](file:///path/to/file.ts:10-20)";
       const html1 = marked.parse(markdown1) as string;
@@ -2992,11 +3083,11 @@ suite("Webview", () => {
           ],
         });
 
-        const label = elements.configOptionsContainer
-          .querySelector('[data-config-id="thought_level"]')
-          ?.querySelector(".selected-label");
+        const wrapper = elements.configOptionsContainer.querySelector(
+          '[data-config-id="thought_level"]'
+        );
         assert.strictEqual(
-          label?.getAttribute("acp-title"),
+          wrapper?.getAttribute("acp-title"),
           "Thought Level\nControls the thinking budget"
         );
       });
@@ -3014,10 +3105,10 @@ suite("Webview", () => {
           ],
         });
 
-        const label = elements.configOptionsContainer
-          .querySelector('[data-config-id="thought_level"]')
-          ?.querySelector(".selected-label");
-        assert.strictEqual(label?.getAttribute("acp-title"), "Thought Level");
+        const wrapper = elements.configOptionsContainer.querySelector(
+          '[data-config-id="thought_level"]'
+        );
+        assert.strictEqual(wrapper?.getAttribute("acp-title"), "Thought Level");
       });
 
       test("selecting a value posts selectConfigOption with configId and value", () => {
@@ -3051,6 +3142,58 @@ suite("Webview", () => {
         assert.ok(select, "expected a selectConfigOption postMessage");
         assert.strictEqual(select!.configId, "thought_level");
         assert.strictEqual(select!.value, "high");
+      });
+
+      test("displays item description popover on item mouseenter", () => {
+        controller.handleMessage({
+          type: "sessionMetadata",
+          modes: null,
+          models: null,
+          genericConfigOptions: [
+            {
+              id: "test_option",
+              name: "Test Option",
+              category: null,
+              currentValue: "v1",
+              options: [
+                {
+                  value: "v1",
+                  name: "Option 1",
+                  description: "Desc for option 1",
+                },
+                { value: "v2", name: "Option 2", description: null },
+              ],
+            },
+          ],
+        });
+
+        const wrapper =
+          elements.configOptionsContainer.querySelector<HTMLElement>(
+            '[data-config-id="test_option"]'
+          )!;
+        wrapper
+          .querySelector(".dropdown-trigger")
+          ?.dispatchEvent(new window.MouseEvent("click"));
+
+        const popover = wrapper.querySelector(".dropdown-popover")!;
+        const items = popover.querySelectorAll(".dropdown-item");
+
+        // Hover first item (has description)
+        items[0].dispatchEvent(
+          new window.MouseEvent("mouseenter", { bubbles: true })
+        );
+        const descPopover = window.document.querySelector<HTMLElement>(
+          ".acp-dropdown-item-desc-popover"
+        );
+        assert.ok(descPopover, "Expected item desc popover element to exist");
+        assert.strictEqual(descPopover?.textContent, "Desc for option 1");
+        assert.ok(descPopover?.classList.contains("visible"));
+
+        // Hover second item (no description)
+        items[1].dispatchEvent(
+          new window.MouseEvent("mouseenter", { bubbles: true })
+        );
+        assert.strictEqual(descPopover?.classList.contains("visible"), false);
       });
 
       test("removes dropdown when option no longer present", () => {
