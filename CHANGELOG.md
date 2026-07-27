@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.20.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.19.0...v1.20.0) (2026-07-27)
+
+### Features
+
+- **webview:** add dropdown option descriptions & optimize tooltip display ([b8a47ef](https://github.com/pengjiantao/vscode-acp-chat/commit/b8a47ef279dcfd1b8c25a6e42e5dc68d068ce51c))
+
+### Bug Fixes
+
+- **webview:** elevate chat input z-index permanently to prevent border clipping in running state ([e292d73](https://github.com/pengjiantao/vscode-acp-chat/commit/e292d736b460a91154d7cf0d06a70485f01118c5))
+
 ## [1.19.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.18.7...v1.19.0) (2026-07-24)
 
 ### Features
