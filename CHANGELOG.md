@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.20.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.20.0...v1.20.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **acp:** use cross-spawn for agent process to fix Windows .cmd handling ([da23f0d](https://github.com/pengjiantao/vscode-acp-chat/commit/da23f0dbc62e2118fb17819724a4d23d9d68e5ef))
+
 ## [1.20.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.19.0...v1.20.0) (2026-07-27)
 
 ### Features
