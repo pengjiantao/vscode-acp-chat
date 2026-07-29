@@ -3613,7 +3613,7 @@ suite("Webview", () => {
   suite("tool output typography CSS", () => {
     test("keeps terminal output on the monospace command-output font stack", () => {
       const css = fs.readFileSync(
-        path.resolve(process.cwd(), "media", "main.css"),
+        path.resolve(__dirname, "..", "..", "media", "main.css"),
         "utf8"
       );
       const dom = new JSDOM(
@@ -3629,7 +3629,7 @@ suite("Webview", () => {
 
     test("keeps input chips vertically aligned with text", () => {
       const css = fs.readFileSync(
-        path.resolve(process.cwd(), "media", "main.css"),
+        path.resolve(__dirname, "..", "..", "media", "main.css"),
         "utf8"
       );
       const dom = new JSDOM(

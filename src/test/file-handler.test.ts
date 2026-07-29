@@ -122,7 +122,11 @@ suite("FileHandler.writeTextFile parent directory Test Suite", () => {
     );
   });
 
-  test("Throws -32603 with clear message when directory creation fails", async () => {
+  test("Throws -32603 with clear message when directory creation fails", async function () {
+    if (process.platform === "win32") {
+      this.skip();
+      return;
+    }
     const readonlyParent = path.join(root, "readonly");
     await vscode.workspace.fs.createDirectory(vscode.Uri.file(readonlyParent));
     // `fs.chmodSync` is used (instead of `vscode.workspace.fs`) because the

@@ -1984,8 +1984,12 @@ suite("ChatViewProvider", () => {
         result.content.includes("[Directory listing for:"),
         `content should include directory header, got: ${result.content}`
       );
+      const contentForCompare =
+        process.platform === "win32" ? result.content.toLowerCase() : result.content;
+      const pathForCompare =
+        process.platform === "win32" ? tmpDir.toLowerCase() : tmpDir;
       assert.ok(
-        result.content.includes(tmpDir),
+        contentForCompare.includes(pathForCompare),
         `content should include the path, got: ${result.content}`
       );
       assert.ok(

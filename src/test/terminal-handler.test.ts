@@ -91,7 +91,11 @@ suite("TerminalHandler", () => {
       assert.ok(output.includes("error"));
     });
 
-    test("should use provided cwd", async () => {
+    test("should use provided cwd", async function () {
+      if (process.platform === "win32") {
+        this.skip();
+        return;
+      }
       const { terminalId } = await handler.handleCreateTerminal({
         sessionId: SID,
         command: "pwd",
@@ -105,7 +109,11 @@ suite("TerminalHandler", () => {
       assert.ok(output.includes("/tmp"));
     });
 
-    test("should pass env variables", async () => {
+    test("should pass env variables", async function () {
+      if (process.platform === "win32") {
+        this.skip();
+        return;
+      }
       const { terminalId } = await handler.handleCreateTerminal({
         sessionId: SID,
         command: "echo $MY_TEST_VAR",

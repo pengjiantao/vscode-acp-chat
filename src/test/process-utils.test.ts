@@ -27,6 +27,16 @@ suite("process-utils", () => {
     });
 
     test("should handle mock process with dummy pid without crashing", () => {
+      if (process.platform === "win32") {
+        const mockProc = new EventEmitter() as unknown as ChildProcess;
+        (mockProc as any).pid = 99999999;
+        mockProc.kill = () => {
+          throw new Error("proc.kill should not be called on win32");
+        };
+        assert.doesNotThrow(() => killProcessTree(mockProc));
+        return;
+      }
+
       let killed = false;
       const mockProc = new EventEmitter() as unknown as ChildProcess;
       (mockProc as any).pid = 99999999;
