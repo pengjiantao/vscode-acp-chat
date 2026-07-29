@@ -293,6 +293,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.0",
     "@commitlint/config-conventional": "^21.2.0",
+    "@types/cross-spawn": "^6.0.6",
     "@types/highlight.js": "^9.12.4",
     "@types/jsdom": "^28.0.3",
     "@types/mocha": "^10.0.10",
@@ -318,6 +319,7 @@
     "@agentclientprotocol/sdk": "^1.2.0",
     "@baybreezy/file-extension-icon": "^0.0.5",
     "@vscode/codicons": "^0.0.45",
+    "cross-spawn": "^7.0.6",
     "highlight.js": "^11.11.1",
     "marked": "^18.0.5",
     "zod": "^3.25.0"

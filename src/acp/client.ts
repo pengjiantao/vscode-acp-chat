@@ -1,4 +1,7 @@
-import { ChildProcess, spawn as nodeSpawn, SpawnOptions } from "child_process";
+import { ChildProcess, SpawnOptions } from "child_process";
+// Use cross-spawn so .cmd/.bat wrappers (e.g. npx.cmd on Windows) work
+// correctly without enabling shell: true (avoids shell injection surface).
+import crossSpawn from "cross-spawn";
 import { Readable, Writable } from "stream";
 import * as vscode from "vscode";
 import {
@@ -304,6 +307,10 @@ export type SpawnFunction = (
   options: SpawnOptions
 ) => ChildProcess;
 
+// Adapter to bridge cross-spawn's ReadonlyArray<string> signature with SpawnFunction
+const defaultSpawn: SpawnFunction = (cmd, args, opts) =>
+  crossSpawn(cmd, args, opts);
+
 export interface ACPClientOptions {
   agentConfig?: AgentConfig;
   spawn?: SpawnFunction;
@@ -342,12 +349,12 @@ export class ACPClient {
   constructor(options?: ACPClientOptions | AgentConfig) {
     if (options && "id" in options) {
       this.agentConfig = options;
-      this.spawnFn = nodeSpawn as SpawnFunction;
+      this.spawnFn = defaultSpawn;
       this.skipAvailabilityCheck = false;
       this.debugLogger = console.log.bind(console);
     } else {
       this.agentConfig = options?.agentConfig ?? getFirstAvailableAgent();
-      this.spawnFn = options?.spawn ?? (nodeSpawn as SpawnFunction);
+      this.spawnFn = options?.spawn ?? defaultSpawn;
       this.skipAvailabilityCheck = options?.skipAvailabilityCheck ?? false;
       this.debugLogger = options?.debugLogger ?? console.log.bind(console);
     }
