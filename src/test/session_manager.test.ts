@@ -367,6 +367,22 @@ suite("SessionManager", () => {
         assert.strictEqual(sessions[0].cwd, "/test/dir");
       });
 
+      test("should trust agent-returned sessions without re-filtering by cwd", async () => {
+        await client.connect();
+        manager.syncCapabilities();
+
+        // Agent is responsible for cwd filtering per the ACP spec. Even when
+        // the returned session cwd does not string-match the requested cwd
+        // (e.g. different case on Windows), it must be passed through.
+        await client.newSession("/test/dir");
+        await client.sendMessage("Hello session 1");
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const sessions = await manager.listSessions("/some/other/dir");
+        assert.strictEqual(sessions.length, 1);
+        assert.strictEqual(sessions[0].cwd, "/test/dir");
+      });
+
       test("should return empty array when not connected", async () => {
         await client.connect();
         manager.syncCapabilities();

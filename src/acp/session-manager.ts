@@ -526,13 +526,18 @@ export class AgentSessionManager extends SessionManager {
   /**
    * Map agent-returned sessions to `SessionInfo` without touching the local
    * cache.
+   *
+   * Per the ACP spec, the agent is responsible for filtering by `cwd` in
+   * `session/list`, so agent-returned sessions are trusted as-is. Re-filtering
+   * here with a case-sensitive path comparison broke agents on Windows (and
+   * other case-insensitive filesystems) that returned cwd paths in a different
+   * case than the client's requested path.
    */
   private mapAgentSessions(
     response: ListSessionsResponse,
     cwd: string
   ): SessionInfo[] {
     return response.sessions
-      .filter((s) => (s.cwd ?? cwd) === cwd)
       .sort(
         (a, b) =>
           new Date(b.updatedAt ?? 0).getTime() -
