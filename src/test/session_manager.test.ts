@@ -1,4 +1,5 @@
 import * as assert from "assert";
+import * as vscode from "vscode";
 import { ChildProcess } from "child_process";
 import { type SessionUpdate } from "@agentclientprotocol/sdk";
 import { ACPClient, type SpawnFunction } from "../acp/client";
@@ -381,6 +382,66 @@ suite("SessionManager", () => {
         const sessions = await manager.listSessions("/some/other/dir");
         assert.strictEqual(sessions.length, 1);
         assert.strictEqual(sessions[0].cwd, "/test/dir");
+      });
+
+      test("should use local cache when useAgentSessionList is disabled", async () => {
+        await client.connect();
+        manager.syncCapabilities();
+
+        const config = vscode.workspace.getConfiguration("vscode-acp-chat");
+        await config.update(
+          "useAgentSessionList",
+          false,
+          vscode.ConfigurationTarget.Global
+        );
+
+        try {
+          // Session is recorded locally by the manager even though the agent
+          // advertises session/list support.
+          const response = await manager.newSession("/test/dir");
+          const sessions = await manager.listSessions("/test/dir");
+          assert.strictEqual(sessions.length, 1);
+          assert.strictEqual(sessions[0].sessionId, response.sessionId);
+        } finally {
+          await config.update(
+            "useAgentSessionList",
+            true,
+            vscode.ConfigurationTarget.Global
+          );
+        }
+      });
+
+      test("should use agent sessions when useAgentSessionList is enabled", async () => {
+        await client.connect();
+        manager.syncCapabilities();
+
+        const config = vscode.workspace.getConfiguration("vscode-acp-chat");
+        await config.update(
+          "useAgentSessionList",
+          true,
+          vscode.ConfigurationTarget.Global
+        );
+
+        try {
+          // Agent-listed sessions are returned directly and are not written
+          // back to the local cache.
+          await client.newSession("/test/dir");
+          await client.sendMessage("Hello session 1");
+          await new Promise((resolve) => setTimeout(resolve, 100));
+
+          const sessions = await manager.listSessions("/test/dir");
+          assert.ok(sessions.length >= 1);
+          assert.ok(sessions[0].sessionId.startsWith("mock-session-"));
+
+          const localSessions = await store.read();
+          assert.strictEqual(localSessions.length, 0);
+        } finally {
+          await config.update(
+            "useAgentSessionList",
+            true,
+            vscode.ConfigurationTarget.Global
+          );
+        }
       });
 
       test("should return empty array when not connected", async () => {

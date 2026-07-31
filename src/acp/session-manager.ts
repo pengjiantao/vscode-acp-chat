@@ -444,10 +444,10 @@ export class AgentSessionManager extends SessionManager {
   /**
    * List sessions for the given working directory.
    *
-   * If the agent advertises `sessionCapabilities.list`, the agent result is
-   * returned directly and is **not** written back to the local cache.
-   * Otherwise, the local cache is filtered by `cwd` and returned as a
-   * fallback.
+   * The agent result is queried (and returned directly, without writing back
+   * to the local cache) only when the agent advertises `sessionCapabilities.list`
+   * **and** the `useAgentSessionList` setting is enabled. Otherwise, the local
+   * cache is filtered by `cwd` and returned as a fallback.
    */
   async listSessions(cwd: string): Promise<SessionInfo[]> {
     if (!this._initialized) {
@@ -456,10 +456,22 @@ export class AgentSessionManager extends SessionManager {
       );
     }
 
-    if (!this._supportsListSessions) {
-      console.warn(
-        "[SessionManager] Agent does not support session/list; falling back to local cache"
-      );
+    const useAgentList = vscode.workspace
+      .getConfiguration("vscode-acp-chat")
+      .get<boolean>("useAgentSessionList", true);
+
+    if (!this._supportsListSessions || !useAgentList) {
+      if (useAgentList) {
+        // Agent doesn't advertise session/list – unexpected fallback
+        console.warn(
+          "[SessionManager] Agent does not support session/list; falling back to local cache"
+        );
+      } else {
+        // User opted out via useAgentSessionList – expected behavior
+        console.log(
+          "[SessionManager] useAgentSessionList is disabled; using local session cache"
+        );
+      }
       return this.listLocalSessions(cwd);
     }
 

@@ -163,6 +163,11 @@
           "minimum": 1,
           "description": "Maximum number of persisted sessions to keep per agent. Oldest sessions are removed first."
         },
+        "vscode-acp-chat.useAgentSessionList": {
+          "type": "boolean",
+          "default": true,
+          "description": "Query session history from the agent when it advertises session/list support. When disabled, only locally recorded sessions are shown."
+        },
         "vscode-acp-chat.customAgents": {
           "type": "array",
           "default": [],

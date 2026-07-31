@@ -76,6 +76,19 @@ The extension automatically detects installed agents by checking your system's `
 | Kiro CLI       | `kiro-cli acp`                              | Checks `$PATH` |
 | Cursor Cli     | `agent acp`                                 | Checks `$PATH` |
 
+### Settings
+
+| Setting                                    | Type      | Default | Description                                                                                                                              |
+| ------------------------------------------ | --------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `vscode-acp-chat.enableDiffSummary`        | `boolean` | `true`  | Enable the collective diff summary for file modifications.                                                                               |
+| `vscode-acp-chat.passMcpServers`           | `boolean` | `true`  | Pass MCP server configurations to the agent via ACP `newSession`/`loadSession` requests.                                                 |
+| `vscode-acp-chat.enableDocumentSync`       | `boolean` | `true`  | Send document open/close/change/save/focus notifications to the ACP agent.                                                               |
+| `vscode-acp-chat.debug`                    | `boolean` | `false` | Enable debug logging for raw ACP session update events.                                                                                  |
+| `vscode-acp-chat.enablePersistentSessions` | `boolean` | `true`  | Persist session history across VS Code restarts.                                                                                         |
+| `vscode-acp-chat.sessionRetentionDays`     | `number`  | `30`    | Automatically remove persisted sessions older than this many days.                                                                       |
+| `vscode-acp-chat.maxSessionsPerAgent`      | `number`  | `300`   | Maximum number of persisted sessions to keep per agent (keeps the newest).                                                               |
+| `vscode-acp-chat.useAgentSessionList`      | `boolean` | `true`  | Query session history from the agent when it advertises `session/list` support. When disabled, only locally recorded sessions are shown. |
+
 ### Custom Agents
 
 You can add custom agents via VS Code settings:
