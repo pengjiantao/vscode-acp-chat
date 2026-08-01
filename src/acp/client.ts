@@ -37,6 +37,8 @@ import {
   type ListSessionsResponse,
   type DeleteSessionRequest,
   type DeleteSessionResponse,
+  type CloseSessionRequest,
+  type CloseSessionResponse,
   type McpServer,
   type McpCapabilities,
   type DidOpenDocumentNotification,
@@ -905,6 +907,45 @@ export class ACPClient {
     };
 
     return this.agentCtx.request(acp.methods.agent.session.delete, request);
+  }
+
+  /**
+   * Close an active session via the ACP `session/close` method.
+   *
+   * The agent cancels any ongoing work for the session and frees its
+   * resources, without terminating the whole ACP process.
+   *
+   * Only available if the agent advertises `sessionCapabilities.close`.
+   *
+   * @throws If not connected or agent doesn't support `session/close`.
+   */
+  async closeSession(params: {
+    sessionId: string;
+  }): Promise<CloseSessionResponse> {
+    if (!this.agentCtx) {
+      throw new Error("Not connected");
+    }
+
+    if (!this.agentCapabilities?.sessionCapabilities?.close) {
+      throw new Error(
+        `Agent "${this.agentConfig.name}" does not support the "session/close" capability`
+      );
+    }
+
+    const request: CloseSessionRequest = {
+      sessionId: params.sessionId,
+    };
+
+    const response = await this.agentCtx.request(
+      acp.methods.agent.session.close,
+      request
+    );
+
+    if (this.currentSessionId === params.sessionId) {
+      this.currentSessionId = null;
+    }
+
+    return response;
   }
 
   async handleRequestPermission(

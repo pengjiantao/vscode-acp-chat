@@ -14,6 +14,7 @@ export interface MockACPServerOptions {
   enableLoadSession?: boolean;
   enableListSessions?: boolean;
   enableDeleteSession?: boolean;
+  enableCloseSession?: boolean;
   useConfigOptions?: boolean;
   emitUsageUpdate?: UsageUpdatePayload | null;
 }
@@ -32,6 +33,7 @@ export class MockACPServer {
   private enableLoadSession: boolean;
   private enableListSessions: boolean;
   private enableDeleteSession: boolean;
+  private enableCloseSession: boolean;
   private useConfigOptions: boolean;
   private emitUsageUpdate: UsageUpdatePayload | null;
 
@@ -46,6 +48,7 @@ export class MockACPServer {
     this.enableLoadSession = options.enableLoadSession ?? true;
     this.enableListSessions = options.enableListSessions ?? true;
     this.enableDeleteSession = options.enableDeleteSession ?? false;
+    this.enableCloseSession = options.enableCloseSession ?? false;
     this.useConfigOptions = options.useConfigOptions ?? false;
     this.emitUsageUpdate = options.emitUsageUpdate ?? null;
 
@@ -97,6 +100,7 @@ export class MockACPServer {
             sessionCapabilities: {
               ...(this.enableListSessions ? { list: {} } : {}),
               ...(this.enableDeleteSession ? { delete: {} } : {}),
+              ...(this.enableCloseSession ? { close: {} } : {}),
             },
           },
         });
@@ -125,6 +129,9 @@ export class MockACPServer {
         break;
       case "session/delete":
         this.handleDeleteSession(request.id, request.params);
+        break;
+      case "session/close":
+        this.handleCloseSession(request.id, request.params);
         break;
       default:
         this.sendError(request.id, -32601, `Unknown method: ${request.method}`);
@@ -507,6 +514,26 @@ export class MockACPServer {
   }
 
   private handleDeleteSession(
+    id: number,
+    params?: Record<string, unknown>
+  ): void {
+    const sessionId = params?.sessionId as string | undefined;
+
+    if (!sessionId) {
+      this.sendError(id, -32602, "Missing sessionId");
+      return;
+    }
+
+    if (!this.sessions.has(sessionId)) {
+      this.sendError(id, -32000, "Session not found");
+      return;
+    }
+
+    this.sessions.delete(sessionId);
+    this.sendResponse(id, {});
+  }
+
+  private handleCloseSession(
     id: number,
     params?: Record<string, unknown>
   ): void {

@@ -707,13 +707,15 @@ export class ChatViewProvider
     }
 
     if (this.isGenerating) {
-      const ok = await this.ensureIdleIfGenerating(
+      const ok = await this.confirmIfGenerating(
         `confirm-loadHistory-${Date.now()}`,
         "loadHistory",
         "Load History"
       );
       if (!ok) return;
     }
+
+    await this.closeCurrentSession();
 
     this.userMessageBuffer = "";
     this.userMessageImages = [];
@@ -1498,7 +1500,7 @@ export class ChatViewProvider
     if (agent) {
       if (this.isGenerating) {
         const currentAgentName = this.acpClient.getAgentName();
-        const ok = await this.ensureIdleIfGenerating(
+        const ok = await this.confirmIfGenerating(
           `confirm-switchAgent-${Date.now()}`,
           "switchAgent",
           `Switch Agent: ${currentAgentName} → ${agent.name}`
@@ -1506,6 +1508,7 @@ export class ChatViewProvider
         if (!ok) return;
       }
 
+      await this.closeCurrentSession();
       this.acpClient.setAgent(agent);
       this.globalState.update(SELECTED_AGENT_KEY, agentId);
       this.hasSession = false;
@@ -1614,13 +1617,15 @@ export class ChatViewProvider
 
   private async handleNewChat(): Promise<void> {
     if (this.isGenerating) {
-      const ok = await this.ensureIdleIfGenerating(
+      const ok = await this.confirmIfGenerating(
         `confirm-newChat-${Date.now()}`,
         "newChat",
         "New Chat"
       );
       if (!ok) return;
     }
+
+    await this.closeCurrentSession();
 
     this.userMessageBuffer = "";
     this.hasSession = false;
@@ -1653,6 +1658,44 @@ export class ChatViewProvider
     this.postMessage({ type: "chatCleared" });
   }
 
+  /**
+   * Best-effort close of the active session before switching to a new one.
+   *
+   * Prefers `session/close` when the agent advertises support. If close is
+   * unavailable or fails, falls back to `session/cancel` so the old session
+   * does not keep running unchecked.
+   */
+  private async closeCurrentSession(): Promise<void> {
+    if (!this.acpClient.isConnected()) {
+      return;
+    }
+
+    const sessionId = this.acpClient.getCurrentSessionId();
+    if (!sessionId) {
+      return;
+    }
+
+    const supportsClose = !!this.acpClient.getAgentCapabilities()
+      ?.sessionCapabilities?.close;
+    if (supportsClose) {
+      try {
+        await this.acpClient.closeSession({ sessionId });
+        return;
+      } catch (error) {
+        console.error(
+          "[Chat] Failed to close previous session; falling back to cancel:",
+          error
+        );
+      }
+    }
+
+    try {
+      await this.acpClient.cancel();
+    } catch (error) {
+      console.error("[Chat] Failed to cancel previous session:", error);
+    }
+  }
+
   private requestConfirmation(
     requestId: string,
     action: string,
@@ -1669,50 +1712,19 @@ export class ChatViewProvider
     });
   }
 
-  private waitForIdle(): Promise<boolean> {
-    if (!this.isGenerating) return Promise.resolve(true);
-    const timeoutMs = 10_000;
-    return new Promise<boolean>((resolve) => {
-      let resolved = false;
-      const done = (success: boolean) => {
-        if (resolved) return;
-        resolved = true;
-        clearTimeout(timer);
-        resolve(success);
-      };
-      const timer = setTimeout(() => done(false), timeoutMs);
-      const check = () => {
-        if (!this.isGenerating) {
-          done(true);
-        } else if (!resolved) {
-          setTimeout(check, 50);
-        }
-      };
-      check();
-    });
-  }
-
-  private async ensureIdleIfGenerating(
+  /**
+   * Ask the user before replacing a session while the current turn is active.
+   *
+   * This only collects consent. The caller is responsible for closing or
+   * cancelling the session afterwards via `closeCurrentSession()`.
+   */
+  private async confirmIfGenerating(
     requestId: string,
     action: string,
     actionLabel: string
   ): Promise<boolean> {
     if (!this.isGenerating) return true;
-    const confirmed = await this.requestConfirmation(
-      requestId,
-      action,
-      actionLabel
-    );
-    if (!confirmed) return false;
-    await this.acpClient.cancel();
-    const idle = await this.waitForIdle();
-    if (!idle) {
-      vscode.window.showErrorMessage(
-        "Agent is still generating. Please try again later."
-      );
-      return false;
-    }
-    return true;
+    return this.requestConfirmation(requestId, action, actionLabel);
   }
 
   private sendSessionMetadata(): void {

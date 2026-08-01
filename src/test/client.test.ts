@@ -911,6 +911,124 @@ suite("ACPClient with configOptions format", () => {
     assert.ok(thought);
     assert.strictEqual(thought!.currentValue, "high");
   });
+
+  suite("closeSession", () => {
+    test("should throw if not connected", async () => {
+      await assert.rejects(
+        () => client.closeSession({ sessionId: "session-1" }),
+        /Not connected/
+      );
+    });
+
+    test("should throw when agent does not support close", async () => {
+      const noCloseSpawn = (
+        _command: string,
+        _args: string[],
+        _options: unknown
+      ): ChildProcess => {
+        return createMockProcess({
+          enableCloseSession: false,
+        }) as unknown as ChildProcess;
+      };
+
+      const noCloseClient = new ACPClient({
+        agentConfig: {
+          id: "mock-no-close",
+          name: "Mock No Close",
+          command: "mock",
+          args: [],
+        },
+        spawn: noCloseSpawn,
+        skipAvailabilityCheck: true,
+      });
+
+      try {
+        await noCloseClient.connect();
+        const session = await noCloseClient.newSession("/test/dir");
+
+        await assert.rejects(
+          () =>
+            noCloseClient.closeSession({
+              sessionId: session.sessionId,
+            }),
+          /does not support the "session\/close" capability/
+        );
+      } finally {
+        noCloseClient.dispose();
+      }
+    });
+
+    test("should close active session and clear currentSessionId", async () => {
+      const closeSpawn = (
+        _command: string,
+        _args: string[],
+        _options: unknown
+      ): ChildProcess => {
+        return createMockProcess({
+          enableCloseSession: true,
+        }) as unknown as ChildProcess;
+      };
+
+      const closeClient = new ACPClient({
+        agentConfig: {
+          id: "mock-close",
+          name: "Mock Close",
+          command: "mock",
+          args: [],
+        },
+        spawn: closeSpawn,
+        skipAvailabilityCheck: true,
+      });
+
+      try {
+        await closeClient.connect();
+        const session = await closeClient.newSession("/test/dir");
+
+        assert.strictEqual(closeClient.getCurrentSessionId(), session.sessionId);
+
+        await closeClient.closeSession({ sessionId: session.sessionId });
+
+        assert.strictEqual(closeClient.getCurrentSessionId(), null);
+      } finally {
+        closeClient.dispose();
+      }
+    });
+
+    test("should not clear currentSessionId when closing another session", async () => {
+      const closeSpawn = (
+        _command: string,
+        _args: string[],
+        _options: unknown
+      ): ChildProcess => {
+        return createMockProcess({
+          enableCloseSession: true,
+        }) as unknown as ChildProcess;
+      };
+
+      const closeClient = new ACPClient({
+        agentConfig: {
+          id: "mock-close",
+          name: "Mock Close",
+          command: "mock",
+          args: [],
+        },
+        spawn: closeSpawn,
+        skipAvailabilityCheck: true,
+      });
+
+      try {
+        await closeClient.connect();
+        const first = await closeClient.newSession("/test/dir");
+        const second = await closeClient.newSession("/test/other");
+
+        await closeClient.closeSession({ sessionId: first.sessionId });
+
+        assert.strictEqual(closeClient.getCurrentSessionId(), second.sessionId);
+      } finally {
+        closeClient.dispose();
+      }
+    });
+  });
 });
 
 suite("extractConfigOptions", () => {

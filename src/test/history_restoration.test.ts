@@ -62,13 +62,18 @@ class DelayedMockWebview extends MockWebview {
 function createHistoryLoadClient() {
   const sessionUpdateListeners: Array<(update: any) => void | Promise<void>> =
     [];
+  let currentSessionId: string | null = "current-session";
+  const calls: string[] = [];
   const client = {
     setAgent: () => {},
     getAgentId: () => "test-agent",
     getAgentName: () => "Test Agent",
     getState: () => "connected",
-    getCurrentSessionId: () => "current-session",
-    getAgentCapabilities: () => ({ loadSession: true }),
+    getCurrentSessionId: () => currentSessionId,
+    getAgentCapabilities: () => ({
+      loadSession: true,
+      sessionCapabilities: { close: {} },
+    }),
     getNesDocumentCapabilities: () => ({
       didOpen: false,
       didChange: null,
@@ -103,9 +108,24 @@ function createHistoryLoadClient() {
     setOnPermissionRequest: () => {},
     isConnected: () => true,
     connect: async () => {},
-    newSession: async () => {},
+    newSession: async () => {
+      calls.push("new");
+      currentSessionId = "new-session";
+      return { sessionId: "new-session" };
+    },
+    closeSession: async (params: { sessionId: string }) => {
+      calls.push(`close:${params.sessionId}`);
+      if (params.sessionId === currentSessionId) {
+        currentSessionId = null;
+      }
+    },
+    cancel: async () => {
+      calls.push("cancel");
+    },
     listSessions: async () => ({ sessions: [] }),
-    loadSession: async () => {
+    loadSession: async (params: { sessionId: string }) => {
+      calls.push(`load:${params.sessionId}`);
+      currentSessionId = params.sessionId;
       for (const cb of sessionUpdateListeners) {
         await cb({
           update: {
@@ -131,6 +151,7 @@ function createHistoryLoadClient() {
       }
     },
     dispose: () => {},
+    calls,
   };
 
   return client;
@@ -166,6 +187,129 @@ suite("History Restoration Order Integration", () => {
     assert.deepStrictEqual(
       mockView.webview.messages.map((m: any) => m.type),
       ["streamChunk", "streamEnd"]
+    );
+  });
+
+  test("new chat closes the previous session before creating a new one", async () => {
+    const memento = new MockMemento();
+    const mockAcpClient = createHistoryLoadClient();
+    const provider = new ChatViewProvider(
+      vscode.Uri.file("/test"),
+      mockAcpClient as any,
+      memento
+    );
+    const mockView = new MockWebviewView();
+    (provider as any).view = mockView;
+
+    await (provider as any).handleNewChat();
+    await waitForProviderQueues(provider);
+
+    const lifecycleCalls = mockAcpClient.calls.filter(
+      (call: string) => call.startsWith("close") || call === "new"
+    );
+    assert.deepStrictEqual(lifecycleCalls, [
+      "close:current-session",
+      "new",
+    ]);
+  });
+
+  test("agent switch closes the previous session before connecting", async () => {
+    const memento = new MockMemento();
+    const mockAcpClient = createHistoryLoadClient();
+    const provider = new ChatViewProvider(
+      vscode.Uri.file("/test"),
+      mockAcpClient as any,
+      memento
+    );
+    const mockView = new MockWebviewView();
+    (provider as any).view = mockView;
+
+    await (provider as any).handleAgentChange("opencode");
+    await waitForProviderQueues(provider);
+
+    const lifecycleCalls = mockAcpClient.calls.filter(
+      (call: string) => call.startsWith("close") || call === "new"
+    );
+    assert.deepStrictEqual(lifecycleCalls, [
+      "close:current-session",
+      "new",
+    ]);
+  });
+
+  test("load history closes the previous session before loading", async () => {
+    const memento = new MockMemento();
+    const mockAcpClient = createHistoryLoadClient();
+    const provider = new ChatViewProvider(
+      vscode.Uri.file("/test"),
+      mockAcpClient as any,
+      memento
+    );
+    const mockView = new MockWebviewView();
+    (provider as any).view = mockView;
+
+    await provider.loadHistorySession("history-session");
+    await waitForProviderQueues(provider);
+
+    const lifecycleCalls = mockAcpClient.calls.filter(
+      (call: string) => call.startsWith("close") || call.startsWith("load")
+    );
+    assert.deepStrictEqual(lifecycleCalls, [
+      "close:current-session",
+      "load:history-session",
+    ]);
+  });
+
+  test("falls back to cancel and continues when session close fails", async () => {
+    const memento = new MockMemento();
+    const mockAcpClient = createHistoryLoadClient();
+    mockAcpClient.closeSession = async (params: { sessionId: string }) => {
+      mockAcpClient.calls.push(`close:${params.sessionId}`);
+      throw new Error("close failed");
+    };
+    const provider = new ChatViewProvider(
+      vscode.Uri.file("/test"),
+      mockAcpClient as any,
+      memento
+    );
+    const mockView = new MockWebviewView();
+    (provider as any).view = mockView;
+
+    await provider.loadHistorySession("history-session");
+    await waitForProviderQueues(provider);
+
+    assert.deepStrictEqual(
+      mockAcpClient.calls.filter(
+        (call: string) =>
+          call.startsWith("close") || call === "cancel" || call.startsWith("load")
+      ),
+      ["close:current-session", "cancel", "load:history-session"]
+    );
+  });
+
+  test("uses cancel when the agent does not advertise session close", async () => {
+    const memento = new MockMemento();
+    const mockAcpClient = createHistoryLoadClient();
+    (mockAcpClient as any).getAgentCapabilities = () => ({
+      loadSession: true,
+      sessionCapabilities: {},
+    });
+    const provider = new ChatViewProvider(
+      vscode.Uri.file("/test"),
+      mockAcpClient as any,
+      memento
+    );
+    const mockView = new MockWebviewView();
+    (provider as any).view = mockView;
+
+    await provider.loadHistorySession("history-session");
+    await waitForProviderQueues(provider);
+
+    assert.deepStrictEqual(
+      mockAcpClient.calls.filter(
+        (call: string) =>
+          call === "cancel" || call.startsWith("load")
+      ),
+      ["cancel", "load:history-session"]
     );
   });
 
