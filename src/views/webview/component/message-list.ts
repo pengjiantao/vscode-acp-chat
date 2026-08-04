@@ -3,6 +3,7 @@ import type {
   ExtensionMessage,
   Mention,
   MessageListElements,
+  Tool,
   UserScrollDirection,
 } from "../types";
 import type { WebviewContext } from "../context";
@@ -10,6 +11,7 @@ import type { MessageHandler } from "../message-router";
 import { ChipRendererComponent } from "./chip-renderer";
 import { BlockManager } from "../block/block-manager";
 import { TextBlock } from "../block/text-block";
+import { ToolBlock } from "../block/tool-block";
 import { ActionButtonsComponent } from "./action-buttons";
 import { getRequiredElement } from "../widget/dom";
 
@@ -19,19 +21,31 @@ const AUTO_SCROLL_SETTLE_FRAMES = 3;
 type MessageType = "user" | "assistant" | "error" | "system";
 
 /**
+ * One streaming assistant message. Each distinct ACP `messageId` owns a
+ * message element and an independent {@link BlockManager}, so interleaved
+ * streams (e.g. concurrent subagents) never share blocks.
+ */
+type MessageStream = {
+  messageId: string;
+  messageEl: HTMLElement;
+  blockManager: BlockManager;
+};
+
+/**
  * Owns the chat transcript surface: message DOM, streaming block lifecycle,
  * list-level event delegation, keyboard navigation, and auto-scroll state.
  *
  * Implements {@link MessageHandler} to self-register for all streaming and
- * message-related extension messages. The {@link BlockManager} and
- * {@link ActionButtonsComponent} are owned sub-components.
+ * message-related extension messages. Each active assistant message is a
+ * {@link MessageStream} keyed by its ACP `messageId`; {@link BlockManager}s
+ * are owned per stream.
  */
 export class MessageListComponent implements MessageHandler {
   readonly elements: MessageListElements;
-  private blockManager: BlockManager;
   private actionButtons: ActionButtonsComponent;
   private chipRenderer: ChipRendererComponent;
-  private currentAssistantMessage: HTMLElement | null = null;
+  private streams = new Map<string, MessageStream>();
+  private currentStreamId: string | null = null;
 
   private isAutoScrollEnabled = true;
   private pendingBottomScrollFrame: number | null = null;
@@ -68,7 +82,6 @@ export class MessageListComponent implements MessageHandler {
     };
 
     this.chipRenderer = options?.chipRenderer ?? new ChipRendererComponent(ctx);
-    this.blockManager = new BlockManager(ctx);
     this.actionButtons = new ActionButtonsComponent(ctx);
 
     // Register for all streaming and message-related messages.
@@ -120,8 +133,7 @@ export class MessageListComponent implements MessageHandler {
 
   private handleUserMessage(msg: ExtensionMessage): void {
     // Always reset assistant state before a new turn
-    this.currentAssistantMessage = null;
-    this.blockManager.reset();
+    this.resetStreams();
 
     if (msg.text || (msg.images && msg.images.length > 0)) {
       this.addMessage(msg.text || "", "user", msg.mentions);
@@ -129,17 +141,16 @@ export class MessageListComponent implements MessageHandler {
   }
 
   private handleStreamStart(): void {
-    this.currentAssistantMessage = null;
-    this.blockManager.reset();
+    this.resetStreams();
     this.setGenerating(true);
   }
 
   private handleStreamChunk(msg: ExtensionMessage): void {
     if (!msg.text) return;
-    const parentEl = this.ensureAssistantMessage();
-    const block = this.blockManager.ensureBlock(
+    const stream = this.ensureStream(msg.messageId ?? null);
+    const block = stream.blockManager.ensureBlock(
       "text",
-      parentEl,
+      stream.messageEl,
       this.elements.typingIndicatorEl
     ) as TextBlock;
     block.appendContent(msg.text);
@@ -147,12 +158,11 @@ export class MessageListComponent implements MessageHandler {
   }
 
   private handleStreamEnd(): void {
-    this.blockManager.clearStaleRunningToolIndicators();
-    this.blockManager.finalizeAll();
-    this.setGenerating(false);
-
-    if (this.currentAssistantMessage) {
-      this.actionButtons.render(this.currentAssistantMessage, {
+    // streamEnd is turn-scoped: finalize every active stream, then render
+    // per-message action buttons (kept streams stay queryable via getTools).
+    this.finalizeAllStreams();
+    for (const stream of this.streams.values()) {
+      this.actionButtons.render(stream.messageEl, {
         onCopyToInput: (text) => {
           this.onCopyToInput?.(text);
         },
@@ -160,17 +170,20 @@ export class MessageListComponent implements MessageHandler {
         scrollToPreviousUserMessage: (el) =>
           this.scrollToPreviousUserMessage(el),
       });
-      this.currentAssistantMessage = null;
     }
+    this.setGenerating(false);
+    // Match pre-refactor behavior: chunks after streamEnd (without a new
+    // streamStart) begin a fresh message rather than appending to the last.
+    this.currentStreamId = null;
     this.scrollToBottom();
   }
 
   private handleThoughtChunk(msg: ExtensionMessage): void {
     if (!msg.text) return;
-    const parentEl = this.ensureAssistantMessage();
-    const block = this.blockManager.ensureBlock(
+    const stream = this.ensureStream(msg.messageId ?? null);
+    const block = stream.blockManager.ensureBlock(
       "thought",
-      parentEl,
+      stream.messageEl,
       this.elements.typingIndicatorEl
     );
     block.appendContent(msg.text);
@@ -179,33 +192,50 @@ export class MessageListComponent implements MessageHandler {
 
   private handleToolCallStart(msg: ExtensionMessage): void {
     if (!msg.toolCallId || !msg.name) return;
-    const parentEl = this.ensureAssistantMessage();
-    const block = this.blockManager.ensureToolBlock(
-      msg.toolCallId,
-      parentEl,
-      this.elements.typingIndicatorEl
+    // Tool calls carry no ACP messageId; reuse an existing block across
+    // streams (current stream may have switched mid-tool), else attach to
+    // the most recent stream.
+    const stream =
+      this.getToolBlockStream(msg.toolCallId) ??
+      this.ensureStream(this.currentStreamId);
+    this.applyToolCallStart(
+      stream.blockManager.ensureToolBlock(
+        msg.toolCallId,
+        stream.messageEl,
+        this.elements.typingIndicatorEl
+      ),
+      msg
     );
-    if (block) {
-      if (msg.kind) block.kind = msg.kind;
-      if (msg.name) block.title = msg.name;
-
-      block.updateSummary({
-        toolCallId: msg.toolCallId,
-        title: msg.name || block.title || "Tool",
-        kind: msg.kind,
-        status: "in_progress",
-        rawInput: msg.rawInput,
-      });
-    }
     this.scrollToBottom();
+  }
+
+  /**
+   * Apply a tool_call start to a tool block. The guard is the type-narrowing
+   * mechanism for the optional `ExtensionMessage` fields (property narrowing
+   * does not flow into whole-object assignability at the call site).
+   */
+  private applyToolCallStart(block: ToolBlock, msg: ExtensionMessage): void {
+    if (!msg.toolCallId || !msg.name) return;
+    if (msg.kind) block.kind = msg.kind;
+    if (msg.name) block.title = msg.name;
+
+    block.updateSummary({
+      toolCallId: msg.toolCallId,
+      title: msg.name || block.title || "Tool",
+      kind: msg.kind,
+      status: "in_progress",
+      rawInput: msg.rawInput,
+    });
   }
 
   private handleToolCallComplete(msg: ExtensionMessage): void {
     if (!msg.toolCallId) return;
-    const parentEl = this.ensureAssistantMessage();
-    const block = this.blockManager.ensureToolBlock(
+    const stream =
+      this.getToolBlockStream(msg.toolCallId) ??
+      this.ensureStream(this.currentStreamId);
+    const block = stream.blockManager.ensureToolBlock(
       msg.toolCallId,
-      parentEl,
+      stream.messageEl,
       this.elements.typingIndicatorEl
     );
     if (block) {
@@ -244,7 +274,7 @@ export class MessageListComponent implements MessageHandler {
         terminalOutput: msg.terminalOutput,
       });
 
-      this.blockManager.finalizeBlock(block);
+      stream.blockManager.finalizeBlock(block);
       this.scrollToBottom();
     }
   }
@@ -260,15 +290,11 @@ export class MessageListComponent implements MessageHandler {
    * operations like showThinking.
    */
   ensureAssistantMessage(): HTMLElement {
-    if (!this.currentAssistantMessage) {
-      this.currentAssistantMessage = this.addMessage("", "assistant");
-      if (this.elements.typingIndicatorEl.classList.contains("visible")) {
-        this.currentAssistantMessage.appendChild(
-          this.elements.typingIndicatorEl
-        );
-      }
+    const stream = this.ensureStream(this.currentStreamId);
+    if (this.elements.typingIndicatorEl.classList.contains("visible")) {
+      stream.messageEl.appendChild(this.elements.typingIndicatorEl);
     }
-    return this.currentAssistantMessage;
+    return stream.messageEl;
   }
 
   // -------------------------------------------------------------------
@@ -280,9 +306,121 @@ export class MessageListComponent implements MessageHandler {
     this.availableCommands = commands;
   }
 
-  /** Return the block manager (for permission dialog lookups). */
+  /**
+   * Return the block manager for the current stream. If no stream is active
+   * yet, one is created (which appends an empty assistant message element).
+   */
   getBlockManager(): BlockManager {
-    return this.blockManager;
+    return this.ensureStream(this.currentStreamId).blockManager;
+  }
+
+  /** Locate the stream owning a tool call id (active stream first). */
+  private getToolBlockStream(toolCallId: string): MessageStream | undefined {
+    if (this.currentStreamId !== null) {
+      const current = this.streams.get(this.currentStreamId);
+      if (current?.blockManager.getToolBlock(toolCallId)) {
+        return current;
+      }
+    }
+    for (const stream of this.streams.values()) {
+      if (stream.blockManager.getToolBlock(toolCallId)) {
+        return stream;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Resolve the block manager owning a tool call id, scanning the active
+   * stream first, then all streams. Used by the permission dialog so
+   * embedded permissions find tool blocks across concurrent streams.
+   */
+  getToolBlockManager(toolCallId: string): BlockManager | undefined {
+    return this.getToolBlockStream(toolCallId)?.blockManager;
+  }
+
+  /** Aggregate tool snapshots across all active streams. */
+  getToolsSnapshot(): Record<string, Tool> {
+    const tools: Record<string, Tool> = {};
+    for (const stream of this.streams.values()) {
+      Object.assign(tools, stream.blockManager.getToolsSnapshot());
+    }
+    return tools;
+  }
+
+  // -------------------------------------------------------------------
+  // Stream lifecycle
+  // -------------------------------------------------------------------
+
+  /**
+   * Get or create the stream for an ACP `messageId`. A new messageId starts
+   * a new assistant message and finalizes the previous stream, so interleaved
+   * streams never share blocks. An empty or absent messageId continues the
+   * current stream (backward-compatible fallback).
+   */
+  private ensureStream(messageId: string | null): MessageStream {
+    if (messageId !== null && messageId !== "") {
+      const existing = this.streams.get(messageId);
+      if (existing) {
+        this.currentStreamId = messageId;
+        return existing;
+      }
+      if (this.currentStreamId !== null) {
+        this.finalizeStream(this.currentStreamId);
+      }
+      return this.createStream(messageId);
+    }
+
+    if (this.currentStreamId !== null) {
+      const current = this.streams.get(this.currentStreamId);
+      if (current) return current;
+    }
+    return this.createStream("");
+  }
+
+  private createStream(messageId: string): MessageStream {
+    const messageEl = this.addMessage("", "assistant");
+    if (this.elements.typingIndicatorEl.classList.contains("visible")) {
+      messageEl.appendChild(this.elements.typingIndicatorEl);
+    }
+    const stream: MessageStream = {
+      messageId,
+      messageEl,
+      blockManager: new BlockManager(this.ctx),
+    };
+    this.streams.set(messageId, stream);
+    this.currentStreamId = messageId;
+    return stream;
+  }
+
+  /**
+   * Finalize a stream: collapse its blocks. The stream stays tracked (and
+   * DOM) until the next turn resets, so resumed chunks and getTools()
+   * lookups keep working.
+   */
+  private finalizeStream(streamId: string): void {
+    const stream = this.streams.get(streamId);
+    if (!stream) return;
+    stream.blockManager.finalizeAll();
+  }
+
+  /**
+   * Turn-end finalize: clear stale tool spinners first (only here, so a
+   * running tool in one stream is not marked completed merely because
+   * another stream started), then finalize every stream.
+   */
+  private finalizeAllStreams(): void {
+    for (const id of Array.from(this.streams.keys())) {
+      const stream = this.streams.get(id);
+      if (!stream) continue;
+      stream.blockManager.clearStaleRunningToolIndicators();
+      this.finalizeStream(id);
+    }
+  }
+
+  private resetStreams(): void {
+    this.streams.clear();
+    this.currentStreamId = null;
   }
 
   /** Return the generation state. */
@@ -334,15 +472,18 @@ export class MessageListComponent implements MessageHandler {
 
   clear(): void {
     this.elements.messagesEl.innerHTML = "";
-    this.currentAssistantMessage = null;
-    this.blockManager.reset();
+    this.resetStreams();
     this.updateViewState();
   }
 
   showTypingIndicator(): void {
     this.elements.typingIndicatorEl.classList.add("visible");
-    if (this.currentAssistantMessage) {
-      this.currentAssistantMessage.appendChild(this.elements.typingIndicatorEl);
+    const stream =
+      this.currentStreamId !== null
+        ? this.streams.get(this.currentStreamId)
+        : undefined;
+    if (stream) {
+      stream.messageEl.appendChild(this.elements.typingIndicatorEl);
     } else {
       this.elements.messagesEl.appendChild(this.elements.typingIndicatorEl);
     }

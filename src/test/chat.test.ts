@@ -797,6 +797,60 @@ suite("ChatViewProvider", () => {
       assert.strictEqual(streamChunk?.text, "Hello");
       assert.strictEqual(thoughtChunk?.text, "Thinking");
     });
+
+    test("forwards messageId on stream chunks", async () => {
+      const provider = new ChatViewProvider(
+        mockExtensionUri,
+        acpClient as any,
+        memento as any
+      );
+      const messages: any[] = [];
+      (provider as any).postMessage = (msg: any) => messages.push(msg);
+
+      await (provider as any).handleSessionUpdate({
+        sessionId: "test",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "msg_main_1",
+          content: { type: "text", text: "Hello" },
+        },
+      });
+      await (provider as any).handleSessionUpdate({
+        sessionId: "test",
+        update: {
+          sessionUpdate: "agent_thought_chunk",
+          messageId: "msg_sub_2",
+          content: { type: "text", text: "Thinking" },
+        },
+      });
+
+      const streamChunk = messages.find((m) => m.type === "streamChunk");
+      const thoughtChunk = messages.find((m) => m.type === "thoughtChunk");
+
+      assert.strictEqual(streamChunk?.messageId, "msg_main_1");
+      assert.strictEqual(thoughtChunk?.messageId, "msg_sub_2");
+    });
+
+    test("omits messageId when the update has none", async () => {
+      const provider = new ChatViewProvider(
+        mockExtensionUri,
+        acpClient as any,
+        memento as any
+      );
+      const messages: any[] = [];
+      (provider as any).postMessage = (msg: any) => messages.push(msg);
+
+      await (provider as any).handleSessionUpdate({
+        sessionId: "test",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Hello" },
+        },
+      });
+
+      const streamChunk = messages.find((m) => m.type === "streamChunk");
+      assert.strictEqual(streamChunk?.messageId, null);
+    });
   });
 
   suite("Tool Call Updates", () => {
@@ -1985,7 +2039,9 @@ suite("ChatViewProvider", () => {
         `content should include directory header, got: ${result.content}`
       );
       const contentForCompare =
-        process.platform === "win32" ? result.content.toLowerCase() : result.content;
+        process.platform === "win32"
+          ? result.content.toLowerCase()
+          : result.content;
       const pathForCompare =
         process.platform === "win32" ? tmpDir.toLowerCase() : tmpDir;
       assert.ok(

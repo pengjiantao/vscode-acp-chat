@@ -190,6 +190,9 @@ export interface ExtensionMessage {
   commands?: AvailableCommand[] | null;
   starredModels?: string[];
   toolCallId?: string;
+  /** ACP `messageId` the chunk belongs to. A change signals a new assistant message. */
+  messageId?: string | null;
+  /** Agent attribution, set on agentChanged. */
   agentId?: string;
   agentName?: string;
   name?: string;

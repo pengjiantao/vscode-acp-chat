@@ -3224,6 +3224,279 @@ suite("Webview", () => {
       });
     });
 
+    suite("interleaved message streams (messageId)", () => {
+      test("new messageId creates a second assistant message without mixing text", () => {
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Alpha ",
+          messageId: "m1",
+        });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Beta",
+          messageId: "m2",
+        });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Gamma",
+          messageId: "m1",
+        });
+
+        const msgs = elements.messagesEl.querySelectorAll(".message.assistant");
+        assert.strictEqual(msgs.length, 2);
+        const first = msgs[0].textContent || "";
+        const second = msgs[1].textContent || "";
+        assert.ok(first.includes("Alpha"), "first message holds Alpha");
+        assert.ok(first.includes("Gamma"), "first message holds Gamma");
+        assert.ok(second.includes("Beta"), "second message holds Beta");
+        assert.ok(!first.includes("Beta"), "no cross-stream bleed into first");
+        assert.ok(
+          !second.includes("Alpha"),
+          "no cross-stream bleed into second"
+        );
+      });
+
+      test("interleaved thought and text messageIds do not corrupt blocks", () => {
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Answer A",
+          messageId: "m1",
+        });
+        controller.handleMessage({
+          type: "thoughtChunk",
+          text: "Reason B",
+          messageId: "m2",
+        });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Answer C",
+          messageId: "m1",
+        });
+
+        const msgs = elements.messagesEl.querySelectorAll(".message.assistant");
+        assert.strictEqual(msgs.length, 2);
+        assert.strictEqual(
+          msgs[0].querySelectorAll(".agent-thought").length,
+          0,
+          "text stream must not contain thought blocks"
+        );
+        assert.strictEqual(
+          msgs[1].querySelectorAll(".block-text").length,
+          0,
+          "thought stream must not contain text blocks"
+        );
+        const first = msgs[0].textContent || "";
+        const second = msgs[1].textContent || "";
+        assert.ok(first.includes("Answer A"));
+        assert.ok(first.includes("Answer C"));
+        assert.ok(second.includes("Reason B"));
+      });
+
+      test("duplicate messageId appends without creating a new element", () => {
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Alpha",
+          messageId: "m1",
+        });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Beta",
+          messageId: "m1",
+        });
+
+        const msgs = elements.messagesEl.querySelectorAll(".message.assistant");
+        assert.strictEqual(msgs.length, 1);
+        assert.strictEqual((msgs[0].textContent || "").trim(), "AlphaBeta");
+      });
+
+      test("streamEnd without messageId finalizes every active stream", () => {
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "One",
+          messageId: "m1",
+        });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Two",
+          messageId: "m2",
+        });
+        controller.handleMessage({ type: "streamEnd" });
+
+        const msgs = elements.messagesEl.querySelectorAll(".message.assistant");
+        assert.strictEqual(msgs.length, 2);
+        for (const msg of msgs) {
+          const actions = msg.querySelector(".message-actions");
+          assert.ok(actions, "each stream should render action buttons");
+          assert.strictEqual(
+            actions?.querySelectorAll(".action-btn").length,
+            4
+          );
+        }
+        assert.strictEqual(controller.messageList.getIsGenerating(), false);
+      });
+
+      test("tool calls attach to the most recent stream", () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Note",
+          messageId: "m1",
+        });
+        controller.handleMessage({
+          type: "toolCallStart",
+          toolCallId: "tool-1",
+          name: "Read file",
+          kind: "read",
+        });
+        controller.handleMessage({
+          type: "toolCallComplete",
+          toolCallId: "tool-1",
+          status: "completed",
+        });
+
+        const msgs = elements.messagesEl.querySelectorAll(".message.assistant");
+        assert.strictEqual(msgs.length, 1);
+        assert.ok(msgs[0].querySelector(".tool-item"));
+        const tools = controller.getTools();
+        assert.ok(tools["tool-1"]);
+        assert.strictEqual(tools["tool-1"].status, "completed");
+      });
+
+      test("getToolsSnapshot aggregates tools across streams", () => {
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "One",
+          messageId: "m1",
+        });
+        controller.handleMessage({
+          type: "toolCallStart",
+          toolCallId: "tool-1",
+          name: "Read",
+        });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Two",
+          messageId: "m2",
+        });
+        controller.handleMessage({
+          type: "toolCallStart",
+          toolCallId: "tool-2",
+          name: "Search",
+        });
+
+        assert.strictEqual(
+          elements.messagesEl.querySelectorAll(".tool-item").length,
+          2
+        );
+        const tools = controller.getTools();
+        assert.ok(tools["tool-1"], "tool from first stream");
+        assert.ok(tools["tool-2"], "tool from second stream");
+      });
+
+      test("tool completion after a stream switch updates the original block", () => {
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "One",
+          messageId: "m1",
+        });
+        controller.handleMessage({
+          type: "toolCallStart",
+          toolCallId: "tool-x",
+          name: "Read file",
+          kind: "read",
+        });
+        // Another stream's text switches the current stream mid-tool.
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Two",
+          messageId: "m2",
+        });
+        controller.handleMessage({
+          type: "toolCallComplete",
+          toolCallId: "tool-x",
+          status: "completed",
+        });
+
+        assert.strictEqual(
+          elements.messagesEl.querySelectorAll(".tool-item").length,
+          1,
+          "no duplicate tool block across streams"
+        );
+        const msgs = elements.messagesEl.querySelectorAll(".message.assistant");
+        assert.ok(msgs[0].querySelector(".tool-item"));
+        assert.strictEqual(controller.getTools()["tool-x"].status, "completed");
+      });
+
+      test("unkeyed chunks after streamEnd start a fresh message", () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({ type: "streamChunk", text: "First" });
+        controller.handleMessage({ type: "streamEnd" });
+        controller.handleMessage({ type: "streamChunk", text: "Second" });
+
+        const msgs = elements.messagesEl.querySelectorAll(".message.assistant");
+        assert.strictEqual(msgs.length, 2);
+        assert.ok((msgs[0].textContent || "").includes("First"));
+        assert.ok((msgs[1].textContent || "").includes("Second"));
+      });
+
+      test("a running tool keeps its spinner when another stream starts", () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "One",
+          messageId: "m1",
+        });
+        controller.handleMessage({
+          type: "toolCallStart",
+          toolCallId: "tool-run",
+          name: "Run command",
+          kind: "execute",
+        });
+        // A new stream's first chunk finalizes m1's blocks; the running
+        // tool must NOT be marked completed by that transition.
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "Two",
+          messageId: "m2",
+        });
+
+        assert.strictEqual(
+          controller.getTools()["tool-run"].status,
+          "running",
+          "tool in the previous stream stays running"
+        );
+        assert.strictEqual(
+          elements.messagesEl.querySelectorAll(".tool-status.running").length,
+          1
+        );
+      });
+
+      test("new messageId finalizes the previous stream", () => {
+        controller.handleMessage({
+          type: "thoughtChunk",
+          text: "Old thinking",
+          messageId: "m1",
+        });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "New answer",
+          messageId: "m2",
+        });
+
+        const thoughts = elements.messagesEl.querySelectorAll(".agent-thought");
+        assert.strictEqual(thoughts.length, 1);
+        assert.strictEqual(
+          thoughts[0].getAttribute("open"),
+          null,
+          "previous stream's thought should be collapsed"
+        );
+        assert.strictEqual(
+          thoughts[0].querySelector(".thought-title")?.textContent,
+          "Thought Process"
+        );
+      });
+    });
+
     suite("agent thought display", () => {
       test("thoughtChunk message creates thought element", () => {
         controller.handleMessage({

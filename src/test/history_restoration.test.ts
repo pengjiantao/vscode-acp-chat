@@ -207,10 +207,7 @@ suite("History Restoration Order Integration", () => {
     const lifecycleCalls = mockAcpClient.calls.filter(
       (call: string) => call.startsWith("close") || call === "new"
     );
-    assert.deepStrictEqual(lifecycleCalls, [
-      "close:current-session",
-      "new",
-    ]);
+    assert.deepStrictEqual(lifecycleCalls, ["close:current-session", "new"]);
   });
 
   test("agent switch closes the previous session before connecting", async () => {
@@ -230,10 +227,7 @@ suite("History Restoration Order Integration", () => {
     const lifecycleCalls = mockAcpClient.calls.filter(
       (call: string) => call.startsWith("close") || call === "new"
     );
-    assert.deepStrictEqual(lifecycleCalls, [
-      "close:current-session",
-      "new",
-    ]);
+    assert.deepStrictEqual(lifecycleCalls, ["close:current-session", "new"]);
   });
 
   test("load history closes the previous session before loading", async () => {
@@ -259,6 +253,45 @@ suite("History Restoration Order Integration", () => {
     ]);
   });
 
+  test("forwards messageId during history replay", async () => {
+    const memento = new MockMemento();
+    const mockAcpClient = createHistoryLoadClient();
+    const sessionUpdateListeners: Array<(update: any) => void | Promise<void>> =
+      [];
+    mockAcpClient.setOnSessionUpdate = (cb: any) => {
+      sessionUpdateListeners.push(cb);
+      return () => {};
+    };
+    mockAcpClient.loadSession = async () => {
+      for (const cb of sessionUpdateListeners) {
+        await cb({
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            messageId: "msg_history_1",
+            content: { type: "text", text: "History answer." },
+          },
+        });
+      }
+    };
+
+    const provider = new ChatViewProvider(
+      vscode.Uri.file("/test"),
+      mockAcpClient as any,
+      memento
+    );
+    const mockView = new MockWebviewView();
+    (provider as any).view = mockView;
+
+    await provider.loadHistorySession("history-session");
+    await waitForProviderQueues(provider);
+
+    const chunks = mockView.webview.messages.filter(
+      (m: any) => m.type === "streamChunk"
+    );
+    assert.ok(chunks.length > 0, "expected replayed stream chunks");
+    assert.strictEqual(chunks[0].messageId, "msg_history_1");
+  });
+
   test("falls back to cancel and continues when session close fails", async () => {
     const memento = new MockMemento();
     const mockAcpClient = createHistoryLoadClient();
@@ -280,7 +313,9 @@ suite("History Restoration Order Integration", () => {
     assert.deepStrictEqual(
       mockAcpClient.calls.filter(
         (call: string) =>
-          call.startsWith("close") || call === "cancel" || call.startsWith("load")
+          call.startsWith("close") ||
+          call === "cancel" ||
+          call.startsWith("load")
       ),
       ["close:current-session", "cancel", "load:history-session"]
     );
@@ -306,8 +341,7 @@ suite("History Restoration Order Integration", () => {
 
     assert.deepStrictEqual(
       mockAcpClient.calls.filter(
-        (call: string) =>
-          call === "cancel" || call.startsWith("load")
+        (call: string) => call === "cancel" || call.startsWith("load")
       ),
       ["cancel", "load:history-session"]
     );

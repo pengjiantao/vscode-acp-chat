@@ -13,7 +13,7 @@ import { BlockManager } from "../block/block-manager";
 export class PermissionDialog {
   constructor(
     private ctx: WebviewContext,
-    private getBlockManager: () => BlockManager,
+    private getBlockManager: (toolCallId: string) => BlockManager | undefined,
     private getIsGenerating: () => boolean,
     private setGenerating: (value: boolean) => void,
     private scrollToBottom: () => void
@@ -44,7 +44,7 @@ export class PermissionDialog {
 
     let targetContainer: HTMLElement | null = null;
     if (toolCallId) {
-      const block = this.getBlockManager().getToolBlock(toolCallId);
+      const block = this.getBlockManager(toolCallId)?.getToolBlock(toolCallId);
       if (block) {
         targetContainer = block.contentEl;
       }

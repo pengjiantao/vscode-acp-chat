@@ -1246,6 +1246,7 @@ export class ChatViewProvider
         this.postMessage({
           type: "streamChunk",
           text: update.content.text,
+          messageId: update.messageId ?? null,
         });
       }
     } else if (update.sessionUpdate === "tool_call") {
@@ -1311,6 +1312,7 @@ export class ChatViewProvider
         this.postMessage({
           type: "thoughtChunk",
           text: update.content.text,
+          messageId: update.messageId ?? null,
         });
       }
     } else if (update.sessionUpdate === "config_option_update") {
@@ -1675,8 +1677,8 @@ export class ChatViewProvider
       return;
     }
 
-    const supportsClose = !!this.acpClient.getAgentCapabilities()
-      ?.sessionCapabilities?.close;
+    const supportsClose =
+      !!this.acpClient.getAgentCapabilities()?.sessionCapabilities?.close;
     if (supportsClose) {
       try {
         await this.acpClient.closeSession({ sessionId });
