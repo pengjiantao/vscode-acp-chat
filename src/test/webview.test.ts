@@ -1975,8 +1975,17 @@ suite("Webview", () => {
       });
     });
 
-    suite("Action Buttons and Copy Logic", () => {
-      test("renders action buttons after streamEnd", () => {
+    suite("Block Focus and Copy Logic", () => {
+      function dispatchDoubleClick(el: Element): void {
+        el.dispatchEvent(
+          new dom.window.MouseEvent("dblclick", {
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+      }
+
+      test("does not render action buttons after streamEnd", () => {
         controller.handleMessage({ type: "streamStart" });
         controller.handleMessage({ type: "streamChunk", text: "Final output" });
         controller.handleMessage({ type: "streamEnd" });
@@ -1984,8 +1993,35 @@ suite("Webview", () => {
         const assistantMsg =
           elements.messagesEl.querySelector(".message.assistant");
         assert.ok(assistantMsg);
-        const actions = assistantMsg.querySelector(".message-actions");
-        assert.ok(actions, "Actions container should be present");
+        assert.strictEqual(
+          assistantMsg.querySelector(".message-actions"),
+          null,
+          "No auto-rendered actions after streamEnd"
+        );
+        assert.strictEqual(
+          elements.messagesEl.querySelector(".block-actions"),
+          null
+        );
+      });
+
+      test("double-clicking a text block focuses it and shows floating actions", () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({ type: "streamChunk", text: "Final output" });
+        controller.handleMessage({ type: "streamEnd" });
+
+        const block = elements.messagesEl.querySelector(
+          ".block-text"
+        ) as HTMLElement;
+        assert.ok(block, "expected a text block");
+
+        dispatchDoubleClick(block);
+
+        assert.ok(
+          block.classList.contains("focused"),
+          "block should be focused"
+        );
+        const actions = block.querySelector(".block-actions");
+        assert.ok(actions, "floating actions should be present");
 
         const buttons = actions.querySelectorAll(".action-btn");
         assert.strictEqual(buttons.length, 4, "Should have 4 action buttons");
@@ -2009,7 +2045,157 @@ suite("Webview", () => {
         );
       });
 
-      test("Paste to input action uses the last text block", async () => {
+      test("clicking outside dismisses the focused block", () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({ type: "streamChunk", text: "Text" });
+        controller.handleMessage({ type: "streamEnd" });
+
+        const block = elements.messagesEl.querySelector(
+          ".block-text"
+        ) as HTMLElement;
+        dispatchDoubleClick(block);
+        assert.ok(block.classList.contains("focused"));
+
+        elements.messagesEl.dispatchEvent(
+          new dom.window.MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+
+        assert.ok(
+          !block.classList.contains("focused"),
+          "focus should be removed on outside click"
+        );
+        assert.strictEqual(block.querySelector(".block-actions"), null);
+      });
+
+      test("clicking outside the messages container dismisses the focused block", () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({ type: "streamChunk", text: "Text" });
+        controller.handleMessage({ type: "streamEnd" });
+
+        const block = elements.messagesEl.querySelector(
+          ".block-text"
+        ) as HTMLElement;
+        dispatchDoubleClick(block);
+        assert.ok(block.classList.contains("focused"));
+
+        // Click on the input panel (outside #messages entirely).
+        elements.inputEl.dispatchEvent(
+          new dom.window.MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+
+        assert.ok(
+          !block.classList.contains("focused"),
+          "focus should be removed when clicking outside the messages list"
+        );
+        assert.strictEqual(block.querySelector(".block-actions"), null);
+      });
+
+      test("keyboard Enter on a focused message reveals the actions", () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({ type: "streamChunk", text: "Output" });
+        controller.handleMessage({ type: "streamEnd" });
+
+        const messageEl = elements.messagesEl.querySelector(
+          ".message.assistant"
+        ) as HTMLElement;
+        const block = elements.messagesEl.querySelector(
+          ".block-text"
+        ) as HTMLElement;
+        assert.ok(messageEl && block);
+
+        (messageEl as HTMLElement).focus();
+        messageEl.dispatchEvent(
+          new dom.window.KeyboardEvent("keydown", {
+            key: "Enter",
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+
+        assert.ok(
+          block.classList.contains("focused"),
+          "Enter on a focused message should reveal actions"
+        );
+        assert.ok(block.querySelector(".block-actions"));
+      });
+
+      test("double-clicking a link does not focus the block", () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({
+          type: "streamChunk",
+          text: "See [file](file:///x)",
+        });
+        controller.handleMessage({ type: "streamEnd" });
+
+        const link = elements.messagesEl.querySelector(
+          "a[href^='file://']"
+        ) as HTMLElement;
+        assert.ok(link, "expected a markdown link");
+
+        dispatchDoubleClick(link);
+
+        assert.strictEqual(
+          elements.messagesEl.querySelector(".block-text.focused"),
+          null,
+          "links should not trigger block focus"
+        );
+        assert.strictEqual(
+          elements.messagesEl.querySelector(".block-actions"),
+          null
+        );
+      });
+
+      test("double-clicking a second block moves the focus", () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({ type: "streamChunk", text: "Alpha" });
+        controller.handleMessage({ type: "streamEnd" });
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({ type: "streamChunk", text: "Beta" });
+        controller.handleMessage({ type: "streamEnd" });
+
+        const blocks = elements.messagesEl.querySelectorAll(".block-text");
+        assert.strictEqual(blocks.length, 2);
+
+        dispatchDoubleClick(blocks[0]);
+        assert.ok(blocks[0].classList.contains("focused"));
+
+        dispatchDoubleClick(blocks[1]);
+        assert.ok(
+          !blocks[0].classList.contains("focused"),
+          "first block loses focus"
+        );
+        assert.ok(blocks[1].classList.contains("focused"));
+        assert.strictEqual(blocks[0].querySelector(".block-actions"), null);
+        assert.ok(blocks[1].querySelector(".block-actions"));
+      });
+
+      test("a new turn dismisses a focused block", () => {
+        controller.handleMessage({ type: "streamStart" });
+        controller.handleMessage({ type: "streamChunk", text: "Alpha" });
+        controller.handleMessage({ type: "streamEnd" });
+
+        const block = elements.messagesEl.querySelector(
+          ".block-text"
+        ) as HTMLElement;
+        dispatchDoubleClick(block);
+        assert.ok(block.classList.contains("focused"));
+
+        controller.handleMessage({ type: "userMessage", text: "next" });
+
+        assert.ok(
+          !block.classList.contains("focused"),
+          "focus should be cleared on a new turn"
+        );
+        assert.strictEqual(block.querySelector(".block-actions"), null);
+      });
+
+      test("Copy to input action uses the focused block text", async () => {
         controller.handleMessage({ type: "streamStart" });
         controller.handleMessage({
           type: "streamChunk",
@@ -2031,12 +2217,15 @@ suite("Webview", () => {
         });
         controller.handleMessage({ type: "streamEnd" });
 
-        const assistantMsg = elements.messagesEl.querySelector(
-          ".message.assistant"
-        ) as HTMLElement;
-        const pasteBtn = assistantMsg.querySelector(
+        const blocks = elements.messagesEl.querySelectorAll(".block-text");
+        assert.strictEqual(blocks.length, 2, "expected text + tool + text");
+        const lastBlock = blocks[blocks.length - 1] as HTMLElement;
+        dispatchDoubleClick(lastBlock);
+
+        const pasteBtn = lastBlock.querySelector(
           '.action-btn[acp-title="Copy to input"]'
         ) as HTMLElement;
+        assert.ok(pasteBtn, "expected a Copy to input button");
 
         pasteBtn.click();
 
@@ -2168,7 +2357,7 @@ suite("Webview", () => {
         });
       });
 
-      test("Turn separation: each turn gets its own container and toolbar", () => {
+      test("Turn separation: each turn gets its own container", () => {
         // First Turn
         controller.handleMessage({ type: "userMessage", text: "Question 1" });
         controller.handleMessage({ type: "streamChunk", text: "Answer 1" });
@@ -2187,13 +2376,15 @@ suite("Webview", () => {
           "Should have 2 separate assistant messages"
         );
 
-        assert.ok(
+        assert.strictEqual(
           assistantMsgs[0].querySelector(".message-actions"),
-          "Turn 1 should have toolbar"
+          null,
+          "Turn 1 should not auto-render a toolbar"
         );
-        assert.ok(
+        assert.strictEqual(
           assistantMsgs[1].querySelector(".message-actions"),
-          "Turn 2 should have toolbar"
+          null,
+          "Turn 2 should not auto-render a toolbar"
         );
 
         assert.strictEqual(
@@ -3324,14 +3515,11 @@ suite("Webview", () => {
 
         const msgs = elements.messagesEl.querySelectorAll(".message.assistant");
         assert.strictEqual(msgs.length, 2);
-        for (const msg of msgs) {
-          const actions = msg.querySelector(".message-actions");
-          assert.ok(actions, "each stream should render action buttons");
-          assert.strictEqual(
-            actions?.querySelectorAll(".action-btn").length,
-            4
-          );
-        }
+        assert.strictEqual(
+          elements.messagesEl.querySelector(".message-actions"),
+          null,
+          "streamEnd must not auto-render action buttons"
+        );
         assert.strictEqual(controller.messageList.getIsGenerating(), false);
       });
 

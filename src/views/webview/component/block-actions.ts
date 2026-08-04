@@ -1,51 +1,43 @@
 import type { WebviewContext } from "../context";
 
 /**
- * Renders action buttons (copy, paste-to-input, scroll-to-top,
- * scroll-to-user) on completed assistant messages.
- *
- * Extracted from the controller's renderActionButtons method.
+ * Renders the floating action buttons (copy, copy-to-input, scroll-to-top,
+ * scroll-to-user) for a focused text block. The container is a child of the
+ * focused block and is positioned outside its top-right corner via CSS.
  */
-export class ActionButtonsComponent {
+export class BlockActionsComponent {
   constructor(private ctx: WebviewContext) {}
 
   /**
-   * Append action buttons to a completed assistant message element.
-   * Skips if buttons are already present.
+   * Render action buttons into a focused text block. Returns the actions
+   * container, reusing it if already present.
    */
   render(
-    messageEl: HTMLElement,
+    blockEl: HTMLElement,
     callbacks: {
       onCopyToInput: (text: string) => void;
       scrollToTop: () => void;
       scrollToPreviousUserMessage: (el: HTMLElement) => void;
     }
-  ): void {
-    if (!messageEl || messageEl.querySelector(".message-actions")) return;
+  ): HTMLElement {
+    const existing = blockEl.querySelector(
+      ".block-actions"
+    ) as HTMLElement | null;
+    if (existing) return existing;
 
     const { doc } = this.ctx;
     const actionsContainer = doc.createElement("div");
-    actionsContainer.className = "message-actions";
+    actionsContainer.className = "block-actions";
 
-    const getFinalText = () => {
-      const textBlocks = messageEl.querySelectorAll(".block-text");
-      if (textBlocks.length > 0) {
-        const lastBlock = textBlocks[textBlocks.length - 1] as HTMLElement;
-        return (
-          lastBlock.getAttribute("data-raw-content") ||
-          lastBlock.innerText ||
-          ""
-        );
-      }
-      const textEl = messageEl.querySelector(
-        ".message-content-text"
-      ) as HTMLElement;
-      return textEl?.innerText || "";
+    const getBlockText = (): string => {
+      return (
+        blockEl.getAttribute("data-raw-content") || blockEl.innerText || ""
+      );
     };
 
     // Copy Button
     const copyBtn = this.createButton("copy", "Copy response", async () => {
-      const text = getFinalText();
+      const text = getBlockText();
       if (text) {
         try {
           await navigator.clipboard.writeText(text);
@@ -58,7 +50,7 @@ export class ActionButtonsComponent {
 
     // Paste to Input Button
     const pasteBtn = this.createButton("edit", "Copy to input", () => {
-      const text = getFinalText();
+      const text = getBlockText();
       if (text) {
         callbacks.onCopyToInput(text);
       }
@@ -74,7 +66,10 @@ export class ActionButtonsComponent {
       "reply",
       "Scroll to user question",
       () => {
-        callbacks.scrollToPreviousUserMessage(messageEl);
+        const messageEl = blockEl.closest(".message") as HTMLElement | null;
+        if (messageEl) {
+          callbacks.scrollToPreviousUserMessage(messageEl);
+        }
       }
     );
 
@@ -83,7 +78,8 @@ export class ActionButtonsComponent {
     actionsContainer.appendChild(topBtn);
     actionsContainer.appendChild(userBtn);
 
-    messageEl.appendChild(actionsContainer);
+    blockEl.appendChild(actionsContainer);
+    return actionsContainer;
   }
 
   private createButton(

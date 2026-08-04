@@ -12,7 +12,7 @@ import { ChipRendererComponent } from "./chip-renderer";
 import { BlockManager } from "../block/block-manager";
 import { TextBlock } from "../block/text-block";
 import { ToolBlock } from "../block/tool-block";
-import { ActionButtonsComponent } from "./action-buttons";
+import { BlockActionsComponent } from "./block-actions";
 import { getRequiredElement } from "../widget/dom";
 
 const BOTTOM_THRESHOLD_PX = 100;
@@ -42,10 +42,11 @@ type MessageStream = {
  */
 export class MessageListComponent implements MessageHandler {
   readonly elements: MessageListElements;
-  private actionButtons: ActionButtonsComponent;
+  private blockActions: BlockActionsComponent;
   private chipRenderer: ChipRendererComponent;
   private streams = new Map<string, MessageStream>();
   private currentStreamId: string | null = null;
+  private focusedBlockEl: HTMLElement | null = null;
 
   private isAutoScrollEnabled = true;
   private pendingBottomScrollFrame: number | null = null;
@@ -82,7 +83,7 @@ export class MessageListComponent implements MessageHandler {
     };
 
     this.chipRenderer = options?.chipRenderer ?? new ChipRendererComponent(ctx);
-    this.actionButtons = new ActionButtonsComponent(ctx);
+    this.blockActions = new BlockActionsComponent(ctx);
 
     // Register for all streaming and message-related messages.
     ctx.messageRouter.registerMany(
@@ -158,22 +159,13 @@ export class MessageListComponent implements MessageHandler {
   }
 
   private handleStreamEnd(): void {
-    // streamEnd is turn-scoped: finalize every active stream, then render
-    // per-message action buttons (kept streams stay queryable via getTools).
+    // streamEnd is turn-scoped: finalize every active stream. Action buttons
+    // are no longer rendered automatically; they appear on demand when a text
+    // block is double-clicked (see setupBlockFocusHandler).
     this.finalizeAllStreams();
-    for (const stream of this.streams.values()) {
-      this.actionButtons.render(stream.messageEl, {
-        onCopyToInput: (text) => {
-          this.onCopyToInput?.(text);
-        },
-        scrollToTop: () => this.scrollToTop(),
-        scrollToPreviousUserMessage: (el) =>
-          this.scrollToPreviousUserMessage(el),
-      });
-    }
     this.setGenerating(false);
-    // Match pre-refactor behavior: chunks after streamEnd (without a new
-    // streamStart) begin a fresh message rather than appending to the last.
+    // Chunks after streamEnd (without a new streamStart) begin a fresh
+    // message rather than appending to the last.
     this.currentStreamId = null;
     this.scrollToBottom();
   }
@@ -419,6 +411,7 @@ export class MessageListComponent implements MessageHandler {
   }
 
   private resetStreams(): void {
+    this.dismissBlockFocus();
     this.streams.clear();
     this.currentStreamId = null;
   }
@@ -637,6 +630,65 @@ export class MessageListComponent implements MessageHandler {
         checkExists: true,
       });
     });
+  }
+
+  /**
+   * Reveals the floating action buttons for a text block. Mouse users
+   * double-click the block; keyboard users Tab to a message and press
+   * Enter/Space. Clicking anywhere outside the focused block dismisses it.
+   */
+  setupBlockFocusHandler(): void {
+    const { messagesEl } = this.elements;
+
+    messagesEl.addEventListener("dblclick", (event) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("button, a, .block-actions")) return;
+      const block = target.closest(".block-text") as HTMLElement | null;
+      if (!block) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.focusBlock(block);
+    });
+
+    // Keyboard path: Enter/Space on a focused message reveals the actions for
+    // its first text block (the buttons themselves are tabbable).
+    messagesEl.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const active = this.ctx.doc.activeElement as HTMLElement | null;
+      if (!active || !active.classList.contains("message")) return;
+      const block = active.querySelector(".block-text") as HTMLElement | null;
+      if (!block) return;
+      event.preventDefault();
+      this.focusBlock(block);
+    });
+
+    // Clicking anywhere outside the focused block dismisses it. Listens on the
+    // document so clicks on the input panel, container, etc. also close.
+    this.ctx.doc.addEventListener("click", (event) => {
+      if (!this.focusedBlockEl) return;
+      const target = event.target as HTMLElement;
+      if (this.focusedBlockEl.contains(target)) return;
+      this.dismissBlockFocus();
+    });
+  }
+
+  private focusBlock(blockEl: HTMLElement): void {
+    if (this.focusedBlockEl === blockEl) return;
+    this.dismissBlockFocus();
+    this.focusedBlockEl = blockEl;
+    blockEl.classList.add("focused");
+    this.blockActions.render(blockEl, {
+      onCopyToInput: (text) => this.onCopyToInput?.(text),
+      scrollToTop: () => this.scrollToTop(),
+      scrollToPreviousUserMessage: (el) => this.scrollToPreviousUserMessage(el),
+    });
+  }
+
+  private dismissBlockFocus(): void {
+    if (!this.focusedBlockEl) return;
+    this.focusedBlockEl.classList.remove("focused");
+    this.focusedBlockEl.querySelector(".block-actions")?.remove();
+    this.focusedBlockEl = null;
   }
 
   setupScrollEventListeners(): void {

@@ -104,6 +104,7 @@ export class WebviewController implements MessageHandler {
     this.messageList.setupCodeCopyHandler();
     this.messageList.setupFileLinkHandler();
     this.messageList.setupDiffHeaderClickHandler();
+    this.messageList.setupBlockFocusHandler();
     this.messageList.setupScrollEventListeners();
   }
 
