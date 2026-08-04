@@ -14,8 +14,6 @@ export class PermissionDialog {
   constructor(
     private ctx: WebviewContext,
     private getBlockManager: (toolCallId: string) => BlockManager | undefined,
-    private getIsGenerating: () => boolean,
-    private setGenerating: (value: boolean) => void,
     private scrollToBottom: () => void
   ) {}
 
@@ -31,9 +29,6 @@ export class PermissionDialog {
     options: Array<{ optionId: string; kind: string; name: string }>,
     toolCallId?: string
   ): void {
-    const wasGenerating = this.getIsGenerating();
-    this.setGenerating(true);
-
     if (options.length === 0) {
       options.push({
         optionId: "cancel",
@@ -51,23 +46,16 @@ export class PermissionDialog {
     }
 
     if (targetContainer) {
-      this.renderEmbedded(
-        targetContainer,
-        requestId,
-        toolCall,
-        options,
-        wasGenerating
-      );
+      this.renderEmbedded(targetContainer, requestId, toolCall, options);
     } else {
-      this.renderOverlay(requestId, toolCall, options, wasGenerating);
+      this.renderOverlay(requestId, toolCall, options);
     }
   }
 
   private handleOptionClick(
     requestId: string,
     option: { optionId: string; kind: string },
-    cleanup: () => void,
-    wasGenerating: boolean
+    cleanup: () => void
   ): void {
     const isReject = option.kind.startsWith("reject");
     const outcome = isReject
@@ -81,15 +69,23 @@ export class PermissionDialog {
     });
 
     cleanup();
-    this.setGenerating(wasGenerating);
+  }
+
+  /**
+   * Close any open permission UI (embedded or overlay). Called by the host
+   * when the session is stopped, cleared, or replaced.
+   */
+  dismiss(): void {
+    this.ctx.doc
+      .querySelectorAll(".permission-dialog-overlay, .embedded-permission")
+      .forEach((el) => el.remove());
   }
 
   private renderEmbedded(
     container: HTMLElement,
     requestId: string,
     toolCall: { kind?: string; title?: string; description?: string },
-    options: Array<{ optionId: string; kind: string; name: string }>,
-    wasGenerating: boolean
+    options: Array<{ optionId: string; kind: string; name: string }>
   ): void {
     const { doc } = this.ctx;
     const wrapper = doc.createElement("div");
@@ -138,12 +134,7 @@ export class PermissionDialog {
       btn.appendChild(text);
 
       btn.addEventListener("click", () => {
-        this.handleOptionClick(
-          requestId,
-          opt,
-          () => wrapper.remove(),
-          wasGenerating
-        );
+        this.handleOptionClick(requestId, opt, () => wrapper.remove());
       });
 
       optionsContainer.appendChild(btn);
@@ -160,8 +151,7 @@ export class PermissionDialog {
   private renderOverlay(
     requestId: string,
     toolCall: { kind?: string; title?: string; description?: string },
-    options: Array<{ optionId: string; kind: string; name: string }>,
-    wasGenerating: boolean
+    options: Array<{ optionId: string; kind: string; name: string }>
   ): void {
     const { doc } = this.ctx;
     const overlay = doc.createElement("div");
@@ -212,12 +202,7 @@ export class PermissionDialog {
       btn.textContent = `${label}: ${opt.name}`;
 
       btn.addEventListener("click", () => {
-        this.handleOptionClick(
-          requestId,
-          opt,
-          () => overlay.remove(),
-          wasGenerating
-        );
+        this.handleOptionClick(requestId, opt, () => overlay.remove());
       });
 
       optionsContainer.appendChild(btn);

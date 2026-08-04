@@ -68,8 +68,6 @@ export class WebviewController implements MessageHandler {
     this.permissionDialog = new PermissionDialog(
       this.ctx,
       (toolCallId) => this.messageList.getToolBlockManager(toolCallId),
-      () => this.messageList.getIsGenerating(),
-      (v) => this.inputPanel.setGenerating(v),
       () => this.messageList.scrollToBottom()
     );
 
@@ -214,6 +212,10 @@ export class WebviewController implements MessageHandler {
             msg.toolCallId
           );
         }
+        return;
+
+      case "permissionCleared":
+        this.permissionDialog.dismiss();
         return;
 
       case "sessionMetadata": {

@@ -552,6 +552,7 @@ export class ChatViewProvider
           }
           break;
         case "stop":
+          this.dismissPendingPermissions();
           await this.acpClient.cancel();
           break;
         case "permissionResponse":
@@ -850,17 +851,6 @@ export class ChatViewProvider
           name: opt.name,
         })),
       });
-
-      // Timeout logic
-      setTimeout(() => {
-        const pending = this.permissionQueue.find((p) => p.id === requestId);
-        if (pending) {
-          pending.resolver({ outcome: { outcome: "cancelled" } });
-          this.permissionQueue = this.permissionQueue.filter(
-            (p) => p.id !== requestId
-          );
-        }
-      }, 60000); // 60s timeout
     });
   }
 
@@ -1657,7 +1647,24 @@ export class ChatViewProvider
   }
 
   private handleClearChat(): void {
+    this.dismissPendingPermissions();
     this.postMessage({ type: "chatCleared" });
+  }
+
+  /**
+   * Resolve every pending permission request as cancelled and tell the
+   * webview to close any open permission UI. Called when the session is
+   * stopped, cleared, or replaced, so stale requests do not linger.
+   */
+  private dismissPendingPermissions(): void {
+    if (this.permissionQueue.length === 0) {
+      return;
+    }
+    for (const pending of this.permissionQueue) {
+      pending.resolver({ outcome: { outcome: "cancelled" } });
+    }
+    this.permissionQueue = [];
+    this.postMessage({ type: "permissionCleared" });
   }
 
   /**
@@ -1668,6 +1675,8 @@ export class ChatViewProvider
    * does not keep running unchecked.
    */
   private async closeCurrentSession(): Promise<void> {
+    this.dismissPendingPermissions();
+
     if (!this.acpClient.isConnected()) {
       return;
     }
