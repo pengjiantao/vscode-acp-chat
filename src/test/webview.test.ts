@@ -62,9 +62,7 @@ function createWebviewHTML(): string {
   <div id="agent-plan-container"></div>
 
   <div id="messages-container">
-    <div class="messages-fade-top"></div>
     <div id="messages"></div>
-    <div class="messages-fade-bottom"></div>
   </div>
 
   <div id="typing-indicator">
@@ -1963,6 +1961,44 @@ suite("Webview", () => {
         assert.strictEqual(scrollTop, 2400);
       });
 
+      test("ignores wheel intent from nested thought content", () => {
+        const { runAllFrames } = installAnimationFrameQueue();
+        let scrollHeight = 1000;
+        let scrollTop = 800;
+        const clientHeight = 200;
+        const nestedThought = document.createElement("div");
+        nestedThought.className = "thought-content";
+        elements.messagesEl.appendChild(nestedThought);
+
+        Object.defineProperty(elements.messagesEl, "scrollHeight", {
+          configurable: true,
+          get: () => scrollHeight,
+        });
+        Object.defineProperty(elements.messagesEl, "clientHeight", {
+          configurable: true,
+          get: () => clientHeight,
+        });
+        Object.defineProperty(elements.messagesEl, "scrollTop", {
+          configurable: true,
+          get: () => scrollTop,
+          set: (value: number) => {
+            scrollTop = value;
+          },
+        });
+
+        elements.messagesEl.dispatchEvent(new window.Event("scroll"));
+        nestedThought.dispatchEvent(
+          new window.WheelEvent("wheel", { deltaY: -120, bubbles: true })
+        );
+
+        scrollHeight = 2400;
+        controller.handleMessage({ type: "streamChunk", text: "More output" });
+        elements.messagesEl.dispatchEvent(new window.Event("scroll"));
+        runAllFrames();
+
+        assert.strictEqual(scrollTop, 2400);
+      });
+
       test("handles streamEnd with HTML", () => {
         controller.handleMessage({ type: "streamStart" });
         controller.handleMessage({ type: "streamChunk", text: "**bold**" });
@@ -3792,6 +3828,155 @@ suite("Webview", () => {
         controller.handleMessage({ type: "chatCleared" });
         const thoughtEl = elements.messagesEl.querySelector(".agent-thought");
         assert.strictEqual(thoughtEl, null);
+      });
+
+      test("thought content is wrapped in a scroll-fade container", () => {
+        const { runAllFrames } = installAnimationFrameQueue();
+        controller.handleMessage({
+          type: "thoughtChunk",
+          text: "Let me think...",
+        });
+        const contentEl = elements.messagesEl.querySelector(
+          ".thought-content"
+        ) as HTMLElement;
+        assert.ok(contentEl);
+        const wrapper = contentEl.parentElement;
+        assert.ok(wrapper?.classList.contains("scroll-fade"));
+        assert.ok(wrapper?.querySelector(".scroll-fade-top"));
+        assert.ok(wrapper?.querySelector(".scroll-fade-bottom"));
+        assert.ok(contentEl.classList.contains("scroll-fade-content"));
+        assert.strictEqual(contentEl.style.overflowY, "auto");
+        assert.ok(contentEl.style.maxHeight);
+        runAllFrames();
+      });
+
+      test("scroll-fade fades respond to scroll position", () => {
+        const { runAllFrames } = installAnimationFrameQueue();
+        controller.handleMessage({
+          type: "thoughtChunk",
+          text: "Let me think...",
+        });
+        const contentEl = elements.messagesEl.querySelector(
+          ".thought-content"
+        ) as HTMLElement;
+        assert.ok(contentEl);
+        const wrapper = contentEl.parentElement as HTMLElement;
+        const topFade = wrapper.querySelector(".scroll-fade-top");
+        const bottomFade = wrapper.querySelector(".scroll-fade-bottom");
+        assert.ok(topFade);
+        assert.ok(bottomFade);
+        runAllFrames();
+
+        const setScrollMetrics = (scrollTop: number, height: number) => {
+          Object.defineProperty(contentEl, "scrollHeight", {
+            configurable: true,
+            get: () => height,
+          });
+          Object.defineProperty(contentEl, "clientHeight", {
+            configurable: true,
+            get: () => 100,
+          });
+          Object.defineProperty(contentEl, "scrollTop", {
+            configurable: true,
+            get: () => scrollTop,
+          });
+          contentEl.dispatchEvent(new window.Event("scroll"));
+        };
+
+        setScrollMetrics(0, 100);
+        assert.strictEqual(topFade?.classList.contains("visible"), false);
+        assert.strictEqual(bottomFade?.classList.contains("visible"), false);
+
+        setScrollMetrics(0, 300);
+        assert.strictEqual(topFade?.classList.contains("visible"), false);
+        assert.strictEqual(bottomFade?.classList.contains("visible"), true);
+
+        setScrollMetrics(100, 300);
+        assert.strictEqual(topFade?.classList.contains("visible"), true);
+        assert.strictEqual(bottomFade?.classList.contains("visible"), true);
+
+        setScrollMetrics(200, 300);
+        assert.strictEqual(topFade?.classList.contains("visible"), true);
+        assert.strictEqual(bottomFade?.classList.contains("visible"), false);
+      });
+
+      test("thought content auto-scrolls to the bottom after appending content", () => {
+        const { runAllFrames } = installAnimationFrameQueue();
+        const parentEl = controller.messageList.ensureAssistantMessage();
+        const block = controller.messageList
+          .getBlockManager()
+          .ensureBlock("thought", parentEl, elements.typingIndicatorEl);
+        const contentEl = elements.messagesEl.querySelector(
+          ".thought-content"
+        ) as HTMLElement;
+        assert.ok(contentEl);
+
+        let scrollTop = 0;
+        Object.defineProperty(contentEl, "scrollHeight", {
+          configurable: true,
+          get: () => 600,
+        });
+        Object.defineProperty(contentEl, "clientHeight", {
+          configurable: true,
+          get: () => 200,
+        });
+        Object.defineProperty(contentEl, "scrollTop", {
+          configurable: true,
+          get: () => scrollTop,
+          set: (value: number) => {
+            scrollTop = value;
+          },
+        });
+
+        block.appendContent("First part. ");
+        block.appendContent("Second part.");
+
+        runAllFrames();
+
+        assert.strictEqual(scrollTop, 600);
+      });
+
+      test("does not auto-scroll thought after the user wheels up", () => {
+        const { runAllFrames } = installAnimationFrameQueue();
+        const parentEl = controller.messageList.ensureAssistantMessage();
+        const block = controller.messageList
+          .getBlockManager()
+          .ensureBlock("thought", parentEl, elements.typingIndicatorEl);
+        const contentEl = elements.messagesEl.querySelector(
+          ".thought-content"
+        ) as HTMLElement;
+        assert.ok(contentEl);
+
+        let scrollHeight = 1000;
+        let scrollTop = 800;
+        Object.defineProperty(contentEl, "scrollHeight", {
+          configurable: true,
+          get: () => scrollHeight,
+        });
+        Object.defineProperty(contentEl, "clientHeight", {
+          configurable: true,
+          get: () => 200,
+        });
+        Object.defineProperty(contentEl, "scrollTop", {
+          configurable: true,
+          get: () => scrollTop,
+          set: (value: number) => {
+            scrollTop = value;
+          },
+        });
+
+        contentEl.dispatchEvent(new window.Event("scroll"));
+        contentEl.dispatchEvent(
+          new window.WheelEvent("wheel", { deltaY: -120, bubbles: true })
+        );
+        scrollTop = 500;
+        contentEl.dispatchEvent(new window.Event("scroll"));
+
+        scrollHeight = 2400;
+        block.appendContent("More output");
+        runAllFrames();
+
+        assert.strictEqual(scrollTop, 500);
       });
     });
 

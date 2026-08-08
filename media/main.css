@@ -74,19 +74,47 @@ body {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0);
 }
 
-.messages-fade-top,
-.messages-fade-bottom {
+#welcome-view[style*="display: flex"] ~ #messages-container .scroll-fade-top,
+#welcome-view[style*="display: flex"]
+  ~ #messages-container
+  .scroll-fade-bottom {
+  display: none;
+}
+
+/* Scroll-fade wrapper: bounded, scrollable content with gradient fades */
+.scroll-fade {
+  position: relative;
+}
+
+.scroll-fade-fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scroll-fade-content {
+  overflow-y: auto;
+}
+
+.scroll-fade-top,
+.scroll-fade-bottom {
   position: absolute;
   left: 0;
   right: 0;
   pointer-events: none;
   z-index: 10;
+  opacity: 0;
   transition: opacity 0.2s;
 }
 
-.messages-fade-top {
+.scroll-fade-top.visible,
+.scroll-fade-bottom.visible {
+  opacity: 1;
+}
+
+.scroll-fade-top {
   top: 0;
-  height: 20px;
   background: linear-gradient(
     to bottom,
     var(--vscode-sideBar-background) 0%,
@@ -94,21 +122,13 @@ body {
   );
 }
 
-.messages-fade-bottom {
+.scroll-fade-bottom {
   bottom: 0;
-  height: 40px;
   background: linear-gradient(
     to top,
     var(--vscode-sideBar-background) 0%,
     transparent 100%
   );
-}
-
-#welcome-view[style*="display: flex"] ~ #messages-container .messages-fade-top,
-#welcome-view[style*="display: flex"]
-  ~ #messages-container
-  .messages-fade-bottom {
-  display: none;
 }
 
 #messages:empty::before {
@@ -2015,7 +2035,6 @@ kbd {
   font-size: 12px;
   overflow: hidden;
   width: 100%;
-  opacity: 0.85;
 }
 
 .agent-thought summary {

@@ -1,4 +1,5 @@
 import { BlockWidget } from "./block-widget";
+import { ScrollFadeController } from "../widget/scroll-fade";
 import type { WebviewContext } from "../context";
 import { marked } from "../marked-config";
 
@@ -8,13 +9,16 @@ import { marked } from "../marked-config";
  */
 export class ThoughtBlock extends BlockWidget {
   private rawContent = "";
+  private scrollFade: ScrollFadeController;
 
   constructor(
     ctx: WebviewContext,
     element: HTMLElement,
-    contentEl: HTMLElement
+    contentEl: HTMLElement,
+    scrollFade: ScrollFadeController
   ) {
     super(ctx, element, contentEl, "thought:main", "thought");
+    this.scrollFade = scrollFade;
   }
 
   static create(ctx: WebviewContext): ThoughtBlock {
@@ -36,16 +40,19 @@ export class ThoughtBlock extends BlockWidget {
     `;
     blockEl.appendChild(details);
 
-    const contentEl = details.querySelector(".thought-content")!;
-    return new ThoughtBlock(ctx, blockEl, contentEl as HTMLElement);
+    const contentEl = details.querySelector(".thought-content")! as HTMLElement;
+    const scrollFade = new ScrollFadeController(ctx.doc, contentEl);
+    return new ThoughtBlock(ctx, blockEl, contentEl, scrollFade);
   }
 
   appendContent(text: string): void {
     this.rawContent += text;
     this.contentEl.innerHTML = marked.parse(this.rawContent) as string;
+    this.scrollFade.scrollToBottom();
   }
 
   finalize(): void {
+    this.scrollFade.dispose();
     const details = this.element.querySelector("details");
     if (details) {
       details.removeAttribute("open");

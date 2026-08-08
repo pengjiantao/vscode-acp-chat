@@ -4,7 +4,6 @@ import type {
   Mention,
   MessageListElements,
   Tool,
-  UserScrollDirection,
 } from "../types";
 import type { WebviewContext } from "../context";
 import type { MessageHandler } from "../message-router";
@@ -13,10 +12,11 @@ import { BlockManager } from "../block/block-manager";
 import { TextBlock } from "../block/text-block";
 import { ToolBlock } from "../block/tool-block";
 import { BlockActionsComponent } from "./block-actions";
+import { ScrollFadeController } from "../widget/scroll-fade";
 import { getRequiredElement } from "../widget/dom";
 
-const BOTTOM_THRESHOLD_PX = 100;
-const AUTO_SCROLL_SETTLE_FRAMES = 3;
+const NESTED_SCROLL_SELECTOR =
+  ".diff-content, .tool-output, .diff-summary-list, .detail-input, .thought-content";
 
 type MessageType = "user" | "assistant" | "error" | "system";
 
@@ -48,16 +48,7 @@ export class MessageListComponent implements MessageHandler {
   private currentStreamId: string | null = null;
   private focusedBlockEl: HTMLElement | null = null;
 
-  private isAutoScrollEnabled = true;
-  private pendingBottomScrollFrame: number | null = null;
-  private pendingBottomScrollForce = false;
-  private bottomScrollSettleFrames = 0;
-  private pendingPaintFrame: number | null = null;
-  private paintBump = false;
-  private userScrollIntent = false;
-  private pointerScrollActive = false;
-  private touchScrollActive = false;
-  private userScrollDirection: UserScrollDirection = "none";
+  private scrollFade: ScrollFadeController;
 
   private availableCommands: AvailableCommand[] = [];
   private isGenerating = false;
@@ -84,6 +75,16 @@ export class MessageListComponent implements MessageHandler {
 
     this.chipRenderer = options?.chipRenderer ?? new ChipRendererComponent(ctx);
     this.blockActions = new BlockActionsComponent(ctx);
+
+    this.scrollFade = new ScrollFadeController(
+      ctx.doc,
+      this.elements.messagesEl,
+      {
+        fill: true,
+        paintBump: true,
+        nestedScrollSelector: NESTED_SCROLL_SELECTOR,
+      }
+    );
 
     // Register for all streaming and message-related messages.
     ctx.messageRouter.registerMany(
@@ -487,31 +488,15 @@ export class MessageListComponent implements MessageHandler {
   }
 
   scrollToBottom(force = false): void {
-    if (force) {
-      this.enableAutoScroll();
-    }
-
-    if (!force && !this.isAutoScrollEnabled) {
-      this.scheduleMessagesPaintInvalidation();
-      return;
-    }
-
-    this.pendingBottomScrollForce = this.pendingBottomScrollForce || force;
-    this.bottomScrollSettleFrames = Math.max(
-      this.bottomScrollSettleFrames,
-      AUTO_SCROLL_SETTLE_FRAMES
-    );
-    this.scheduleBottomScrollFrame();
+    this.scrollFade.scrollToBottom(force);
   }
 
   disableAutoScroll(): void {
-    this.isAutoScrollEnabled = false;
-    this.cancelPendingBottomScroll();
+    this.scrollFade.disableAutoScroll();
   }
 
   scrollToTop(): void {
-    this.disableAutoScroll();
-    this.elements.messagesEl.scrollTo({ top: 0, behavior: "smooth" });
+    this.scrollFade.scrollToTop();
   }
 
   scrollToPreviousUserMessage(messageEl: HTMLElement): void {
@@ -691,57 +676,14 @@ export class MessageListComponent implements MessageHandler {
     this.focusedBlockEl = null;
   }
 
-  setupScrollEventListeners(): void {
+  /**
+   * Keyboard navigation between messages. Scroll-intent marking is owned by
+   * the {@link ScrollFadeController}, so this only moves focus.
+   */
+  setupMessageFocusNavigation(): void {
     const { messagesEl } = this.elements;
-    const { win } = this.ctx;
-
-    messagesEl.addEventListener("wheel", (event) => {
-      if (!this.isEventFromMessagesScrollContainer(event.target)) return;
-      const direction =
-        event.deltaY < 0 ? "up" : event.deltaY > 0 ? "down" : "unknown";
-      this.markUserScrollIntent(direction);
-    });
-
-    messagesEl.addEventListener("pointerdown", (event) => {
-      if (
-        event.target !== messagesEl ||
-        !this.isEventFromMessagesScrollContainer(event.target)
-      ) {
-        return;
-      }
-      this.pointerScrollActive = true;
-      this.markUserScrollIntent("unknown");
-    });
-
-    messagesEl.addEventListener("touchstart", (event) => {
-      if (!this.isEventFromMessagesScrollContainer(event.target)) return;
-      this.touchScrollActive = true;
-    });
-
-    messagesEl.addEventListener("touchmove", (event) => {
-      if (!this.isEventFromMessagesScrollContainer(event.target)) return;
-      this.touchScrollActive = true;
-      this.markUserScrollIntent("unknown");
-    });
 
     messagesEl.addEventListener("keydown", (event) => {
-      if (this.isEventFromMessagesScrollContainer(event.target)) {
-        if (
-          event.key === "ArrowUp" ||
-          event.key === "PageUp" ||
-          event.key === "Home"
-        ) {
-          this.markUserScrollIntent("up");
-        } else if (
-          event.key === "ArrowDown" ||
-          event.key === "PageDown" ||
-          event.key === "End" ||
-          event.key === " "
-        ) {
-          this.markUserScrollIntent("down");
-        }
-      }
-
       const messages = Array.from(messagesEl.querySelectorAll(".message"));
       const currentIndex = messages.indexOf(
         this.ctx.doc.activeElement as Element
@@ -761,13 +703,6 @@ export class MessageListComponent implements MessageHandler {
         (messages[messages.length - 1] as HTMLElement)?.focus();
       }
     });
-
-    messagesEl.addEventListener("scroll", () => this.handleMessagesScroll());
-
-    win.addEventListener("pointerup", () => this.clearPointerScroll());
-    win.addEventListener("pointercancel", () => this.clearPointerScroll());
-    win.addEventListener("touchend", () => this.clearTouchScroll());
-    win.addEventListener("touchcancel", () => this.clearTouchScroll());
   }
 
   // -------------------------------------------------------------------
@@ -883,7 +818,7 @@ export class MessageListComponent implements MessageHandler {
   }
 
   // -------------------------------------------------------------------
-  // Scroll & paint helpers (unchanged)
+  // Screen-reader helpers
   // -------------------------------------------------------------------
 
   private announceToScreenReader(message: string): void {
@@ -895,154 +830,5 @@ export class MessageListComponent implements MessageHandler {
     announcement.textContent = message;
     doc.body.appendChild(announcement);
     setTimeout(() => announcement.remove(), 1000);
-  }
-
-  private isNearMessagesBottom(): boolean {
-    const { messagesEl } = this.elements;
-    return (
-      messagesEl.scrollHeight -
-        messagesEl.scrollTop -
-        messagesEl.clientHeight <=
-      BOTTOM_THRESHOLD_PX
-    );
-  }
-
-  private isEventFromMessagesScrollContainer(
-    target: EventTarget | null
-  ): boolean {
-    const { messagesEl } = this.elements;
-    if (target === messagesEl) return true;
-    if (!target || typeof (target as Element).closest !== "function")
-      return false;
-
-    const targetEl = target as Element;
-    if (!messagesEl.contains(targetEl)) return false;
-
-    return !targetEl.closest(
-      ".diff-content, .tool-output, .diff-summary-list, .detail-input"
-    );
-  }
-
-  private markUserScrollIntent(direction: UserScrollDirection): void {
-    this.userScrollIntent = true;
-    this.userScrollDirection = direction;
-  }
-
-  private clearDiscreteScrollIntent(): void {
-    if (this.pointerScrollActive || this.touchScrollActive) return;
-    this.userScrollIntent = false;
-    this.userScrollDirection = "none";
-  }
-
-  private clearPointerScroll(): void {
-    this.pointerScrollActive = false;
-    this.clearDiscreteScrollIntent();
-  }
-
-  private clearTouchScroll(): void {
-    this.touchScrollActive = false;
-    this.clearDiscreteScrollIntent();
-  }
-
-  private enableAutoScroll(): void {
-    this.isAutoScrollEnabled = true;
-  }
-
-  private handleMessagesScroll(): void {
-    const hasUserIntent =
-      this.userScrollIntent ||
-      this.pointerScrollActive ||
-      this.touchScrollActive;
-
-    if (hasUserIntent) {
-      const isNearBottom = this.isNearMessagesBottom();
-      const direction = this.userScrollDirection;
-
-      if (isNearBottom) {
-        this.enableAutoScroll();
-      } else if (this.pointerScrollActive || this.touchScrollActive) {
-        this.disableAutoScroll();
-      } else if (direction === "up" || direction === "unknown") {
-        this.disableAutoScroll();
-      }
-
-      this.clearDiscreteScrollIntent();
-    }
-
-    this.scheduleMessagesPaintInvalidation();
-  }
-
-  private scheduleBottomScrollFrame(): void {
-    if (this.pendingBottomScrollFrame !== null) return;
-
-    this.pendingBottomScrollFrame = this.requestFrame(() => {
-      this.pendingBottomScrollFrame = null;
-      const shouldScroll =
-        this.pendingBottomScrollForce || this.isAutoScrollEnabled;
-      this.pendingBottomScrollForce = false;
-
-      if (!shouldScroll) {
-        this.bottomScrollSettleFrames = 0;
-        this.scheduleMessagesPaintInvalidation();
-        return;
-      }
-
-      this.performScrollToBottom();
-      this.bottomScrollSettleFrames = Math.max(
-        0,
-        this.bottomScrollSettleFrames - 1
-      );
-      if (this.bottomScrollSettleFrames > 0 && this.isAutoScrollEnabled) {
-        this.scheduleBottomScrollFrame();
-      }
-    });
-  }
-
-  private performScrollToBottom(): void {
-    const { messagesEl } = this.elements;
-    const previousScrollBehavior = messagesEl.style.scrollBehavior;
-    messagesEl.style.scrollBehavior = "auto";
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-    void messagesEl.offsetHeight;
-    messagesEl.style.scrollBehavior = previousScrollBehavior;
-    this.isAutoScrollEnabled = true;
-    this.scheduleMessagesPaintInvalidation();
-  }
-
-  private cancelPendingBottomScroll(): void {
-    if (this.pendingBottomScrollFrame !== null) {
-      this.cancelFrame(this.pendingBottomScrollFrame);
-      this.pendingBottomScrollFrame = null;
-    }
-    this.pendingBottomScrollForce = false;
-    this.bottomScrollSettleFrames = 0;
-  }
-
-  private scheduleMessagesPaintInvalidation(): void {
-    if (this.pendingPaintFrame !== null) return;
-
-    this.pendingPaintFrame = this.requestFrame(() => {
-      this.pendingPaintFrame = null;
-      this.paintBump = !this.paintBump;
-      this.elements.messagesEl.dataset.paintBump = this.paintBump ? "1" : "0";
-      void this.elements.messagesEl.offsetHeight;
-    });
-  }
-
-  private requestFrame(callback: FrameRequestCallback): number {
-    const { win } = this.ctx;
-    if (typeof win?.requestAnimationFrame === "function") {
-      return win.requestAnimationFrame(callback);
-    }
-    return win?.setTimeout(() => callback(Date.now()), 0) ?? 0;
-  }
-
-  private cancelFrame(frame: number): void {
-    const { win } = this.ctx;
-    if (typeof win?.cancelAnimationFrame === "function") {
-      win.cancelAnimationFrame(frame);
-      return;
-    }
-    win?.clearTimeout(frame);
   }
 }

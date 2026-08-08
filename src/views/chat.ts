@@ -2006,9 +2006,7 @@ export class ChatViewProvider
   <div id="agent-plan-container"></div>
 
   <div id="messages-container">
-    <div class="messages-fade-top"></div>
     <div id="messages" role="log" aria-label="Chat messages" aria-live="polite" tabindex="0"></div>
-    <div class="messages-fade-bottom"></div>
   </div>
 
   <div id="typing-indicator" class="typing-indicator" aria-hidden="true">

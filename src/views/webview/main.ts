@@ -103,7 +103,7 @@ export class WebviewController implements MessageHandler {
     this.messageList.setupFileLinkHandler();
     this.messageList.setupDiffHeaderClickHandler();
     this.messageList.setupBlockFocusHandler();
-    this.messageList.setupScrollEventListeners();
+    this.messageList.setupMessageFocusNavigation();
   }
 
   // -------------------------------------------------------------------
