@@ -78,16 +78,17 @@ The extension automatically detects installed agents by checking your system's `
 
 ### Settings
 
-| Setting                                    | Type      | Default | Description                                                                                                                              |
-| ------------------------------------------ | --------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `vscode-acp-chat.enableDiffSummary`        | `boolean` | `true`  | Enable the collective diff summary for file modifications.                                                                               |
-| `vscode-acp-chat.passMcpServers`           | `boolean` | `true`  | Pass MCP server configurations to the agent via ACP `newSession`/`loadSession` requests.                                                 |
-| `vscode-acp-chat.enableDocumentSync`       | `boolean` | `true`  | Send document open/close/change/save/focus notifications to the ACP agent.                                                               |
-| `vscode-acp-chat.debug`                    | `boolean` | `false` | Enable debug logging for raw ACP session update events.                                                                                  |
-| `vscode-acp-chat.enablePersistentSessions` | `boolean` | `true`  | Persist session history across VS Code restarts.                                                                                         |
-| `vscode-acp-chat.sessionRetentionDays`     | `number`  | `30`    | Automatically remove persisted sessions older than this many days.                                                                       |
-| `vscode-acp-chat.maxSessionsPerAgent`      | `number`  | `300`   | Maximum number of persisted sessions to keep per agent (keeps the newest).                                                               |
-| `vscode-acp-chat.useAgentSessionList`      | `boolean` | `true`  | Query session history from the agent when it advertises `session/list` support. When disabled, only locally recorded sessions are shown. |
+| Setting                                      | Type       | Default | Description                                                                                                                                                                                                         |
+| -------------------------------------------- | ---------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vscode-acp-chat.enableDiffSummary`          | `boolean`  | `true`  | Enable the collective diff summary for file modifications.                                                                                                                                                          |
+| `vscode-acp-chat.passMcpServers`             | `boolean`  | `true`  | Pass MCP server configurations to the agent via ACP `newSession`/`loadSession` requests.                                                                                                                            |
+| `vscode-acp-chat.enableDocumentSync`         | `boolean`  | `true`  | Send document open/close/change/save/focus notifications to the ACP agent.                                                                                                                                          |
+| `vscode-acp-chat.debug`                      | `boolean`  | `false` | Enable debug logging for raw ACP session update events.                                                                                                                                                             |
+| `vscode-acp-chat.enablePersistentSessions`   | `boolean`  | `true`  | Persist session history across VS Code restarts.                                                                                                                                                                    |
+| `vscode-acp-chat.sessionRetentionDays`       | `number`   | `30`    | Automatically remove persisted sessions older than this many days.                                                                                                                                                  |
+| `vscode-acp-chat.maxSessionsPerAgent`        | `number`   | `300`   | Maximum number of persisted sessions to keep per agent (keeps the newest).                                                                                                                                          |
+| `vscode-acp-chat.useAgentSessionList`        | `boolean`  | `true`  | Query session history from the agent when it advertises `session/list` support. When disabled, only locally recorded sessions are shown.                                                                            |
+| `vscode-acp-chat.autoApprovePermissionKinds` | `string[]` | `[]`    | Tool kinds (`read`, `edit`, `delete`, `move`, `search`, `execute`, `think`, `fetch`, `switch_mode`, `other`) that are automatically approved without a permission dialog. An empty array asks for every permission. |
 
 ### Custom Agents
 

@@ -2105,4 +2105,123 @@ suite("ChatViewProvider", () => {
       assert.strictEqual(result.content, "hello world");
     });
   });
+
+  suite("Auto-Approve Permission Kinds", () => {
+    const config = () => vscode.workspace.getConfiguration("vscode-acp-chat");
+
+    function makeProvider(): ChatViewProvider {
+      return new ChatViewProvider(
+        vscode.Uri.file("/test"),
+        new TestACPClient() as any,
+        new TestMemento() as any
+      );
+    }
+
+    function makeParams(toolKind: string): any {
+      return {
+        sessionId: "test-session",
+        toolCall: {
+          toolCallId: "perm-tool-1",
+          kind: toolKind,
+          title: "Tool Call",
+        },
+        options: [
+          { optionId: "allow", kind: "allow_once", name: "Allow" },
+          { optionId: "deny", kind: "reject_once", name: "Deny" },
+        ],
+      };
+    }
+
+    setup(async () => {
+      await config().update(
+        "autoApprovePermissionKinds",
+        ["edit"],
+        vscode.ConfigurationTarget.Global
+      );
+    });
+
+    teardown(async () => {
+      await config().update(
+        "autoApprovePermissionKinds",
+        [],
+        vscode.ConfigurationTarget.Global
+      );
+    });
+
+    test("should auto-approve with the allow_once option when the kind is listed", async () => {
+      const provider = makeProvider();
+      const response = await (provider as any).handlePermissionRequest(
+        makeParams("edit")
+      );
+
+      assert.strictEqual(response.outcome.outcome, "selected");
+      assert.strictEqual(response.outcome.optionId, "allow");
+      assert.strictEqual((provider as any).permissionQueue.length, 0);
+    });
+
+    test("should fall back to allow_always when no allow_once option exists", async () => {
+      const provider = makeProvider();
+      const params = makeParams("edit");
+      params.options = [
+        { optionId: "always", kind: "allow_always", name: "Always Allow" },
+        { optionId: "deny", kind: "reject_once", name: "Deny" },
+      ];
+
+      const response = await (provider as any).handlePermissionRequest(params);
+
+      assert.strictEqual(response.outcome.outcome, "selected");
+      assert.strictEqual(response.outcome.optionId, "always");
+      assert.strictEqual((provider as any).permissionQueue.length, 0);
+    });
+
+    test("should ask when no allow option exists", async () => {
+      const provider = makeProvider();
+      const params = makeParams("edit");
+      params.options = [
+        { optionId: "deny", kind: "reject_once", name: "Deny" },
+      ];
+
+      const pending = (provider as any).handlePermissionRequest(params);
+
+      assert.strictEqual((provider as any).permissionQueue.length, 1);
+
+      const entry = (provider as any).permissionQueue[0];
+      entry.resolver({ outcome: { outcome: "cancelled" } });
+      const response = await pending;
+      assert.strictEqual(response.outcome.outcome, "cancelled");
+    });
+
+    test("should still ask for kinds not listed in the config", async () => {
+      const provider = makeProvider();
+      const pending = (provider as any).handlePermissionRequest(
+        makeParams("execute")
+      );
+
+      assert.strictEqual((provider as any).permissionQueue.length, 1);
+
+      const entry = (provider as any).permissionQueue[0];
+      entry.resolver({ outcome: { outcome: "cancelled" } });
+      const response = await pending;
+      assert.strictEqual(response.outcome.outcome, "cancelled");
+    });
+
+    test("should ask for every kind when the config is empty (default)", async () => {
+      await config().update(
+        "autoApprovePermissionKinds",
+        [],
+        vscode.ConfigurationTarget.Global
+      );
+      const provider = makeProvider();
+      const pending = (provider as any).handlePermissionRequest(
+        makeParams("edit")
+      );
+
+      assert.strictEqual((provider as any).permissionQueue.length, 1);
+
+      const entry = (provider as any).permissionQueue[0];
+      entry.resolver({ outcome: { outcome: "cancelled" } });
+      const response = await pending;
+      assert.strictEqual(response.outcome.outcome, "cancelled");
+    });
+  });
 });

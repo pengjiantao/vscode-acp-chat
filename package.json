@@ -168,6 +168,38 @@
           "default": true,
           "description": "Query session history from the agent when it advertises session/list support. When disabled, only locally recorded sessions are shown."
         },
+        "vscode-acp-chat.autoApprovePermissionKinds": {
+          "type": "array",
+          "default": [],
+          "description": "Tool kinds that are automatically approved without showing a permission dialog. An empty array asks for every permission request. Matched against the tool call kind reported by the agent.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "read",
+              "edit",
+              "delete",
+              "move",
+              "search",
+              "execute",
+              "think",
+              "fetch",
+              "switch_mode",
+              "other"
+            ],
+            "enumDescriptions": [
+              "Read files or directories",
+              "Edit files",
+              "Delete files or directories",
+              "Move or rename files",
+              "Search the filesystem or code",
+              "Execute commands in a terminal",
+              "Internal agent thinking",
+              "Fetch content from URLs",
+              "Switch the agent mode",
+              "Any other or unknown tool kind"
+            ]
+          }
+        },
         "vscode-acp-chat.customAgents": {
           "type": "array",
           "default": [],

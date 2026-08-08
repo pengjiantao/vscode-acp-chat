@@ -816,6 +816,30 @@ export class ChatViewProvider
   private async handlePermissionRequest(
     params: RequestPermissionRequest
   ): Promise<RequestPermissionResponse> {
+    // Automatically approve tool kinds listed in the configuration without
+    // showing the permission dialog.
+    const autoApprovedKinds = vscode.workspace
+      .getConfiguration("vscode-acp-chat")
+      .get<string[]>("autoApprovePermissionKinds", []);
+    const toolKind = params.toolCall?.kind;
+    if (toolKind && autoApprovedKinds.includes(toolKind)) {
+      // Prefer a single-use "allow" option, then an "always" option. If the
+      // agent offers neither, fall through to the normal permission dialog
+      // instead of declining.
+      const options = params.options || [];
+      const allowOption =
+        options.find((opt) => opt.kind === "allow_once") ??
+        options.find((opt) => opt.kind === "allow_always");
+      if (allowOption) {
+        return {
+          outcome: {
+            outcome: "selected",
+            optionId: allowOption.optionId,
+          },
+        };
+      }
+    }
+
     return new Promise((resolve) => {
       const requestId = `perm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
