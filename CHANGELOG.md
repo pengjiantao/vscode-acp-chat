@@ -2,12 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### [1.20.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.20.0...v1.20.1) (2026-07-29)
+## [1.21.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.20.1...v1.21.0) (2026-08-08)
 
+### Features
+
+- **acp:** add useAgentSessionList setting to control session list source ([46d2da3](https://github.com/pengjiantao/vscode-acp-chat/commit/46d2da3c0793d95819d137b8216d52c15fc98655))
+- **acp:** close previous sessions before session switches ([f63e6a1](https://github.com/pengjiantao/vscode-acp-chat/commit/f63e6a1f3d9de6499b56be514efd5e7c6187a724))
+- **chat:** auto-approve permission requests for configured tool kinds ([7544851](https://github.com/pengjiantao/vscode-acp-chat/commit/7544851fb539fa65f3eee2a247917abbc121fa4d))
+- **webview:** replace auto action buttons with double-click block focus ([ea8be7a](https://github.com/pengjiantao/vscode-acp-chat/commit/ea8be7a40c04b25c01185524fb407371eb4ee9f6))
 
 ### Bug Fixes
 
-* **acp:** use cross-spawn for agent process to fix Windows .cmd handling ([da23f0d](https://github.com/pengjiantao/vscode-acp-chat/commit/da23f0dbc62e2118fb17819724a4d23d9d68e5ef))
+- **acp:** trust agent cwd filter in session list instead of re-filtering ([ac24ba4](https://github.com/pengjiantao/vscode-acp-chat/commit/ac24ba4e1c895a5e5ec2fb61ecba624e51942663))
+- **chat:** clean up pending permission requests on session switches ([5300fa9](https://github.com/pengjiantao/vscode-acp-chat/commit/5300fa9cf1821c343449d16084487ba04fba436f))
+- **webview:** render interleaved ACP message streams by messageId ([4645fbb](https://github.com/pengjiantao/vscode-acp-chat/commit/4645fbb691dbda87cb6af4610a72ccafb45a8b55))
+
+### Code Refactoring
+
+- **webview:** extract scroll-fade widget for transcript/thought scrolling ([aeffad5](https://github.com/pengjiantao/vscode-acp-chat/commit/aeffad5e314e7ed1839e5d771f9a13e1b451fff5))
+
+### [1.20.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.20.0...v1.20.1) (2026-07-29)
+
+### Bug Fixes
+
+- **acp:** use cross-spawn for agent process to fix Windows .cmd handling ([da23f0d](https://github.com/pengjiantao/vscode-acp-chat/commit/da23f0dbc62e2118fb17819724a4d23d9d68e5ef))
 
 ## [1.20.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.19.0...v1.20.0) (2026-07-27)
 
