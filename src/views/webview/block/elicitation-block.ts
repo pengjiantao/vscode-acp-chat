@@ -99,8 +99,11 @@ export class ElicitationBlock {
     const header = doc.createElement("div");
     header.className = "elicitation-block-header";
     header.innerHTML = `
-      <span class="elicitation-icon codicon codicon-comment-discussion"></span>
-      <span>Agent Request</span>
+      <div class="elicitation-header-left">
+        <span class="elicitation-icon codicon codicon-comment-discussion"></span>
+        <span>Agent Request</span>
+      </div>
+      <span class="elicitation-header-status">Waiting for input</span>
     `;
 
     const body = doc.createElement("div");
@@ -174,6 +177,7 @@ export class ElicitationBlock {
 
       const label = doc.createElement("label");
       label.className = "elicitation-field-label";
+      label.id = `elic-label-${this.opts.requestId}-${key}`;
       label.htmlFor = `elic-${this.opts.requestId}-${key}`;
       label.textContent = prop.title || key;
       if (required.has(key)) {
@@ -183,6 +187,13 @@ export class ElicitationBlock {
         label.appendChild(star);
       }
       field.appendChild(label);
+
+      if (prop.description) {
+        const desc = doc.createElement("div");
+        desc.className = "elicitation-field-desc";
+        desc.textContent = prop.description;
+        field.appendChild(desc);
+      }
 
       const control = this.renderControl(key, prop);
       field.appendChild(control);
@@ -227,7 +238,17 @@ export class ElicitationBlock {
     });
 
     const first = this.fields[0]?.input;
-    if (first && "focus" in first) first.focus();
+    if (first) {
+      const focusable =
+        first.tagName === "INPUT"
+          ? first
+          : (first.querySelector(
+              'input[type="radio"], input[type="checkbox"], input[type="text"], input[type="number"]'
+            ) as HTMLElement | null);
+      if (focusable && typeof focusable.focus === "function") {
+        focusable.focus();
+      }
+    }
   }
 
   private renderControl(
@@ -236,6 +257,7 @@ export class ElicitationBlock {
   ): HTMLElement {
     const { doc } = this.ctx;
     const id = `elic-${this.opts.requestId}-${key}`;
+    const labelId = `elic-label-${this.opts.requestId}-${key}`;
 
     switch (prop.type) {
       case "boolean": {
@@ -270,20 +292,49 @@ export class ElicitationBlock {
         }
         const group = doc.createElement("div");
         group.className = "elicitation-checkbox-group";
+        group.id = id;
+        group.setAttribute("aria-labelledby", labelId);
         const defaults = Array.isArray(prop.default)
           ? (prop.default as string[])
           : [];
         for (const option of options) {
           const wrap = doc.createElement("label");
-          wrap.className = "elicitation-checkbox-option";
+          wrap.className = "elicitation-option-card";
+          if (defaults.includes(option.const)) {
+            wrap.classList.add("selected");
+          }
+
           const box = doc.createElement("input");
           box.type = "checkbox";
           box.value = option.const;
+          box.className = "elicitation-checkbox";
           if (defaults.includes(option.const)) box.checked = true;
-          const labelText = doc.createElement("span");
-          labelText.textContent = option.title || option.const;
+
+          box.addEventListener("change", () => {
+            if (box.checked) {
+              wrap.classList.add("selected");
+            } else {
+              wrap.classList.remove("selected");
+            }
+          });
+
+          const content = doc.createElement("div");
+          content.className = "elicitation-option-content";
+
+          const titleText = doc.createElement("div");
+          titleText.className = "elicitation-option-title";
+          titleText.textContent = option.title || option.const;
+          content.appendChild(titleText);
+
+          if (option.description) {
+            const descText = doc.createElement("div");
+            descText.className = "elicitation-option-desc";
+            descText.textContent = option.description;
+            content.appendChild(descText);
+          }
+
           wrap.appendChild(box);
-          wrap.appendChild(labelText);
+          wrap.appendChild(content);
           group.appendChild(wrap);
         }
         return group;
@@ -292,21 +343,58 @@ export class ElicitationBlock {
       default: {
         const options = this.stringOptions(prop);
         if (options.length > 0) {
-          const select = doc.createElement("select");
-          select.id = id;
-          select.className = "elicitation-select";
-          const placeholder = doc.createElement("option");
-          placeholder.value = "";
-          placeholder.textContent = "Select…";
-          select.appendChild(placeholder);
+          const group = doc.createElement("div");
+          group.className = "elicitation-radio-group";
+          group.setAttribute("role", "radiogroup");
+          group.setAttribute("aria-labelledby", labelId);
+          group.id = id;
+          const name = `elic-${this.opts.requestId}-${key}`;
+          const defaultValue =
+            typeof prop.default === "string" ? prop.default : "";
+
           for (const option of options) {
-            const opt = doc.createElement("option");
-            opt.value = option.const;
-            opt.textContent = option.title || option.const;
-            select.appendChild(opt);
+            const wrap = doc.createElement("label");
+            wrap.className = "elicitation-option-card";
+            if (defaultValue === option.const) {
+              wrap.classList.add("selected");
+            }
+
+            const radio = doc.createElement("input");
+            radio.type = "radio";
+            radio.name = name;
+            radio.value = option.const;
+            radio.className = "elicitation-radio";
+            if (defaultValue === option.const) radio.checked = true;
+
+            radio.addEventListener("change", () => {
+              group
+                .querySelectorAll(".elicitation-option-card")
+                .forEach((el) => el.classList.remove("selected"));
+              if (radio.checked) {
+                wrap.classList.add("selected");
+              }
+            });
+
+            const content = doc.createElement("div");
+            content.className = "elicitation-option-content";
+
+            const titleText = doc.createElement("div");
+            titleText.className = "elicitation-option-title";
+            titleText.textContent = option.title || option.const;
+            content.appendChild(titleText);
+
+            if (option.description) {
+              const descText = doc.createElement("div");
+              descText.className = "elicitation-option-desc";
+              descText.textContent = option.description;
+              content.appendChild(descText);
+            }
+
+            wrap.appendChild(radio);
+            wrap.appendChild(content);
+            group.appendChild(wrap);
           }
-          if (typeof prop.default === "string") select.value = prop.default;
-          return select;
+          return group;
         }
         const input = doc.createElement("input");
         input.type = "text";
@@ -318,32 +406,39 @@ export class ElicitationBlock {
     }
   }
 
-  private stringOptions(prop: ElicitationPropertySchema): Array<{
-    const: string;
-    title?: string;
-  }> {
-    const titled = (prop.oneOf ?? [])
+  private extractOptions(
+    items:
+      | Array<{ const: string; title?: string; description?: string | null }>
+      | null
+      | undefined,
+    enumList: string[] | null | undefined
+  ): Array<{ const: string; title?: string; description?: string | null }> {
+    const titled = (items ?? [])
       .filter((o) => typeof o.const === "string")
-      .map((o) => ({ const: o.const, title: o.title }));
+      .map((o) => ({
+        const: o.const,
+        title: o.title,
+        description: o.description ?? null,
+      }));
     if (titled.length > 0) return titled;
-    return (prop.enum ?? []).map((v) => ({ const: v, title: v }));
+    return (enumList ?? []).map((v) => ({
+      const: v,
+      title: v,
+      description: null,
+    }));
+  }
+
+  private stringOptions(
+    prop: ElicitationPropertySchema
+  ): Array<{ const: string; title?: string; description?: string | null }> {
+    return this.extractOptions(prop.oneOf, prop.enum);
   }
 
   private arrayOptions(
-    prop:
-      | {
-          enum?: string[] | null;
-          anyOf?: Array<{ const: string; title?: string }> | null;
-        }
-      | null
-      | undefined
-  ): Array<{ const: string; title?: string }> {
+    prop: ElicitationPropertySchema["items"]
+  ): Array<{ const: string; title?: string; description?: string | null }> {
     if (!prop) return [];
-    const titled = (prop.anyOf ?? [])
-      .filter((o) => typeof o.const === "string")
-      .map((o) => ({ const: o.const, title: o.title }));
-    if (titled.length > 0) return titled;
-    return (prop.enum ?? []).map((v) => ({ const: v, title: v }));
+    return this.extractOptions(prop.anyOf, prop.enum);
   }
 
   // -------------------------------------------------------------------
@@ -468,6 +563,13 @@ export class ElicitationBlock {
       }
       case "string":
       default: {
+        const options = this.stringOptions(prop);
+        if (options.length > 0) {
+          const checkedRadio = input.querySelector(
+            'input[type="radio"]:checked'
+          ) as HTMLInputElement | null;
+          return checkedRadio ? checkedRadio.value : undefined;
+        }
         const value = (input as HTMLInputElement).value;
         return value === "" ? undefined : value;
       }
@@ -497,7 +599,17 @@ export class ElicitationBlock {
         }
         continue;
       }
-      const raw = (input as HTMLInputElement).value;
+      const options =
+        prop.type === "string" || !prop.type ? this.stringOptions(prop) : [];
+      let raw: string = "";
+      if (options.length > 0) {
+        const checkedRadio = input.querySelector(
+          'input[type="radio"]:checked'
+        ) as HTMLInputElement | null;
+        raw = checkedRadio ? checkedRadio.value : "";
+      } else {
+        raw = (input as HTMLInputElement).value ?? "";
+      }
       if (required.has(key) && raw === "") {
         return `"${prop.title || key}" is required.`;
       }

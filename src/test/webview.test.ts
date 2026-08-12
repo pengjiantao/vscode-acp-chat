@@ -4996,14 +4996,15 @@ suite("Webview", () => {
         "Please configure the deployment"
       );
 
-      // string enum → select
-      const select = document.querySelector(
-        "select.elicitation-select"
-      ) as HTMLSelectElement;
-      assert.ok(select, "string enum should render a select");
-      assert.strictEqual(select.options.length, 3); // placeholder + 2 options
-      assert.strictEqual(select.options[1].value, "staging");
-      assert.strictEqual(select.options[2].value, "prod");
+      // string enum → radio group
+      const radioGroup = document.querySelector(".elicitation-radio-group");
+      assert.ok(radioGroup, "string enum should render a radio group");
+      const radios = document.querySelectorAll(
+        '.elicitation-radio-group input[type="radio"]'
+      ) as NodeListOf<HTMLInputElement>;
+      assert.strictEqual(radios.length, 2);
+      assert.strictEqual(radios[0].value, "staging");
+      assert.strictEqual(radios[1].value, "prod");
 
       // integer → number input with min/max/step and default
       const count = document.querySelector(
@@ -5032,6 +5033,81 @@ suite("Webview", () => {
         document.querySelectorAll(".elicitation-field-required").length,
         2
       );
+    });
+
+    test("renders field and option description text when present", () => {
+      controller.handleMessage({
+        type: "elicitationRequest",
+        requestId: "elic-desc",
+        message: "Questionnaire",
+        mode: "form",
+        schema: {
+          type: "object",
+          properties: {
+            lang: {
+              type: "string",
+              title: "Language",
+              description: "Select primary communication language",
+              oneOf: [
+                { const: "zh", title: "Chinese", description: "Use Chinese" },
+                { const: "en", title: "English", description: "Use English" },
+              ],
+            },
+          },
+        },
+      });
+
+      const fieldDesc = document.querySelector(".elicitation-field-desc");
+      assert.strictEqual(
+        fieldDesc?.textContent,
+        "Select primary communication language"
+      );
+
+      const optionDescs = Array.from(
+        document.querySelectorAll(".elicitation-option-desc")
+      ).map((el) => el.textContent);
+      assert.deepStrictEqual(optionDescs, ["Use Chinese", "Use English"]);
+    });
+
+    test("blocks submit when required radio field is not selected", () => {
+      controller.handleMessage({
+        type: "elicitationRequest",
+        requestId: "elic-req-radio",
+        message: "Select option",
+        mode: "form",
+        schema: {
+          type: "object",
+          properties: {
+            mode: {
+              type: "string",
+              title: "Mode",
+              oneOf: [
+                { const: "a", title: "A" },
+                { const: "b", title: "B" },
+              ],
+            },
+          },
+          required: ["mode"],
+        },
+      });
+      mockVsCode._clearMessages();
+
+      const submitBtn = document.querySelector(
+        ".elicitation-btn-primary"
+      ) as HTMLButtonElement;
+      submitBtn.click();
+
+      const responses = getMessages().filter(
+        (m) => (m as { type: string }).type === "elicitationResponse"
+      );
+      assert.strictEqual(
+        responses.length,
+        0,
+        "no response should be sent when required radio is unselected"
+      );
+      const err = document.querySelector(".elicitation-error");
+      assert.ok(err, "validation error should be displayed");
+      assert.strictEqual(err?.textContent, '"Mode" is required.');
     });
 
     test("renders concurrent requests as separate blocks", () => {
@@ -5079,10 +5155,11 @@ suite("Webview", () => {
     test("submits accept with content and removes the block", () => {
       controller.handleMessage(formRequest());
 
-      const select = document.querySelector(
-        "select.elicitation-select"
-      ) as HTMLSelectElement;
-      select.value = "prod";
+      const prodRadio = document.querySelector(
+        '.elicitation-radio-group input[value="prod"]'
+      ) as HTMLInputElement;
+      prodRadio.checked = true;
+      prodRadio.dispatchEvent(new window.Event("change"));
       mockVsCode._clearMessages();
 
       const submitBtn = document.querySelector(
