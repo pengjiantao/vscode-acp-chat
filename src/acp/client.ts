@@ -48,6 +48,9 @@ import {
   type DidFocusDocumentNotification,
   type Position,
   type Range,
+  type CreateElicitationRequest,
+  type CreateElicitationResponse,
+  type CompleteElicitationNotification,
 } from "@agentclientprotocol/sdk";
 import * as acp from "@agentclientprotocol/sdk";
 import {
@@ -279,6 +282,13 @@ type ReleaseTerminalCallback = (
 type PermissionCallback = (
   params: RequestPermissionRequest
 ) => Promise<RequestPermissionResponse | null>;
+type ElicitationCallback = (
+  params: CreateElicitationRequest
+) =>
+  Promise<CreateElicitationResponse | void> | CreateElicitationResponse | void;
+type ElicitationCompleteCallback = (
+  notification: CompleteElicitationNotification
+) => void;
 
 const MCP_SERVER_NAME_INVALID_CHARS = /[^a-zA-Z0-9_-]+/g;
 
@@ -340,6 +350,9 @@ export class ACPClient {
   private killTerminalCommandHandler: KillTerminalCommandCallback | null = null;
   private releaseTerminalHandler: ReleaseTerminalCallback | null = null;
   private permissionRequestListeners: Set<PermissionCallback> = new Set();
+  private elicitationRequestListeners: Set<ElicitationCallback> = new Set();
+  private elicitationCompleteListeners: Set<ElicitationCompleteCallback> =
+    new Set();
   private agentConfig: AgentConfig;
   private spawnFn: SpawnFunction;
   private skipAvailabilityCheck: boolean;
@@ -425,6 +438,16 @@ export class ACPClient {
   setOnPermissionRequest(callback: PermissionCallback): () => void {
     this.permissionRequestListeners.add(callback);
     return () => this.permissionRequestListeners.delete(callback);
+  }
+
+  setOnElicitationRequest(callback: ElicitationCallback): () => void {
+    this.elicitationRequestListeners.add(callback);
+    return () => this.elicitationRequestListeners.delete(callback);
+  }
+
+  setOnElicitationComplete(callback: ElicitationCompleteCallback): () => void {
+    this.elicitationCompleteListeners.add(callback);
+    return () => this.elicitationCompleteListeners.delete(callback);
   }
 
   async reloadMcpServers(): Promise<void> {
@@ -708,6 +731,16 @@ export class ACPClient {
           (ctx: { params: RequestPermissionRequest }) =>
             this.handleRequestPermission(ctx.params)
         )
+        .onRequest(
+          acp.methods.client.elicitation.create,
+          (ctx: { params: CreateElicitationRequest }) =>
+            this.handleElicitationRequest(ctx.params)
+        )
+        .onNotification(
+          acp.methods.client.elicitation.complete,
+          (ctx: { params: CompleteElicitationNotification }) =>
+            this.handleElicitationComplete(ctx.params)
+        )
         .onNotification(
           acp.methods.client.session.update,
           (ctx: { params: SessionNotification }) =>
@@ -763,6 +796,10 @@ export class ACPClient {
               writeTextFile: true,
             },
             terminal: true,
+            elicitation: {
+              form: {},
+              url: {},
+            },
           },
           clientInfo: {
             name: "vscode-acp-chat",
@@ -981,6 +1018,37 @@ export class ACPClient {
         outcome: "cancelled",
       },
     };
+  }
+
+  async handleElicitationRequest(
+    params: CreateElicitationRequest
+  ): Promise<CreateElicitationResponse> {
+    // Iterate through listeners
+    for (const listener of this.elicitationRequestListeners) {
+      try {
+        const response = await listener(params);
+        if (response) {
+          return response;
+        }
+      } catch (error) {
+        console.error("[ACP] Elicitation listener error:", error);
+      }
+    }
+
+    // Default: decline when no listener handles the request
+    return { action: "decline" };
+  }
+
+  handleElicitationComplete(
+    notification: CompleteElicitationNotification
+  ): void {
+    this.elicitationCompleteListeners.forEach((cb) => {
+      try {
+        cb(notification);
+      } catch (error) {
+        console.error("[ACP] Elicitation complete listener error:", error);
+      }
+    });
   }
 
   async newSession(workingDirectory: string): Promise<NewSessionResponse> {

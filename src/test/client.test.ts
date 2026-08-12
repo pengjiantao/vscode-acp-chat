@@ -119,6 +119,37 @@ suite("ACPClient with Mock Server", () => {
       assert.deepStrictEqual(states, ["connecting", "connected"]);
     });
 
+    test("should advertise elicitation client capabilities on initialize", async () => {
+      const mockProcess = createMockProcess({});
+      const localSpawn: SpawnFunction = () =>
+        mockProcess as unknown as ChildProcess;
+
+      const localClient = new ACPClient({
+        agentConfig: {
+          id: "mock-agent",
+          name: "Mock Agent",
+          command: "mock",
+          args: [],
+        },
+        spawn: localSpawn,
+        skipAvailabilityCheck: true,
+      });
+
+      try {
+        await localClient.connect();
+        const init = (mockProcess as any).mockServer.receivedRequests.find(
+          (r: { method: string }) => r.method === "initialize"
+        );
+        assert.ok(init, "initialize request should have been received");
+        assert.deepStrictEqual(
+          (init.params as any).clientCapabilities.elicitation,
+          { form: {}, url: {} }
+        );
+      } finally {
+        localClient.dispose();
+      }
+    });
+
     test("should notify multiple state change listeners", async () => {
       const states1: string[] = [];
       const states2: string[] = [];
@@ -984,7 +1015,10 @@ suite("ACPClient with configOptions format", () => {
         await closeClient.connect();
         const session = await closeClient.newSession("/test/dir");
 
-        assert.strictEqual(closeClient.getCurrentSessionId(), session.sessionId);
+        assert.strictEqual(
+          closeClient.getCurrentSessionId(),
+          session.sessionId
+        );
 
         await closeClient.closeSession({ sessionId: session.sessionId });
 

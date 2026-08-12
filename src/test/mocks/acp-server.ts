@@ -41,6 +41,12 @@ export class MockACPServer {
   readonly stdout: Readable;
   readonly stderr: Readable;
 
+  /** Every JSON-RPC request the mock server has received, in order. */
+  readonly receivedRequests: Array<{
+    method: string;
+    params?: Record<string, unknown>;
+  }> = [];
+
   private stdinBuffer = "";
 
   constructor(options: MockACPServerOptions = {}) {
@@ -91,6 +97,10 @@ export class MockACPServer {
     method: string;
     params?: Record<string, unknown>;
   }): void {
+    this.receivedRequests.push({
+      method: request.method,
+      params: request.params,
+    });
     switch (request.method) {
       case "initialize":
         this.sendResponse(request.id, {
@@ -670,6 +680,11 @@ export function createMockProcess(
 ): MockChildProcess {
   const server = new MockACPServer(options);
   const mockProcess = new EventEmitter() as MockChildProcess;
+
+  Object.defineProperty(mockProcess, "mockServer", {
+    value: server,
+    writable: false,
+  });
 
   Object.defineProperty(mockProcess, "stdin", {
     value: server.stdin,

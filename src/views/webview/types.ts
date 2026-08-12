@@ -246,6 +246,12 @@ export interface ExtensionMessage {
   cost?: { amount: number; currency: string } | null;
   action?: string;
   actionLabel?: string;
+  /** Elicitation (agent → user question) payloads. */
+  message?: string;
+  mode?: "form" | "url";
+  schema?: unknown;
+  url?: string;
+  elicitationId?: string;
 }
 
 // ---------------------------------------------------------------------------

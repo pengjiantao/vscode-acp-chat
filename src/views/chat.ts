@@ -21,6 +21,9 @@ import {
   type RequestPermissionResponse,
   type ToolCall,
   type ToolCallUpdate,
+  type CreateElicitationRequest,
+  type CreateElicitationResponse,
+  type CompleteElicitationNotification,
 } from "@agentclientprotocol/sdk";
 
 const SELECTED_AGENT_KEY = "vscode-acp-chat.selectedAgent";
@@ -50,6 +53,7 @@ interface WebviewMessage {
     | "searchFiles"
     | "openFile"
     | "permissionResponse"
+    | "elicitationResponse"
     | "stop"
     | "reviewDiff"
     | "acceptDiff"
@@ -78,6 +82,12 @@ interface WebviewMessage {
   range?: { startLine: number; endLine: number };
   requestId?: string;
   outcome?: { outcome: "selected" | "cancelled"; optionId?: string };
+  elicitationAction?: "accept" | "decline" | "cancel";
+  elicitationContent?: Record<
+    string,
+    string | number | boolean | Array<string>
+  >;
+  elicitationId?: string;
   confirmed?: boolean;
   action?: string;
   actionLabel?: string;
@@ -176,6 +186,12 @@ export class ChatViewProvider
     id: string;
     params: RequestPermissionRequest;
     resolver: (response: RequestPermissionResponse) => void;
+  }> = [];
+  private elicitationQueue: Array<{
+    id: string;
+    elicitationId?: string;
+    params: CreateElicitationRequest;
+    resolver: (response: CreateElicitationResponse) => void;
   }> = [];
   // Serializes ACP session updates so they render in arrival order.
   // Without this, rapid updates can interleave and cause out-of-order
@@ -301,6 +317,14 @@ export class ChatViewProvider
 
     this.acpClient.setOnPermissionRequest(
       this.handlePermissionRequest.bind(this)
+    );
+
+    this.acpClient.setOnElicitationRequest(
+      this.handleElicitationRequest.bind(this)
+    );
+
+    this.acpClient.setOnElicitationComplete(
+      this.handleElicitationComplete.bind(this)
     );
 
     this.diffManager.onDidChange((changes) => {
@@ -553,6 +577,7 @@ export class ChatViewProvider
           break;
         case "stop":
           this.dismissPendingPermissions();
+          this.dismissPendingElicitations();
           await this.acpClient.cancel();
           break;
         case "permissionResponse":
@@ -570,6 +595,26 @@ export class ChatViewProvider
                   : { outcome: "cancelled" as const };
               pending.resolver({ outcome });
               this.permissionQueue = this.permissionQueue.filter(
+                (p) => p.id !== message.requestId
+              );
+            }
+          }
+          break;
+        case "elicitationResponse":
+          if (message.requestId && message.elicitationAction) {
+            const pending = this.elicitationQueue.find(
+              (p) => p.id === message.requestId
+            );
+            if (pending) {
+              if (message.elicitationAction === "accept") {
+                pending.resolver({
+                  action: "accept",
+                  content: message.elicitationContent ?? null,
+                });
+              } else {
+                pending.resolver({ action: message.elicitationAction });
+              }
+              this.elicitationQueue = this.elicitationQueue.filter(
                 (p) => p.id !== message.requestId
               );
             }
@@ -875,6 +920,66 @@ export class ChatViewProvider
           name: opt.name,
         })),
       });
+    });
+  }
+
+  private handleElicitationRequest(
+    params: CreateElicitationRequest
+  ): Promise<CreateElicitationResponse> {
+    return new Promise((resolve) => {
+      const requestId = `elic-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      // Add to queue
+      this.elicitationQueue.push({
+        id: requestId,
+        // The request union includes a custom `mode: string` variant with an
+        // index signature, so property access needs an explicit cast here.
+        elicitationId:
+          params.mode === "url"
+            ? (params as CreateElicitationRequest & { elicitationId?: string })
+                .elicitationId
+            : undefined,
+        params,
+        resolver: resolve,
+      });
+
+      // Send to webview
+      this.postMessage({
+        type: "elicitationRequest",
+        requestId,
+        message: params.message,
+        mode: params.mode,
+        ...(params.mode === "form"
+          ? { schema: params.requestedSchema }
+          : params.mode === "url"
+            ? { url: params.url, elicitationId: params.elicitationId }
+            : {}),
+      });
+    });
+  }
+
+  private handleElicitationComplete(
+    notification: CompleteElicitationNotification
+  ): void {
+    // An agent may close a URL elicitation with a complete notification
+    // before the user clicks "completed". Resolve any still-pending entry so
+    // the JSON-RPC request gets a response, then tell the webview to remove
+    // its block. Entries already resolved by the user are absent from the
+    // queue; the notification is not forwarded so a stale complete can never
+    // close a different request's block.
+    const pending = this.elicitationQueue.find(
+      (p) => p.elicitationId === notification.elicitationId
+    );
+    if (!pending) {
+      return;
+    }
+    pending.resolver({ action: "accept" });
+    this.elicitationQueue = this.elicitationQueue.filter(
+      (p) => p.id !== pending.id
+    );
+    this.postMessage({
+      type: "elicitationComplete",
+      elicitationId: notification.elicitationId,
     });
   }
 
@@ -1672,6 +1777,7 @@ export class ChatViewProvider
 
   private handleClearChat(): void {
     this.dismissPendingPermissions();
+    this.dismissPendingElicitations();
     this.postMessage({ type: "chatCleared" });
   }
 
@@ -1691,6 +1797,17 @@ export class ChatViewProvider
     this.postMessage({ type: "permissionCleared" });
   }
 
+  private dismissPendingElicitations(): void {
+    if (this.elicitationQueue.length === 0) {
+      return;
+    }
+    for (const pending of this.elicitationQueue) {
+      pending.resolver({ action: "cancel" });
+    }
+    this.elicitationQueue = [];
+    this.postMessage({ type: "elicitationCleared" });
+  }
+
   /**
    * Best-effort close of the active session before switching to a new one.
    *
@@ -1700,6 +1817,7 @@ export class ChatViewProvider
    */
   private async closeCurrentSession(): Promise<void> {
     this.dismissPendingPermissions();
+    this.dismissPendingElicitations();
 
     if (!this.acpClient.isConnected()) {
       return;

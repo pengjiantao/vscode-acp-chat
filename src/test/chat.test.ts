@@ -25,6 +25,8 @@ interface MockACPClient {
   setOnKillTerminalCommand: (callback: unknown) => void;
   setOnReleaseTerminal: (callback: unknown) => void;
   setOnPermissionRequest: (callback: unknown) => void;
+  setOnElicitationRequest: (callback: unknown) => void;
+  setOnElicitationComplete: (callback: unknown) => void;
   isConnected: () => boolean;
   connect: () => Promise<void>;
   newSession: (dir: string) => Promise<void>;
@@ -90,6 +92,8 @@ class TestACPClient implements MockACPClient {
   setOnKillTerminalCommand(): void {}
   setOnReleaseTerminal(): void {}
   setOnPermissionRequest(): void {}
+  setOnElicitationRequest(): void {}
+  setOnElicitationComplete(): void {}
   isConnected(): boolean {
     return false;
   }
@@ -2222,6 +2226,223 @@ suite("ChatViewProvider", () => {
       entry.resolver({ outcome: { outcome: "cancelled" } });
       const response = await pending;
       assert.strictEqual(response.outcome.outcome, "cancelled");
+    });
+  });
+
+  suite("Elicitation Requests", () => {
+    function makeProvider(): {
+      provider: ChatViewProvider;
+      messages: any[];
+    } {
+      const provider = new ChatViewProvider(
+        vscode.Uri.file("/test"),
+        new TestACPClient() as any,
+        new TestMemento() as any
+      );
+      const messages: any[] = [];
+      (provider as any).postMessage = (msg: any) => messages.push(msg);
+      return { provider, messages };
+    }
+
+    function resolveView(provider: ChatViewProvider): {
+      messageHandler: (message: any) => Promise<void>;
+    } {
+      let messageHandler: ((message: any) => Promise<void>) | undefined;
+      const mockWebview = {
+        onDidReceiveMessage: (cb: any) => {
+          messageHandler = cb;
+          return { dispose: () => {} };
+        },
+        asWebviewUri: (uri: vscode.Uri) => uri,
+        cspSource: "",
+        options: {},
+        html: "",
+      };
+      const mockView = {
+        webview: mockWebview,
+        viewType: "test",
+        onDidChangeVisibility: new vscode.EventEmitter<void>().event,
+        onDidDispose: new vscode.EventEmitter<void>().event,
+        title: "test",
+        visible: true,
+        show: () => {},
+      };
+
+      provider.resolveWebviewView(mockView as any, {} as any, {} as any);
+      return { messageHandler: messageHandler! };
+    }
+
+    function makeFormParams(): any {
+      return {
+        mode: "form",
+        sessionId: "test-session",
+        message: "Provide the deploy target",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            target: { type: "string", enum: ["staging", "prod"] },
+          },
+          required: ["target"],
+        },
+      };
+    }
+
+    function makeUrlParams(): any {
+      return {
+        mode: "url",
+        sessionId: "test-session",
+        message: "Complete the OAuth flow",
+        elicitationId: "url-1",
+        url: "https://example.com/oauth",
+      };
+    }
+
+    test("should queue a form elicitation and post it to the webview", () => {
+      const { provider, messages } = makeProvider();
+
+      const pending = (provider as any).handleElicitationRequest(
+        makeFormParams()
+      );
+
+      assert.strictEqual((provider as any).elicitationQueue.length, 1);
+      assert.strictEqual(messages.length, 1);
+      const msg = messages[0];
+      assert.strictEqual(msg.type, "elicitationRequest");
+      assert.ok(msg.requestId.startsWith("elic-"));
+      assert.strictEqual(msg.message, "Provide the deploy target");
+      assert.strictEqual(msg.mode, "form");
+      assert.ok(msg.schema);
+      assert.strictEqual(msg.url, undefined);
+
+      const entry = (provider as any).elicitationQueue[0];
+      entry.resolver({ action: "decline" });
+      return pending.then((response: any) => {
+        assert.strictEqual(response.action, "decline");
+      });
+    });
+
+    test("should queue a url elicitation with elicitationId", () => {
+      const { provider, messages } = makeProvider();
+
+      const pending = (provider as any).handleElicitationRequest(
+        makeUrlParams()
+      );
+
+      assert.strictEqual((provider as any).elicitationQueue.length, 1);
+      const entry = (provider as any).elicitationQueue[0];
+      assert.strictEqual(entry.elicitationId, "url-1");
+      assert.strictEqual(messages.length, 1);
+      assert.strictEqual(messages[0].mode, "url");
+      assert.strictEqual(messages[0].url, "https://example.com/oauth");
+      assert.strictEqual(messages[0].elicitationId, "url-1");
+
+      entry.resolver({ action: "accept" });
+      return pending.then((response: any) => {
+        assert.strictEqual(response.action, "accept");
+      });
+    });
+
+    test("should resolve accept with content on elicitationResponse", async () => {
+      const { provider } = makeProvider();
+      const pending = (provider as any).handleElicitationRequest(
+        makeFormParams()
+      );
+      const requestId = (provider as any).elicitationQueue[0].id;
+
+      const { messageHandler } = resolveView(provider);
+      await messageHandler({
+        type: "elicitationResponse",
+        requestId,
+        elicitationAction: "accept",
+        elicitationContent: { target: "prod" },
+      });
+
+      const response = await pending;
+      assert.deepStrictEqual(response, {
+        action: "accept",
+        content: { target: "prod" },
+      });
+      assert.strictEqual((provider as any).elicitationQueue.length, 0);
+    });
+
+    test("should resolve decline and cancel on elicitationResponse", async () => {
+      const { provider } = makeProvider();
+      const pending = (provider as any).handleElicitationRequest(
+        makeFormParams()
+      );
+      const requestId = (provider as any).elicitationQueue[0].id;
+
+      const { messageHandler } = resolveView(provider);
+      await messageHandler({
+        type: "elicitationResponse",
+        requestId,
+        elicitationAction: "decline",
+      });
+
+      const response = await pending;
+      assert.strictEqual(response.action, "decline");
+    });
+
+    test("should resolve a pending url elicitation on complete notification", () => {
+      const { provider, messages } = makeProvider();
+      const pending = (provider as any).handleElicitationRequest(
+        makeUrlParams()
+      );
+
+      (provider as any).handleElicitationComplete({
+        elicitationId: "url-1",
+      });
+
+      assert.strictEqual((provider as any).elicitationQueue.length, 0);
+      const completeMsg = messages.find(
+        (m: any) => m.type === "elicitationComplete"
+      );
+      assert.ok(completeMsg, "should post elicitationComplete to the webview");
+      assert.strictEqual(completeMsg.elicitationId, "url-1");
+
+      return pending.then((response: any) => {
+        assert.strictEqual(response.action, "accept");
+      });
+    });
+
+    test("should ignore complete notifications for unknown elicitation ids", () => {
+      const { provider, messages } = makeProvider();
+      (provider as any).handleElicitationRequest(makeUrlParams());
+
+      (provider as any).handleElicitationComplete({
+        elicitationId: "unknown-id",
+      });
+
+      // The pending entry must survive and no forward is sent, so a stale
+      // notification can never close a different request's block.
+      assert.strictEqual((provider as any).elicitationQueue.length, 1);
+      assert.strictEqual(
+        messages.filter((m: any) => m.type === "elicitationComplete").length,
+        0
+      );
+    });
+
+    test("should resolve all pending elicitations as cancel on dismiss", () => {
+      const { provider, messages } = makeProvider();
+      const pending1 = (provider as any).handleElicitationRequest(
+        makeFormParams()
+      );
+      const pending2 = (provider as any).handleElicitationRequest(
+        makeUrlParams()
+      );
+
+      (provider as any).dismissPendingElicitations();
+
+      assert.strictEqual((provider as any).elicitationQueue.length, 0);
+      const cleared = messages.find(
+        (m: any) => m.type === "elicitationCleared"
+      );
+      assert.ok(cleared, "should post elicitationCleared to the webview");
+
+      return Promise.all([pending1, pending2]).then(([r1, r2]) => {
+        assert.strictEqual(r1.action, "cancel");
+        assert.strictEqual(r2.action, "cancel");
+      });
     });
   });
 });

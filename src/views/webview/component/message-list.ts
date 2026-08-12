@@ -11,6 +11,7 @@ import { ChipRendererComponent } from "./chip-renderer";
 import { BlockManager } from "../block/block-manager";
 import { TextBlock } from "../block/text-block";
 import { ToolBlock } from "../block/tool-block";
+import { ElicitationBlock } from "../block/elicitation-block";
 import { BlockActionsComponent } from "./block-actions";
 import { ScrollFadeController } from "../widget/scroll-fade";
 import { getRequiredElement } from "../widget/dom";
@@ -47,6 +48,8 @@ export class MessageListComponent implements MessageHandler {
   private streams = new Map<string, MessageStream>();
   private currentStreamId: string | null = null;
   private focusedBlockEl: HTMLElement | null = null;
+  /** Inline elicitation blocks keyed by their request id. */
+  private elicitationBlocks = new Map<string, ElicitationBlock>();
 
   private scrollFade: ScrollFadeController;
 
@@ -96,6 +99,9 @@ export class MessageListComponent implements MessageHandler {
         "thoughtChunk",
         "toolCallStart",
         "toolCallComplete",
+        "elicitationRequest",
+        "elicitationComplete",
+        "elicitationCleared",
       ],
       this
     );
@@ -126,6 +132,12 @@ export class MessageListComponent implements MessageHandler {
         return this.handleToolCallStart(msg);
       case "toolCallComplete":
         return this.handleToolCallComplete(msg);
+      case "elicitationRequest":
+        return this.handleElicitationRequest(msg);
+      case "elicitationComplete":
+        return this.handleElicitationComplete(msg);
+      case "elicitationCleared":
+        return this.handleElicitationCleared();
     }
   }
 
@@ -270,6 +282,57 @@ export class MessageListComponent implements MessageHandler {
       stream.blockManager.finalizeBlock(block);
       this.scrollToBottom();
     }
+  }
+
+  // -------------------------------------------------------------------
+  // Elicitation blocks
+  // -------------------------------------------------------------------
+
+  /**
+   * Render an inline elicitation block for an agent request. Each request
+   * gets its own block keyed by request id, so concurrent requests never
+   * replace each other.
+   */
+  private handleElicitationRequest(msg: ExtensionMessage): void {
+    if (!msg.requestId) return;
+    const block = new ElicitationBlock(this.ctx, {
+      requestId: msg.requestId,
+      message: msg.message,
+      mode: msg.mode,
+      schema: msg.schema,
+      url: msg.url,
+      elicitationId: msg.elicitationId,
+    });
+    this.elicitationBlocks.set(msg.requestId, block);
+    this.elements.messagesEl.appendChild(block.element);
+    this.updateViewState();
+    this.scrollToBottom(true);
+  }
+
+  /**
+   * Close the elicitation block whose elicitation id matches. Unknown ids
+   * (already resolved) are ignored, so a stale notification can never close
+   * a different request's block.
+   */
+  private handleElicitationComplete(msg: ExtensionMessage): void {
+    if (!msg.elicitationId) return;
+    for (const [requestId, block] of this.elicitationBlocks) {
+      if (block.elicitationId === msg.elicitationId) {
+        block.remove();
+        this.elicitationBlocks.delete(requestId);
+        this.updateViewState();
+        return;
+      }
+    }
+  }
+
+  /** Remove every open elicitation block (stop / clear / session switch). */
+  private handleElicitationCleared(): void {
+    for (const block of this.elicitationBlocks.values()) {
+      block.remove();
+    }
+    this.elicitationBlocks.clear();
+    this.updateViewState();
   }
 
   // -------------------------------------------------------------------
@@ -467,6 +530,7 @@ export class MessageListComponent implements MessageHandler {
   clear(): void {
     this.elements.messagesEl.innerHTML = "";
     this.resetStreams();
+    this.elicitationBlocks.clear();
     this.updateViewState();
   }
 

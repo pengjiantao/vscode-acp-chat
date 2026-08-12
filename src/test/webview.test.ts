@@ -11,6 +11,7 @@ import type {
   VsCodeApi,
   WebviewElements,
   Mention,
+  ExtensionMessage,
 } from "../views/webview/types";
 import { ansiToHtml, hasAnsiCodes } from "../views/webview/ansi-render";
 import { escapeHtml } from "../views/webview/html-utils";
@@ -4896,6 +4897,328 @@ suite("Webview", () => {
       assert.ok(!result.includes("data-diff-start"));
       assert.ok(!result.includes("data-diff-end"));
       assert.ok(result.includes("diff-change-block"));
+    });
+  });
+
+  suite("Elicitation Blocks", () => {
+    let dom: JSDOM;
+    let document: Document;
+    let window: DOMWindow;
+    let mockVsCode: ReturnType<typeof createMockVsCodeApi>;
+    let controller: WebviewController;
+
+    setup(() => {
+      dom = new JSDOM(createWebviewHTML(), {
+        runScripts: "dangerously",
+        url: "https://localhost",
+      });
+      document = dom.window.document;
+      window = dom.window;
+      mockVsCode = createMockVsCodeApi();
+      (global as any).Node = window.Node;
+      (global as any).NodeFilter = window.NodeFilter;
+      controller = new WebviewController(
+        mockVsCode,
+        document,
+        window as unknown as Window
+      );
+    });
+
+    teardown(() => {
+      dom.window.close();
+    });
+
+    function getMessages(): unknown[] {
+      return mockVsCode._getMessages();
+    }
+
+    function block(): HTMLElement | null {
+      return document.querySelector(".message.elicitation");
+    }
+
+    function blocks(): NodeListOf<HTMLElement> {
+      return document.querySelectorAll(".message.elicitation");
+    }
+
+    function formRequest(): ExtensionMessage {
+      return {
+        type: "elicitationRequest",
+        requestId: "elic-1",
+        message: "Please configure the deployment",
+        mode: "form",
+        schema: {
+          type: "object",
+          title: "Deploy Details",
+          properties: {
+            target: {
+              type: "string",
+              title: "Target",
+              enum: ["staging", "prod"],
+            },
+            count: {
+              type: "integer",
+              title: "Count",
+              minimum: 1,
+              maximum: 5,
+              default: 2,
+            },
+            dryRun: { type: "boolean", title: "Dry run" },
+            tags: {
+              type: "array",
+              title: "Tags",
+              items: { enum: ["a", "b", "c"] },
+              default: ["a"],
+            },
+          },
+          required: ["target", "count"],
+        },
+      };
+    }
+
+    function urlRequest(): ExtensionMessage {
+      return {
+        type: "elicitationRequest",
+        requestId: "elic-url",
+        message: "Complete the OAuth flow",
+        mode: "url",
+        url: "https://example.com/oauth",
+        elicitationId: "url-1",
+      };
+    }
+
+    test("renders an inline block with form fields from the schema", () => {
+      controller.handleMessage(formRequest());
+
+      assert.ok(block(), "an elicitation block should be inserted");
+      const message = document.querySelector(".elicitation-message");
+      assert.strictEqual(
+        message?.textContent,
+        "Please configure the deployment"
+      );
+
+      // string enum → select
+      const select = document.querySelector(
+        "select.elicitation-select"
+      ) as HTMLSelectElement;
+      assert.ok(select, "string enum should render a select");
+      assert.strictEqual(select.options.length, 3); // placeholder + 2 options
+      assert.strictEqual(select.options[1].value, "staging");
+      assert.strictEqual(select.options[2].value, "prod");
+
+      // integer → number input with min/max/step and default
+      const count = document.querySelector(
+        'input[type="number"]'
+      ) as HTMLInputElement;
+      assert.ok(count, "integer should render a number input");
+      assert.strictEqual(count.min, "1");
+      assert.strictEqual(count.max, "5");
+      assert.strictEqual(count.step, "1");
+      assert.strictEqual(count.value, "2");
+
+      // boolean → checkbox
+      const dryRun = Array.from(
+        document.querySelectorAll('input[type="checkbox"]')
+      ).find((el) => (el as HTMLInputElement).id === "elic-elic-1-dryRun");
+      assert.ok(dryRun, "boolean should render a checkbox");
+
+      // array → checkbox group with enum options
+      const tagBoxes = document.querySelectorAll(
+        '.elicitation-checkbox-group input[type="checkbox"]'
+      );
+      assert.strictEqual(tagBoxes.length, 3);
+
+      // required markers
+      assert.strictEqual(
+        document.querySelectorAll(".elicitation-field-required").length,
+        2
+      );
+    });
+
+    test("renders concurrent requests as separate blocks", () => {
+      controller.handleMessage(formRequest());
+      controller.handleMessage({
+        ...formRequest(),
+        requestId: "elic-2",
+        message: "Second request",
+      });
+      controller.handleMessage(urlRequest());
+
+      assert.strictEqual(blocks().length, 3);
+      const texts = Array.from(
+        document.querySelectorAll(".elicitation-message")
+      )
+        .map((el) => el.textContent)
+        .filter((t): t is string => t !== null);
+      assert.deepStrictEqual(texts, [
+        "Please configure the deployment",
+        "Second request",
+        "Complete the OAuth flow",
+      ]);
+    });
+
+    test("blocks submit when required fields are missing", () => {
+      controller.handleMessage(formRequest());
+      mockVsCode._clearMessages();
+
+      const submitBtn = document.querySelector(
+        ".elicitation-btn-primary"
+      ) as HTMLButtonElement;
+      submitBtn.click();
+
+      const responses = getMessages().filter(
+        (m) => (m as { type: string }).type === "elicitationResponse"
+      );
+      assert.strictEqual(responses.length, 0, "no response should be sent");
+      assert.ok(
+        document.querySelector(".elicitation-error"),
+        "validation error should be shown"
+      );
+      assert.ok(block(), "block stays after failed validation");
+    });
+
+    test("submits accept with content and removes the block", () => {
+      controller.handleMessage(formRequest());
+
+      const select = document.querySelector(
+        "select.elicitation-select"
+      ) as HTMLSelectElement;
+      select.value = "prod";
+      mockVsCode._clearMessages();
+
+      const submitBtn = document.querySelector(
+        ".elicitation-btn-primary"
+      ) as HTMLButtonElement;
+      submitBtn.click();
+
+      const response = getMessages().find(
+        (m) => (m as { type: string }).type === "elicitationResponse"
+      ) as {
+        type: string;
+        requestId: string;
+        elicitationAction: string;
+        elicitationContent: Record<string, unknown>;
+      };
+      assert.ok(response, "accept response should be sent");
+      assert.strictEqual(response.requestId, "elic-1");
+      assert.strictEqual(response.elicitationAction, "accept");
+      assert.strictEqual(response.elicitationContent.target, "prod");
+      assert.strictEqual(response.elicitationContent.count, 2);
+      assert.strictEqual(response.elicitationContent.dryRun, false);
+      assert.deepStrictEqual(response.elicitationContent.tags, ["a"]);
+      assert.strictEqual(block(), null, "block removed after submit");
+    });
+
+    test("omits empty optional fields from the accepted content", () => {
+      controller.handleMessage({
+        ...formRequest(),
+        schema: {
+          type: "object",
+          properties: {
+            optionalNum: { type: "integer", title: "Optional count" },
+            optionalText: { type: "string", title: "Optional note" },
+          },
+          required: [],
+        },
+      });
+      mockVsCode._clearMessages();
+
+      const submitBtn = document.querySelector(
+        ".elicitation-btn-primary"
+      ) as HTMLButtonElement;
+      submitBtn.click();
+
+      const response = getMessages().find(
+        (m) => (m as { type: string }).type === "elicitationResponse"
+      ) as {
+        elicitationContent: Record<string, unknown>;
+      };
+      assert.deepStrictEqual(response.elicitationContent, {});
+    });
+
+    test("sends decline on cancel button and removes the block", () => {
+      controller.handleMessage(formRequest());
+      mockVsCode._clearMessages();
+
+      const cancelBtn = Array.from(
+        document.querySelectorAll(".elicitation-btn")
+      ).find((el) => el.textContent === "Cancel") as HTMLButtonElement;
+      cancelBtn.click();
+
+      const response = getMessages().find(
+        (m) => (m as { type: string }).type === "elicitationResponse"
+      ) as { type: string; elicitationAction: string };
+      assert.ok(response);
+      assert.strictEqual(response.elicitationAction, "decline");
+      assert.strictEqual(block(), null);
+    });
+
+    test("url mode renders a link and accepts on Done", () => {
+      controller.handleMessage(urlRequest());
+
+      assert.ok(block());
+      const link = document.querySelector(
+        ".elicitation-url-link"
+      ) as HTMLAnchorElement;
+      assert.ok(link);
+      assert.strictEqual(
+        link.getAttribute("href"),
+        "https://example.com/oauth"
+      );
+      assert.strictEqual(link.textContent, "https://example.com/oauth");
+
+      mockVsCode._clearMessages();
+      const doneBtn = Array.from(
+        document.querySelectorAll(".elicitation-btn")
+      ).find((el) => el.textContent === "Done") as HTMLButtonElement;
+      doneBtn.click();
+
+      const response = getMessages().find(
+        (m) => (m as { type: string }).type === "elicitationResponse"
+      ) as { type: string; elicitationAction: string };
+      assert.ok(response);
+      assert.strictEqual(response.elicitationAction, "accept");
+      assert.strictEqual(block(), null);
+    });
+
+    test("closes only the matching block on elicitationComplete", () => {
+      controller.handleMessage(formRequest());
+      controller.handleMessage(urlRequest());
+      assert.strictEqual(blocks().length, 2);
+
+      controller.handleMessage({
+        type: "elicitationComplete",
+        elicitationId: "url-1",
+      });
+
+      assert.strictEqual(blocks().length, 1, "form block stays");
+      const remaining = block();
+      assert.ok(remaining);
+      assert.ok(
+        remaining.querySelector(".elicitation-form"),
+        "the form block is the remaining one"
+      );
+    });
+
+    test("ignores complete notifications with unknown elicitation ids", () => {
+      controller.handleMessage(formRequest());
+      controller.handleMessage(urlRequest());
+
+      controller.handleMessage({
+        type: "elicitationComplete",
+        elicitationId: "stale-id",
+      });
+
+      assert.strictEqual(blocks().length, 2, "no block should be removed");
+    });
+
+    test("removes all blocks on elicitationCleared", () => {
+      controller.handleMessage(formRequest());
+      controller.handleMessage(urlRequest());
+      assert.strictEqual(blocks().length, 2);
+
+      controller.handleMessage({ type: "elicitationCleared" });
+
+      assert.strictEqual(blocks().length, 0);
     });
   });
 });

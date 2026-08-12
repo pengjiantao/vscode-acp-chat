@@ -179,6 +179,16 @@ body {
   border-radius: 0;
 }
 
+.message.elicitation {
+  background: transparent;
+  border: none;
+  align-self: flex-start;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  border-radius: 0;
+}
+
 .message.error {
   background: var(--vscode-inputValidation-errorBackground);
   border: 1px solid var(--vscode-inputValidation-errorBorder);
@@ -2943,4 +2953,198 @@ kbd {
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * Elicitation blocks (agent-initiated form / URL requests)
+ * ------------------------------------------------------------------------- */
+
+.elicitation-block {
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.elicitation-block-header {
+  padding: 8px 12px;
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.elicitation-icon {
+  font-size: 16px;
+  color: var(--vscode-charts-blue);
+}
+
+.elicitation-block-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.elicitation-message {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vscode-foreground);
+}
+
+.elicitation-schema-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.elicitation-schema-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+}
+
+.elicitation-schema-desc {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.elicitation-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.elicitation-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.elicitation-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.elicitation-field-required {
+  color: var(--vscode-errorForeground);
+}
+
+.elicitation-checkbox {
+  accent-color: var(--vscode-button-background);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.elicitation-input,
+.elicitation-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 4px;
+}
+
+.elicitation-input:focus,
+.elicitation-select:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.elicitation-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.elicitation-checkbox-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+
+.elicitation-checkbox-option input {
+  accent-color: var(--vscode-button-background);
+}
+
+.elicitation-url-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 4px;
+}
+
+.elicitation-url-link {
+  flex: 1;
+  font-size: 12px;
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.elicitation-url-link:hover {
+  text-decoration: underline;
+}
+
+.elicitation-url-hint {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.elicitation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.elicitation-btn {
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  cursor: pointer;
+  font-size: 12px;
+  transition: filter 0.1s;
+}
+
+.elicitation-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.elicitation-btn-primary {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  font-weight: 600;
+}
+
+.elicitation-btn-primary:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.elicitation-error {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--vscode-errorForeground);
+  background: var(--vscode-inputValidation-errorBackground, transparent);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, transparent);
+  border-radius: 4px;
 }
