@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.22.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.21.0...v1.22.0) (2026-08-12)
+
+### Features
+
+- **acp:** upgrade sdk to 1.3.0 and implement elicitation ([d22360f](https://github.com/pengjiantao/vscode-acp-chat/commit/d22360fcd166c16d23c8fc798f8cf04b7a693c32))
+- **webview:** refactor elicitation single choice to radio cards and compact UI ([3e5a1c4](https://github.com/pengjiantao/vscode-acp-chat/commit/3e5a1c4fc9786cc7b3f8e3814838c0286109adc9))
+
 ## [1.21.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.20.1...v1.21.0) (2026-08-08)
 
 ### Features
