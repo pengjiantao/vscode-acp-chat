@@ -4294,6 +4294,31 @@ suite("Webview", () => {
         assert.strictEqual(style.top, "0px");
       });
     });
+
+    test("lets markdown tables fill the container and shrink columns to fit", () => {
+      const css = fs.readFileSync(
+        path.resolve(__dirname, "..", "..", "media", "main.css"),
+        "utf8"
+      );
+      const dom = new JSDOM(
+        `<!DOCTYPE html><style>${css}</style><div class="block block-text"><table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table></div>`
+      );
+      const table = dom.window.document.querySelector(
+        ".block-text table"
+      ) as HTMLElement;
+      assert.ok(table);
+
+      const style = dom.window.getComputedStyle(table);
+      assert.strictEqual(style.width, "100%");
+      assert.notStrictEqual(style.overflowX, "auto");
+
+      const cell = dom.window.document.querySelector(
+        ".block-text td"
+      ) as HTMLElement;
+      const cellStyle = dom.window.getComputedStyle(cell);
+      assert.strictEqual(cellStyle.padding, "6px 12px");
+      assert.strictEqual(cellStyle.overflowWrap, "anywhere");
+    });
   });
 
   suite("getToolKindIcon", () => {

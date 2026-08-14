@@ -2242,6 +2242,34 @@ kbd {
   padding: 4px 8px;
 }
 
+/* Markdown tables: let the table fill the container and shrink column
+   widths to fit, wrapping long cell content instead of clipping the
+   rightmost columns when the webview is narrow. */
+.block-text table,
+.thought-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+
+.block-text th,
+.block-text td,
+.thought-content th,
+.thought-content td {
+  padding: 6px 12px;
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.4));
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.block-text th,
+.thought-content th {
+  font-weight: 600;
+  background: var(--vscode-sideBarSectionHeader-background, transparent);
+}
+
 /* Diff Display Styles */
 .diff-container {
   margin: 12px 0;
