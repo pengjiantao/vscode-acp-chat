@@ -1,5 +1,11 @@
 import * as assert from "assert";
-import { AGENTS, getAgent, getFirstAvailableAgent } from "../acp/agents";
+import {
+  AGENTS,
+  getAgent,
+  getFirstAvailableAgent,
+  getAgentsWithStatus,
+} from "../acp/agents";
+import { validateAgent } from "../acp/agent-validator";
 
 suite("agents", () => {
   suite("AGENTS", () => {
@@ -66,6 +72,45 @@ suite("agents", () => {
         agentIds.includes(agent.id),
         `agent.id ${agent.id} should be in AGENTS`
       );
+    });
+  });
+
+  suite("getAgentsWithStatus", () => {
+    test("should return agents sorted alphabetically by name", () => {
+      const agents = getAgentsWithStatus();
+      for (let i = 0; i < agents.length - 1; i++) {
+        const cmp = agents[i].name.localeCompare(
+          agents[i + 1].name,
+          undefined,
+          { sensitivity: "base" }
+        );
+        assert.ok(
+          cmp <= 0,
+          `Agent ${agents[i].name} should precede or equal ${agents[i + 1].name}`
+        );
+      }
+    });
+  });
+
+  suite("validateAgent", () => {
+    test("should allow valid agent config without args", () => {
+      const result = validateAgent({
+        id: "custom-agent",
+        name: "Custom Agent",
+        command: "node",
+        args: [] as string[],
+      });
+      assert.strictEqual(result.valid, true);
+    });
+
+    test("should fail on invalid agent with empty command", () => {
+      const result = validateAgent({
+        id: "custom-agent",
+        name: "Custom Agent",
+        command: "",
+        args: [],
+      });
+      assert.strictEqual(result.valid, false);
     });
   });
 });

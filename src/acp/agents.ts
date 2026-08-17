@@ -11,7 +11,9 @@ export interface AgentConfig {
   name: string;
   command: string;
   args: string[];
+  description?: string;
   env?: Record<string, string>;
+  custom?: boolean;
 }
 
 /**
@@ -27,90 +29,105 @@ export const AGENTS: AgentConfig[] = [
     name: "OpenCode",
     command: "opencode",
     args: ["acp"],
+    description: "Open-source AI coding agent",
   },
   {
     id: "claude-code",
     name: "Claude Code",
     command: "npx",
     args: ["-y", "@agentclientprotocol/claude-agent-acp@latest"],
+    description: "Anthropic Claude Code CLI agent",
   },
   {
     id: "codex",
     name: "Codex CLI",
     command: "npx",
     args: ["-y", "@agentclientprotocol/codex-acp@latest"],
+    description: "OpenAI Codex CLI agent",
   },
   {
     id: "gemini",
     name: "Gemini CLI",
     command: "gemini",
     args: ["--acp"],
+    description: "Google Gemini CLI agent",
   },
   {
     id: "goose",
     name: "Goose",
     command: "goose",
     args: ["acp"],
+    description: "Block Goose extensible AI agent",
   },
   {
     id: "amp",
     name: "Amp",
     command: "amp",
     args: ["acp"],
+    description: "Amp AI agent",
   },
   {
     id: "aider",
     name: "Aider",
     command: "aider",
     args: ["--acp"],
+    description: "Aider AI pair programmer",
   },
   {
     id: "augment",
     name: "Augment Code",
     command: "augment",
     args: ["acp"],
+    description: "Augment Code AI agent",
   },
   {
     id: "kimi",
     name: "Kimi CLI",
     command: "kimi",
     args: ["--acp"],
+    description: "Moonshot Kimi CLI agent",
   },
   {
     id: "mistral-vibe",
     name: "Mistral Vibe",
     command: "vibe",
     args: ["acp"],
+    description: "Mistral Vibe CLI agent",
   },
   {
     id: "openhands",
     name: "OpenHands",
     command: "openhands",
     args: ["acp"],
+    description: "OpenHands autonomous software development agent",
   },
   {
     id: "qwen-code",
     name: "Qwen Code",
     command: "qwen",
     args: ["--acp"],
+    description: "Alibaba Qwen Code CLI agent",
   },
   {
     id: "kiro",
     name: "Kiro CLI",
     command: "kiro-cli",
     args: ["acp"],
+    description: "Kiro AI agent",
   },
   {
     id: "cursor",
     name: "Cursor",
     command: "cursor-agent",
     args: ["acp"],
+    description: "Cursor CLI agent",
   },
   {
     id: "codebuddy",
     name: "CodeBuddy Code",
     command: "codebuddy",
     args: ["--acp"],
+    description: "CodeBuddy AI pair programmer",
   },
 ];
 
@@ -127,7 +144,11 @@ function getCustomAgents(): AgentConfig[] {
  * Custom agents override built-in ones with the same id.
  */
 function getMergedAgents(): AgentConfig[] {
-  const customAgents = getCustomAgents();
+  const customAgents = getCustomAgents().map((c) => ({
+    ...c,
+    args: Array.isArray(c.args) ? c.args : [],
+    custom: true,
+  }));
   const builtinIds = new Set(AGENTS.map((a) => a.id));
 
   const merged: AgentConfig[] = AGENTS.map((builtin) => {
@@ -154,6 +175,7 @@ let cachedAgentsWithStatus: AgentWithStatus[] | null = null;
 /**
  * Gets all agents merged from built-in and custom configurations with availability status.
  * Results are cached. Invalid agents are filtered out and warnings are shown.
+ * Results are sorted alphabetically by agent name (case-insensitive).
  * @param forceRefresh - If true, bypasses cache and revalidates all agents.
  */
 export function getAgentsWithStatus(forceRefresh = false): AgentWithStatus[] {
@@ -176,7 +198,10 @@ export function getAgentsWithStatus(forceRefresh = false): AgentWithStatus[] {
     .map((agent) => ({
       ...agent,
       available: isCommandAvailable(agent.command),
-    }));
+    }))
+    .sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    );
 
   return cachedAgentsWithStatus;
 }

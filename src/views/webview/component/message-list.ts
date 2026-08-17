@@ -26,37 +26,53 @@ type MessageType = "user" | "assistant" | "error" | "system";
  * message element and an independent {@link BlockManager}, so interleaved
  * streams (e.g. concurrent subagents) never share blocks.
  */
-type MessageStream = {
+export type MessageStream = {
   messageId: string;
   messageEl: HTMLElement;
   blockManager: BlockManager;
 };
+
+export interface MessageListSessionState {
+  nodes: Node[];
+  streams: Map<string, MessageStream>;
+  currentStreamId: string | null;
+  isGenerating: boolean;
+  elicitationBlocks: Map<string, ElicitationBlock>;
+  availableCommands: AvailableCommand[];
+}
+
+export interface SessionMessageState {
+  sessionId: string;
+  containerEl: HTMLElement;
+  streams: Map<string, MessageStream>;
+  currentStreamId: string | null;
+  elicitationBlocks: Map<string, ElicitationBlock>;
+  isGenerating: boolean;
+  availableCommands: AvailableCommand[];
+}
 
 /**
  * Owns the chat transcript surface: message DOM, streaming block lifecycle,
  * list-level event delegation, keyboard navigation, and auto-scroll state.
  *
  * Implements {@link MessageHandler} to self-register for all streaming and
- * message-related extension messages. Each active assistant message is a
- * {@link MessageStream} keyed by its ACP `messageId`; {@link BlockManager}s
- * are owned per stream.
+ * message-related extension messages across all sessions. Each session maintains
+ * its own DOM container and {@link MessageStream} map so background session
+ * streaming is never lost.
  */
 export class MessageListComponent implements MessageHandler {
   readonly elements: MessageListElements;
   private blockActions: BlockActionsComponent;
   private chipRenderer: ChipRendererComponent;
-  private streams = new Map<string, MessageStream>();
-  private currentStreamId: string | null = null;
+  private sessionStates = new Map<string, SessionMessageState>();
+  private activeSessionId: string | null = null;
   private focusedBlockEl: HTMLElement | null = null;
-  /** Inline elicitation blocks keyed by their request id. */
-  private elicitationBlocks = new Map<string, ElicitationBlock>();
 
   private scrollFade: ScrollFadeController;
 
   private availableCommands: AvailableCommand[] = [];
-  private isGenerating = false;
 
-  /** Callback invoked when generation state changes. */
+  /** Callback invoked when generation state changes for active session. */
   onGeneratingChange?: (isGenerating: boolean) => void;
 
   /** Callback for "copy to input" action button. */
@@ -113,96 +129,169 @@ export class MessageListComponent implements MessageHandler {
   }
 
   // -------------------------------------------------------------------
+  // Multi-session container management
+  // -------------------------------------------------------------------
+
+  private getOrCreateSessionState(sessionId?: string): SessionMessageState {
+    const targetId = sessionId || this.activeSessionId || "default";
+    let state = this.sessionStates.get(targetId);
+    if (!state) {
+      const containerEl = this.ctx.doc.createElement("div");
+      containerEl.className = "session-messages-content";
+      containerEl.setAttribute("data-session-id", targetId);
+      const isVisible = targetId === (this.activeSessionId || "default");
+      containerEl.style.display = isVisible ? "flex" : "none";
+      containerEl.style.flexDirection = "column";
+      containerEl.style.gap = "12px";
+      containerEl.style.width = "100%";
+      this.elements.messagesEl.appendChild(containerEl);
+
+      state = {
+        sessionId: targetId,
+        containerEl,
+        streams: new Map(),
+        currentStreamId: null,
+        elicitationBlocks: new Map(),
+        isGenerating: false,
+        availableCommands: [...this.availableCommands],
+      };
+      this.sessionStates.set(targetId, state);
+    }
+    return state;
+  }
+
+  setActiveSession(sessionId: string): void {
+    this.activeSessionId = sessionId;
+    const activeState = this.getOrCreateSessionState(sessionId);
+
+    for (const state of this.sessionStates.values()) {
+      state.containerEl.style.display =
+        state.sessionId === sessionId ? "flex" : "none";
+    }
+
+    if (activeState.isGenerating) {
+      this.showTypingIndicator(activeState);
+    } else {
+      this.hideTypingIndicator();
+    }
+
+    this.updateViewState();
+    this.scrollToBottom();
+  }
+
+  removeSession(sessionId: string): void {
+    const state = this.sessionStates.get(sessionId);
+    if (state) {
+      state.containerEl.remove();
+      this.sessionStates.delete(sessionId);
+    }
+    this.updateViewState();
+  }
+
+  // -------------------------------------------------------------------
   // MessageHandler
   // -------------------------------------------------------------------
 
   handleMessage(msg: ExtensionMessage): boolean | void {
+    const sessionId = msg.sessionId || this.activeSessionId || "default";
+    const session = this.getOrCreateSessionState(sessionId);
+
     switch (msg.type) {
       case "userMessage":
-        return this.handleUserMessage(msg);
+        return this.handleUserMessage(session, msg);
       case "streamStart":
-        return this.handleStreamStart();
+        return this.handleStreamStart(session);
       case "streamChunk":
-        return this.handleStreamChunk(msg);
+        return this.handleStreamChunk(session, msg);
       case "streamEnd":
-        return this.handleStreamEnd();
+        return this.handleStreamEnd(session);
       case "thoughtChunk":
-        return this.handleThoughtChunk(msg);
+        return this.handleThoughtChunk(session, msg);
       case "toolCallStart":
-        return this.handleToolCallStart(msg);
+        return this.handleToolCallStart(session, msg);
       case "toolCallComplete":
-        return this.handleToolCallComplete(msg);
+        return this.handleToolCallComplete(session, msg);
       case "elicitationRequest":
-        return this.handleElicitationRequest(msg);
+        return this.handleElicitationRequest(session, msg);
       case "elicitationComplete":
-        return this.handleElicitationComplete(msg);
+        return this.handleElicitationComplete(session, msg);
       case "elicitationCleared":
-        return this.handleElicitationCleared();
+        return this.handleElicitationCleared(session);
     }
   }
 
   // -------------------------------------------------------------------
-  // Message handlers (moved from controller)
+  // Message handlers
   // -------------------------------------------------------------------
 
-  private handleUserMessage(msg: ExtensionMessage): void {
+  private handleUserMessage(
+    session: SessionMessageState,
+    msg: ExtensionMessage
+  ): void {
     // Always reset assistant state before a new turn
-    this.resetStreams();
+    this.resetStreams(session);
 
     if (msg.text || (msg.images && msg.images.length > 0)) {
-      this.addMessage(msg.text || "", "user", msg.mentions);
+      this.addMessageToSession(session, msg.text || "", "user", msg.mentions);
     }
   }
 
-  private handleStreamStart(): void {
-    this.resetStreams();
-    this.setGenerating(true);
+  private handleStreamStart(session: SessionMessageState): void {
+    this.resetStreams(session);
+    this.setGenerating(session, true);
   }
 
-  private handleStreamChunk(msg: ExtensionMessage): void {
+  private handleStreamChunk(
+    session: SessionMessageState,
+    msg: ExtensionMessage
+  ): void {
     if (!msg.text) return;
-    const stream = this.ensureStream(msg.messageId ?? null);
+    const stream = this.ensureStream(session, msg.messageId ?? null);
     const block = stream.blockManager.ensureBlock(
       "text",
       stream.messageEl,
       this.elements.typingIndicatorEl
     ) as TextBlock;
     block.appendContent(msg.text);
-    this.scrollToBottom();
+    if (session.sessionId === (this.activeSessionId || "default")) {
+      this.scrollToBottom();
+    }
   }
 
-  private handleStreamEnd(): void {
-    // streamEnd is turn-scoped: finalize every active stream. Action buttons
-    // are no longer rendered automatically; they appear on demand when a text
-    // block is double-clicked (see setupBlockFocusHandler).
-    this.finalizeAllStreams();
-    this.setGenerating(false);
-    // Chunks after streamEnd (without a new streamStart) begin a fresh
-    // message rather than appending to the last.
-    this.currentStreamId = null;
-    this.scrollToBottom();
+  private handleStreamEnd(session: SessionMessageState): void {
+    this.finalizeAllStreams(session);
+    this.setGenerating(session, false);
+    session.currentStreamId = null;
+    if (session.sessionId === (this.activeSessionId || "default")) {
+      this.scrollToBottom();
+    }
   }
 
-  private handleThoughtChunk(msg: ExtensionMessage): void {
+  private handleThoughtChunk(
+    session: SessionMessageState,
+    msg: ExtensionMessage
+  ): void {
     if (!msg.text) return;
-    const stream = this.ensureStream(msg.messageId ?? null);
+    const stream = this.ensureStream(session, msg.messageId ?? null);
     const block = stream.blockManager.ensureBlock(
       "thought",
       stream.messageEl,
       this.elements.typingIndicatorEl
     );
     block.appendContent(msg.text);
-    this.scrollToBottom();
+    if (session.sessionId === (this.activeSessionId || "default")) {
+      this.scrollToBottom();
+    }
   }
 
-  private handleToolCallStart(msg: ExtensionMessage): void {
+  private handleToolCallStart(
+    session: SessionMessageState,
+    msg: ExtensionMessage
+  ): void {
     if (!msg.toolCallId || !msg.name) return;
-    // Tool calls carry no ACP messageId; reuse an existing block across
-    // streams (current stream may have switched mid-tool), else attach to
-    // the most recent stream.
     const stream =
-      this.getToolBlockStream(msg.toolCallId) ??
-      this.ensureStream(this.currentStreamId);
+      this.getToolBlockStream(session, msg.toolCallId) ??
+      this.ensureStream(session, session.currentStreamId);
     this.applyToolCallStart(
       stream.blockManager.ensureToolBlock(
         msg.toolCallId,
@@ -211,7 +300,9 @@ export class MessageListComponent implements MessageHandler {
       ),
       msg
     );
-    this.scrollToBottom();
+    if (session.sessionId === (this.activeSessionId || "default")) {
+      this.scrollToBottom();
+    }
   }
 
   /**
@@ -233,11 +324,14 @@ export class MessageListComponent implements MessageHandler {
     });
   }
 
-  private handleToolCallComplete(msg: ExtensionMessage): void {
+  private handleToolCallComplete(
+    session: SessionMessageState,
+    msg: ExtensionMessage
+  ): void {
     if (!msg.toolCallId) return;
     const stream =
-      this.getToolBlockStream(msg.toolCallId) ??
-      this.ensureStream(this.currentStreamId);
+      this.getToolBlockStream(session, msg.toolCallId) ??
+      this.ensureStream(session, session.currentStreamId);
     const block = stream.blockManager.ensureToolBlock(
       msg.toolCallId,
       stream.messageEl,
@@ -280,7 +374,9 @@ export class MessageListComponent implements MessageHandler {
       });
 
       stream.blockManager.finalizeBlock(block);
-      this.scrollToBottom();
+      if (session.sessionId === (this.activeSessionId || "default")) {
+        this.scrollToBottom();
+      }
     }
   }
 
@@ -293,7 +389,10 @@ export class MessageListComponent implements MessageHandler {
    * gets its own block keyed by request id, so concurrent requests never
    * replace each other.
    */
-  private handleElicitationRequest(msg: ExtensionMessage): void {
+  private handleElicitationRequest(
+    session: SessionMessageState,
+    msg: ExtensionMessage
+  ): void {
     if (!msg.requestId) return;
     const block = new ElicitationBlock(this.ctx, {
       requestId: msg.requestId,
@@ -303,10 +402,12 @@ export class MessageListComponent implements MessageHandler {
       url: msg.url,
       elicitationId: msg.elicitationId,
     });
-    this.elicitationBlocks.set(msg.requestId, block);
-    this.elements.messagesEl.appendChild(block.element);
-    this.updateViewState();
-    this.scrollToBottom(true);
+    session.elicitationBlocks.set(msg.requestId, block);
+    session.containerEl.appendChild(block.element);
+    if (session.sessionId === (this.activeSessionId || "default")) {
+      this.updateViewState();
+      this.scrollToBottom(true);
+    }
   }
 
   /**
@@ -314,25 +415,32 @@ export class MessageListComponent implements MessageHandler {
    * (already resolved) are ignored, so a stale notification can never close
    * a different request's block.
    */
-  private handleElicitationComplete(msg: ExtensionMessage): void {
+  private handleElicitationComplete(
+    session: SessionMessageState,
+    msg: ExtensionMessage
+  ): void {
     if (!msg.elicitationId) return;
-    for (const [requestId, block] of this.elicitationBlocks) {
+    for (const [requestId, block] of session.elicitationBlocks) {
       if (block.elicitationId === msg.elicitationId) {
         block.remove();
-        this.elicitationBlocks.delete(requestId);
-        this.updateViewState();
+        session.elicitationBlocks.delete(requestId);
+        if (session.sessionId === (this.activeSessionId || "default")) {
+          this.updateViewState();
+        }
         return;
       }
     }
   }
 
   /** Remove every open elicitation block (stop / clear / session switch). */
-  private handleElicitationCleared(): void {
-    for (const block of this.elicitationBlocks.values()) {
+  private handleElicitationCleared(session: SessionMessageState): void {
+    for (const block of session.elicitationBlocks.values()) {
       block.remove();
     }
-    this.elicitationBlocks.clear();
-    this.updateViewState();
+    session.elicitationBlocks.clear();
+    if (session.sessionId === (this.activeSessionId || "default")) {
+      this.updateViewState();
+    }
   }
 
   // -------------------------------------------------------------------
@@ -345,9 +453,13 @@ export class MessageListComponent implements MessageHandler {
    * Public so the controller can create assistant messages for block
    * operations like showThinking.
    */
-  ensureAssistantMessage(): HTMLElement {
-    const stream = this.ensureStream(this.currentStreamId);
-    if (this.elements.typingIndicatorEl.classList.contains("visible")) {
+  ensureAssistantMessage(sessionId?: string): HTMLElement {
+    const session = this.getOrCreateSessionState(sessionId);
+    const stream = this.ensureStream(session, session.currentStreamId);
+    if (
+      session.sessionId === (this.activeSessionId || "default") &&
+      this.elements.typingIndicatorEl.classList.contains("visible")
+    ) {
       stream.messageEl.appendChild(this.elements.typingIndicatorEl);
     }
     return stream.messageEl;
@@ -360,25 +472,32 @@ export class MessageListComponent implements MessageHandler {
   /** Set the available commands for mention/command rendering. */
   setAvailableCommands(commands: AvailableCommand[]): void {
     this.availableCommands = commands;
+    for (const session of this.sessionStates.values()) {
+      session.availableCommands = [...commands];
+    }
   }
 
   /**
    * Return the block manager for the current stream. If no stream is active
    * yet, one is created (which appends an empty assistant message element).
    */
-  getBlockManager(): BlockManager {
-    return this.ensureStream(this.currentStreamId).blockManager;
+  getBlockManager(sessionId?: string): BlockManager {
+    const session = this.getOrCreateSessionState(sessionId);
+    return this.ensureStream(session, session.currentStreamId).blockManager;
   }
 
   /** Locate the stream owning a tool call id (active stream first). */
-  private getToolBlockStream(toolCallId: string): MessageStream | undefined {
-    if (this.currentStreamId !== null) {
-      const current = this.streams.get(this.currentStreamId);
+  private getToolBlockStream(
+    session: SessionMessageState,
+    toolCallId: string
+  ): MessageStream | undefined {
+    if (session.currentStreamId !== null) {
+      const current = session.streams.get(session.currentStreamId);
       if (current?.blockManager.getToolBlock(toolCallId)) {
         return current;
       }
     }
-    for (const stream of this.streams.values()) {
+    for (const stream of session.streams.values()) {
       if (stream.blockManager.getToolBlock(toolCallId)) {
         return stream;
       }
@@ -391,14 +510,41 @@ export class MessageListComponent implements MessageHandler {
    * stream first, then all streams. Used by the permission dialog so
    * embedded permissions find tool blocks across concurrent streams.
    */
-  getToolBlockManager(toolCallId: string): BlockManager | undefined {
-    return this.getToolBlockStream(toolCallId)?.blockManager;
+  getToolBlockManager(
+    toolCallId: string,
+    sessionId?: string
+  ): BlockManager | undefined {
+    if (sessionId) {
+      const session = this.sessionStates.get(sessionId);
+      if (session) {
+        return this.getToolBlockStream(session, toolCallId)?.blockManager;
+      }
+    }
+    const active = this.getOrCreateSessionState();
+    const activeStream = this.getToolBlockStream(active, toolCallId);
+    if (activeStream) return activeStream.blockManager;
+
+    for (const session of this.sessionStates.values()) {
+      const stream = this.getToolBlockStream(session, toolCallId);
+      if (stream) return stream.blockManager;
+    }
+    return undefined;
   }
 
   /** Aggregate tool snapshots across all active streams. */
-  getToolsSnapshot(): Record<string, Tool> {
+  getToolsSnapshot(sessionId?: string): Record<string, Tool> {
     const tools: Record<string, Tool> = {};
-    for (const stream of this.streams.values()) {
+    if (sessionId) {
+      const session = this.sessionStates.get(sessionId);
+      if (session) {
+        for (const stream of session.streams.values()) {
+          Object.assign(tools, stream.blockManager.getToolsSnapshot());
+        }
+      }
+      return tools;
+    }
+    const active = this.getOrCreateSessionState();
+    for (const stream of active.streams.values()) {
       Object.assign(tools, stream.blockManager.getToolsSnapshot());
     }
     return tools;
@@ -414,29 +560,38 @@ export class MessageListComponent implements MessageHandler {
    * streams never share blocks. An empty or absent messageId continues the
    * current stream (backward-compatible fallback).
    */
-  private ensureStream(messageId: string | null): MessageStream {
+  private ensureStream(
+    session: SessionMessageState,
+    messageId: string | null
+  ): MessageStream {
     if (messageId !== null && messageId !== "") {
-      const existing = this.streams.get(messageId);
+      const existing = session.streams.get(messageId);
       if (existing) {
-        this.currentStreamId = messageId;
+        session.currentStreamId = messageId;
         return existing;
       }
-      if (this.currentStreamId !== null) {
-        this.finalizeStream(this.currentStreamId);
+      if (session.currentStreamId !== null) {
+        this.finalizeStream(session, session.currentStreamId);
       }
-      return this.createStream(messageId);
+      return this.createStream(session, messageId);
     }
 
-    if (this.currentStreamId !== null) {
-      const current = this.streams.get(this.currentStreamId);
+    if (session.currentStreamId !== null) {
+      const current = session.streams.get(session.currentStreamId);
       if (current) return current;
     }
-    return this.createStream("");
+    return this.createStream(session, "");
   }
 
-  private createStream(messageId: string): MessageStream {
-    const messageEl = this.addMessage("", "assistant");
-    if (this.elements.typingIndicatorEl.classList.contains("visible")) {
+  private createStream(
+    session: SessionMessageState,
+    messageId: string
+  ): MessageStream {
+    const messageEl = this.addMessageToSession(session, "", "assistant");
+    if (
+      session.sessionId === (this.activeSessionId || "default") &&
+      this.elements.typingIndicatorEl.classList.contains("visible")
+    ) {
       messageEl.appendChild(this.elements.typingIndicatorEl);
     }
     const stream: MessageStream = {
@@ -444,8 +599,8 @@ export class MessageListComponent implements MessageHandler {
       messageEl,
       blockManager: new BlockManager(this.ctx),
     };
-    this.streams.set(messageId, stream);
-    this.currentStreamId = messageId;
+    session.streams.set(messageId, stream);
+    session.currentStreamId = messageId;
     return stream;
   }
 
@@ -454,8 +609,8 @@ export class MessageListComponent implements MessageHandler {
    * DOM) until the next turn resets, so resumed chunks and getTools()
    * lookups keep working.
    */
-  private finalizeStream(streamId: string): void {
-    const stream = this.streams.get(streamId);
+  private finalizeStream(session: SessionMessageState, streamId: string): void {
+    const stream = session.streams.get(streamId);
     if (!stream) return;
     stream.blockManager.finalizeAll();
   }
@@ -465,29 +620,50 @@ export class MessageListComponent implements MessageHandler {
    * running tool in one stream is not marked completed merely because
    * another stream started), then finalize every stream.
    */
-  private finalizeAllStreams(): void {
-    for (const id of Array.from(this.streams.keys())) {
-      const stream = this.streams.get(id);
+  private finalizeAllStreams(session: SessionMessageState): void {
+    for (const id of Array.from(session.streams.keys())) {
+      const stream = session.streams.get(id);
       if (!stream) continue;
       stream.blockManager.clearStaleRunningToolIndicators();
-      this.finalizeStream(id);
+      this.finalizeStream(session, id);
     }
   }
 
-  private resetStreams(): void {
+  private resetStreams(session: SessionMessageState): void {
     this.dismissBlockFocus();
-    this.streams.clear();
-    this.currentStreamId = null;
+    session.streams.clear();
+    session.currentStreamId = null;
   }
 
-  /** Return the generation state. */
-  getIsGenerating(): boolean {
-    return this.isGenerating;
+  /** Return the generation state for a session. */
+  getIsGenerating(sessionId?: string): boolean {
+    const session = this.getOrCreateSessionState(sessionId);
+    return session.isGenerating;
   }
 
-  addMessage(
-    text: string,
-    type: MessageType,
+  private setGenerating(
+    session: SessionMessageState,
+    isGenerating: boolean
+  ): void {
+    session.isGenerating = isGenerating;
+    if (session.sessionId === (this.activeSessionId || "default")) {
+      if (isGenerating) {
+        this.showTypingIndicator(session);
+        this.scrollToBottom(true);
+      } else {
+        this.hideTypingIndicator();
+      }
+      this.onGeneratingChange?.(isGenerating);
+    }
+  }
+
+  /**
+   * Appends a message to the specified session's container.
+   */
+  addMessageToSession(
+    session: SessionMessageState,
+    text = "",
+    type: MessageType = "user",
     mentions?: Mention[]
   ): HTMLElement {
     const { doc } = this.ctx;
@@ -510,45 +686,91 @@ export class MessageListComponent implements MessageHandler {
       messageEl.appendChild(this.renderMessageText(text, type, mentions));
     }
 
-    this.elements.messagesEl.appendChild(messageEl);
-    this.scrollToBottom(type === "user");
-
-    if (text) {
-      this.announceToScreenReader(label + ": " + text.substring(0, 100));
+    session.containerEl.appendChild(messageEl);
+    if (session.sessionId === (this.activeSessionId || "default")) {
+      this.scrollToBottom(type === "user");
+      if (text) {
+        this.announceToScreenReader(label + ": " + text.substring(0, 100));
+      }
+      this.updateViewState();
     }
-
-    this.updateViewState();
     return messageEl;
   }
 
+  /**
+   * Appends a message to the active session's container.
+   */
+  addMessage(
+    text = "",
+    type: MessageType = "user",
+    mentions?: Mention[]
+  ): HTMLElement {
+    return this.addMessageToSession(
+      this.getOrCreateSessionState(),
+      text,
+      type,
+      mentions
+    );
+  }
+
   updateViewState(): void {
-    const hasMessages = this.elements.messagesEl.children.length > 0;
+    const active = this.sessionStates.get(this.activeSessionId || "default");
+    const hasMessages = Boolean(
+      active && active.containerEl.children.length > 0
+    );
     this.elements.welcomeView.style.display = !hasMessages ? "flex" : "none";
     this.elements.containerEl.style.display = hasMessages ? "flex" : "none";
   }
 
-  clear(): void {
-    this.elements.messagesEl.innerHTML = "";
-    this.resetStreams();
-    this.elicitationBlocks.clear();
-    this.updateViewState();
+  clear(sessionId?: string): void {
+    if (!sessionId) {
+      this.elements.messagesEl.innerHTML = "";
+      for (const state of this.sessionStates.values()) {
+        this.resetStreams(state);
+        state.elicitationBlocks.clear();
+        state.isGenerating = false;
+      }
+      this.sessionStates.clear();
+      this.hideTypingIndicator();
+      this.updateViewState();
+      return;
+    }
+    const state = this.sessionStates.get(sessionId);
+    if (state) {
+      state.containerEl.innerHTML = "";
+      this.resetStreams(state);
+      state.elicitationBlocks.clear();
+      state.isGenerating = false;
+    }
+    if (sessionId === (this.activeSessionId || "default")) {
+      this.hideTypingIndicator();
+      this.updateViewState();
+    }
   }
 
-  showTypingIndicator(): void {
+  showTypingIndicator(session?: SessionMessageState): void {
+    const targetSession = session || this.getOrCreateSessionState();
+    if (
+      targetSession.sessionId !== (this.activeSessionId || "default") &&
+      this.activeSessionId !== null
+    ) {
+      return;
+    }
     this.elements.typingIndicatorEl.classList.add("visible");
     const stream =
-      this.currentStreamId !== null
-        ? this.streams.get(this.currentStreamId)
+      targetSession.currentStreamId !== null
+        ? targetSession.streams.get(targetSession.currentStreamId)
         : undefined;
     if (stream) {
       stream.messageEl.appendChild(this.elements.typingIndicatorEl);
     } else {
-      this.elements.messagesEl.appendChild(this.elements.typingIndicatorEl);
+      targetSession.containerEl.appendChild(this.elements.typingIndicatorEl);
     }
   }
 
   hideTypingIndicator(): void {
     this.elements.typingIndicatorEl.classList.remove("visible");
+    this.elements.typingIndicatorEl.remove();
   }
 
   scrollToBottom(force = false): void {
@@ -565,8 +787,9 @@ export class MessageListComponent implements MessageHandler {
 
   scrollToPreviousUserMessage(messageEl: HTMLElement): void {
     this.disableAutoScroll();
+    const active = this.getOrCreateSessionState();
     const allMessages = Array.from(
-      this.elements.messagesEl.querySelectorAll(".message")
+      active.containerEl.querySelectorAll(".message")
     );
     const currentIdx = allMessages.indexOf(messageEl);
     if (currentIdx <= 0) return;
@@ -770,21 +993,6 @@ export class MessageListComponent implements MessageHandler {
   }
 
   // -------------------------------------------------------------------
-  // Generating state
-  // -------------------------------------------------------------------
-
-  private setGenerating(isGenerating: boolean): void {
-    this.isGenerating = isGenerating;
-    if (isGenerating) {
-      this.showTypingIndicator();
-      this.scrollToBottom(true);
-    } else {
-      this.hideTypingIndicator();
-    }
-    this.onGeneratingChange?.(isGenerating);
-  }
-
-  // -------------------------------------------------------------------
   // Message text rendering (unchanged logic)
   // -------------------------------------------------------------------
 
@@ -879,6 +1087,58 @@ export class MessageListComponent implements MessageHandler {
     }
 
     return textEl;
+  }
+
+  // -------------------------------------------------------------------
+  // Multi-session State Serialization
+  // -------------------------------------------------------------------
+
+  saveSessionState(sessionId?: string): MessageListSessionState {
+    const session = this.getOrCreateSessionState(sessionId);
+    return {
+      nodes: Array.from(session.containerEl.childNodes),
+      streams: new Map(session.streams),
+      currentStreamId: session.currentStreamId,
+      isGenerating: session.isGenerating,
+      elicitationBlocks: new Map(session.elicitationBlocks),
+      availableCommands: [...session.availableCommands],
+    };
+  }
+
+  restoreSessionState(
+    state?: MessageListSessionState,
+    sessionId?: string
+  ): void {
+    const session = this.getOrCreateSessionState(sessionId);
+    session.containerEl.innerHTML = "";
+    this.resetStreams(session);
+    session.elicitationBlocks.clear();
+    if (state) {
+      for (const node of state.nodes) {
+        session.containerEl.appendChild(node);
+      }
+      session.streams = new Map(state.streams);
+      session.currentStreamId = state.currentStreamId;
+      session.elicitationBlocks = new Map(state.elicitationBlocks);
+      session.availableCommands = [...state.availableCommands];
+      session.isGenerating = state.isGenerating;
+      if (session.sessionId === (this.activeSessionId || "default")) {
+        if (state.isGenerating) {
+          this.showTypingIndicator(session);
+        } else {
+          this.hideTypingIndicator();
+        }
+      }
+    } else {
+      session.isGenerating = false;
+      if (session.sessionId === (this.activeSessionId || "default")) {
+        this.hideTypingIndicator();
+      }
+    }
+    if (session.sessionId === (this.activeSessionId || "default")) {
+      this.updateViewState();
+      this.scrollToBottom();
+    }
   }
 
   // -------------------------------------------------------------------

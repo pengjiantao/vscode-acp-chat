@@ -40,13 +40,15 @@ export function validateAgent(agent: AgentConfig): ValidationResult {
     };
   }
 
-  if (!Array.isArray(agent.args)) {
+  if (agent.args !== undefined && !Array.isArray(agent.args)) {
     return { valid: false, error: "Agent args must be an array" };
   }
 
-  for (const arg of agent.args) {
-    if (typeof arg !== "string") {
-      return { valid: false, error: "Agent args must be strings" };
+  if (Array.isArray(agent.args)) {
+    for (const arg of agent.args) {
+      if (typeof arg !== "string") {
+        return { valid: false, error: "Agent args must be strings" };
+      }
     }
   }
 

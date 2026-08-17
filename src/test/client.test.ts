@@ -179,6 +179,29 @@ suite("ACPClient with Mock Server", () => {
       assert.deepStrictEqual(states2, ["connecting", "connected"]);
     });
 
+    test("dispose clears all listener sets and handlers", async () => {
+      client.setOnStateChange(() => {});
+      client.setOnSessionUpdate(() => {});
+      client.setOnStderr(() => {});
+      client.setOnReadTextFile(async () => ({ content: "" }));
+      client.setOnWriteTextFile(async () => ({}));
+      client.setOnPermissionRequest(async () => null);
+
+      assert.strictEqual((client as any).stateChangeListeners.size, 1);
+      assert.strictEqual((client as any).sessionUpdateListeners.size, 1);
+      assert.strictEqual((client as any).stderrListeners.size, 1);
+      assert.ok((client as any).readTextFileHandler);
+
+      client.dispose();
+
+      assert.strictEqual((client as any).stateChangeListeners.size, 0);
+      assert.strictEqual((client as any).sessionUpdateListeners.size, 0);
+      assert.strictEqual((client as any).stderrListeners.size, 0);
+      assert.strictEqual((client as any).readTextFileHandler, null);
+      assert.strictEqual((client as any).writeTextFileHandler, null);
+      assert.strictEqual((client as any).permissionRequestListeners.size, 0);
+    });
+
     test("should throw if already connected", async () => {
       await client.connect();
 
@@ -552,6 +575,34 @@ suite("ACPClient with Mock Server", () => {
         );
         // Verify it's NOT nested in an 'image' property
         assert.strictEqual(capturedPrompt[1].image, undefined);
+      } finally {
+        agentCtx.request = originalRequest;
+      }
+    });
+
+    test("should use explicit sessionId when passed to sendMessage", async () => {
+      await client.connect();
+      await client.newSession("/test/dir");
+
+      const agentCtx = (client as unknown as { agentCtx: any }).agentCtx;
+      const originalRequest = agentCtx.request;
+      let capturedSessionId: string | null = null;
+      agentCtx.request = async (method: string, params: any) => {
+        if (method === "session/prompt") {
+          capturedSessionId = params.sessionId;
+          return { stopReason: "end_turn" };
+        }
+        return originalRequest.call(agentCtx, method, params);
+      };
+
+      try {
+        await client.sendMessage(
+          "Hello session 1",
+          [],
+          [],
+          "explicit-session-id"
+        );
+        assert.strictEqual(capturedSessionId, "explicit-session-id");
       } finally {
         agentCtx.request = originalRequest;
       }
@@ -989,7 +1040,7 @@ suite("ACPClient with configOptions format", () => {
       }
     });
 
-    test("should close active session and clear currentSessionId", async () => {
+    test("should close active session and remove from session metadata map", async () => {
       const closeSpawn = (
         _command: string,
         _args: string[],
@@ -1015,20 +1066,20 @@ suite("ACPClient with configOptions format", () => {
         await closeClient.connect();
         const session = await closeClient.newSession("/test/dir");
 
-        assert.strictEqual(
-          closeClient.getCurrentSessionId(),
-          session.sessionId
-        );
+        assert.ok(closeClient.getSessionMetadata(session.sessionId));
 
         await closeClient.closeSession({ sessionId: session.sessionId });
 
-        assert.strictEqual(closeClient.getCurrentSessionId(), null);
+        assert.strictEqual(
+          closeClient.getSessionMetadata(session.sessionId),
+          null
+        );
       } finally {
         closeClient.dispose();
       }
     });
 
-    test("should not clear currentSessionId when closing another session", async () => {
+    test("should not remove other session metadata when closing another session", async () => {
       const closeSpawn = (
         _command: string,
         _args: string[],
@@ -1057,7 +1108,11 @@ suite("ACPClient with configOptions format", () => {
 
         await closeClient.closeSession({ sessionId: first.sessionId });
 
-        assert.strictEqual(closeClient.getCurrentSessionId(), second.sessionId);
+        assert.strictEqual(
+          closeClient.getSessionMetadata(first.sessionId),
+          null
+        );
+        assert.ok(closeClient.getSessionMetadata(second.sessionId));
       } finally {
         closeClient.dispose();
       }

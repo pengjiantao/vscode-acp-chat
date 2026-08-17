@@ -1,11 +1,10 @@
 import * as vscode from "vscode";
-import { ACPClient } from "./acp/client";
+import { AgentPool } from "./acp/agent-pool";
 import { ChatViewProvider } from "./views/chat";
 import { getAgentsWithStatus } from "./acp/agents";
-import { getWorkspaceRoot } from "./utils/workspace";
 
-/** VSCode ACP extension client instance. */
-let acpClient: ACPClient | undefined;
+/** VSCode ACP agent pool managing multiple agent connections. */
+let agentPool: AgentPool | undefined;
 /** Chat view provider instance. */
 let chatProvider: ChatViewProvider | undefined;
 /** Status bar item showing connection state. */
@@ -25,11 +24,11 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Initialize ACP client and chat view provider
-  acpClient = new ACPClient();
+  // Initialize AgentPool and ChatViewProvider
+  agentPool = new AgentPool();
   chatProvider = new ChatViewProvider(
     context.extensionUri,
-    acpClient,
+    agentPool,
     context.globalState
   );
 
@@ -44,24 +43,21 @@ export function activate(context: vscode.ExtensionContext) {
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
 
-  // Update status bar on connection state changes
-  acpClient.setOnStateChange((state) => {
-    updateStatusBar(state);
-  });
-
   // Watch for configuration changes to reload MCP servers or refresh agents
   const mcpConfigWatcher = vscode.workspace.onDidChangeConfiguration(
     async (e) => {
-      if (e.affectsConfiguration("mcp")) {
+      if (
+        e.affectsConfiguration("mcp") ||
+        e.affectsConfiguration("vscode-acp-chat.passMcpServers")
+      ) {
         try {
-          await acpClient?.reloadMcpServers();
+          const clients = agentPool?.getActiveClients() || [];
+          for (const client of clients) {
+            await client.reloadMcpServers();
+          }
         } catch (error) {
           console.error("[Extension] Failed to reload MCP servers:", error);
         }
-      }
-
-      if (e.affectsConfiguration("vscode-acp-chat.passMcpServers")) {
-        await acpClient?.reloadMcpServers();
       }
 
       if (e.affectsConfiguration("vscode-acp-chat.customAgents")) {
@@ -84,19 +80,10 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // Open chat view and connect to ACP server
+  // Open chat view
   context.subscriptions.push(
     vscode.commands.registerCommand("vscode-acp-chat.startChat", async () => {
       await vscode.commands.executeCommand("vscode-acp-chat.chatView.focus");
-
-      if (!acpClient?.isConnected()) {
-        try {
-          await acpClient?.connect(getWorkspaceRoot());
-          vscode.window.showInformationMessage("VSCode ACP connected");
-        } catch (error) {
-          vscode.window.showErrorMessage(`Failed to connect: ${error}`);
-        }
-      }
     })
   );
 
@@ -119,67 +106,48 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("vscode-acp-chat.loadHistory", async () => {
       if (!chatProvider) return;
 
-      if (!chatProvider.getSupportsLoadSession()) {
-        vscode.window.showInformationMessage(
-          "The current agent does not support loading history sessions."
-        );
-        return;
-      }
-
       try {
-        const sessions = await chatProvider.listSessions();
+        const sessions = await chatProvider.listAllSessions();
 
         if (sessions.length === 0) {
           vscode.window.showInformationMessage(
-            "No history sessions available for the current agent."
+            "No history sessions available."
           );
           return;
         }
 
-        const supportsDelete = chatProvider.getSupportsDeleteSession();
-
         const items = sessions.map((s) => ({
           label: s.title,
-          description: s.sessionId,
+          description: `[${s.agentName || s.agentId}] ${s.sessionId}`,
           detail: `${vscode.workspace.asRelativePath(s.cwd)} · ${new Date(s.updatedAt).toLocaleString()}`,
           sessionId: s.sessionId,
-          buttons: supportsDelete
-            ? [
-                {
-                  iconPath: new vscode.ThemeIcon("trash"),
-                  tooltip: "Delete this session",
-                },
-              ]
-            : [],
+          agentId: s.agentId,
+          buttons: [
+            {
+              iconPath: new vscode.ThemeIcon("trash"),
+              tooltip: "Delete this session",
+            },
+          ],
         }));
 
-        const quickPick = vscode.window.createQuickPick();
+        const quickPick = vscode.window.createQuickPick<(typeof items)[0]>();
         quickPick.items = items;
         quickPick.placeholder = "Select a conversation to load";
         quickPick.title = "VSCode ACP: Load History";
-
-        const currentSessionId = acpClient?.getCurrentSessionId();
-        if (currentSessionId) {
-          const activeItem = items.find(
-            (item) => item.sessionId === currentSessionId
-          );
-          if (activeItem) {
-            quickPick.activeItems = [activeItem];
-          }
-        }
 
         quickPick.onDidAccept(async () => {
           const selected = quickPick.selectedItems[0];
           if (selected && chatProvider) {
             quickPick.dispose();
             await chatProvider.loadHistorySession(
-              (selected as (typeof items)[0]).sessionId
+              selected.sessionId,
+              selected.agentId
             );
           }
         });
 
         quickPick.onDidTriggerItemButton(async (e) => {
-          const item = e.item as (typeof items)[0];
+          const item = e.item;
           const confirmed = await vscode.window.showWarningMessage(
             `Delete session "${item.label}"?`,
             { modal: true },
@@ -187,9 +155,12 @@ export function activate(context: vscode.ExtensionContext) {
           );
           if (confirmed === "Delete" && chatProvider) {
             try {
-              await chatProvider.deleteHistorySession(item.sessionId);
+              await chatProvider.deleteHistorySession(
+                item.agentId,
+                item.sessionId
+              );
               quickPick.items = quickPick.items.filter(
-                (qi) => (qi as (typeof items)[0]).sessionId !== item.sessionId
+                (qi) => qi.sessionId !== item.sessionId
               );
               if (quickPick.items.length === 0) {
                 quickPick.dispose();
@@ -208,7 +179,6 @@ export function activate(context: vscode.ExtensionContext) {
         });
 
         quickPick.onDidHide(() => quickPick.dispose());
-
         quickPick.show();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -224,15 +194,8 @@ export function activate(context: vscode.ExtensionContext) {
       async () => {
         if (!chatProvider) return;
 
-        if (!chatProvider.getSupportsDeleteSession()) {
-          vscode.window.showInformationMessage(
-            "The current agent does not support deleting history sessions."
-          );
-          return;
-        }
-
         try {
-          const sessions = await chatProvider.listSessions();
+          const sessions = await chatProvider.listAllSessions();
 
           if (sessions.length === 0) {
             vscode.window.showInformationMessage(
@@ -243,9 +206,10 @@ export function activate(context: vscode.ExtensionContext) {
 
           const items = sessions.map((s) => ({
             label: s.title,
-            description: s.sessionId,
+            description: `[${s.agentName || s.agentId}] ${s.sessionId}`,
             detail: `${vscode.workspace.asRelativePath(s.cwd)} · ${new Date(s.updatedAt).toLocaleString()}`,
             sessionId: s.sessionId,
+            agentId: s.agentId,
           }));
 
           const selected = await vscode.window.showQuickPick(items, {
@@ -260,7 +224,10 @@ export function activate(context: vscode.ExtensionContext) {
               "Delete"
             );
             if (confirmed === "Delete") {
-              await chatProvider.deleteHistorySession(selected.sessionId);
+              await chatProvider.deleteHistorySession(
+                selected.agentId,
+                selected.sessionId
+              );
               vscode.window.showInformationMessage(
                 `Session "${selected.label}" deleted.`
               );
@@ -277,51 +244,10 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // Switch to a different AI agent
+  // Select AI agent and start a session
   context.subscriptions.push(
     vscode.commands.registerCommand("vscode-acp-chat.selectAgent", async () => {
-      const agents = getAgentsWithStatus();
-      const availableAgents = agents.filter((a) => a.available);
-      const currentAgentId = acpClient?.getAgentId();
-
-      const items = availableAgents.map((a) => ({
-        label: a.name,
-        description: a.id,
-        id: a.id,
-        detail: a.id === currentAgentId ? "$(check) Currently selected" : "",
-      }));
-
-      const quickPick = vscode.window.createQuickPick<(typeof items)[number]>();
-      quickPick.items = items;
-      quickPick.placeholder = "Select an AI agent";
-      quickPick.title = "VSCode ACP: Select Agent";
-
-      if (currentAgentId) {
-        const activeItem = items.find((item) => item.id === currentAgentId);
-        if (activeItem) {
-          quickPick.activeItems = [activeItem];
-        }
-      }
-
-      quickPick.onDidAccept(async () => {
-        const selected = quickPick.selectedItems[0];
-        quickPick.dispose();
-        if (selected) {
-          try {
-            await chatProvider?.switchAgent(selected.id);
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error);
-            vscode.window.showErrorMessage(
-              `Failed to switch agent: ${message}`
-            );
-          }
-        }
-      });
-
-      quickPick.onDidHide(() => quickPick.dispose());
-
-      quickPick.show();
+      await chatProvider?.showNewChatQuickPick();
     })
   );
 
@@ -360,8 +286,6 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Try terminal selection if no editor selection
         if (activeTerminal) {
-          // VS Code doesn't have a direct API to get terminal selection text.
-          // The standard workaround is to use the "copySelection" command and then read from clipboard.
           await vscode.commands.executeCommand(
             "workbench.action.terminal.copySelection"
           );
@@ -394,7 +318,6 @@ export function activate(context: vscode.ExtensionContext) {
         let selection = "";
         let terminalName = "Terminal";
 
-        // If invoked from terminal/context, args might contain the selection and/or terminal
         if (args && typeof args === "object") {
           const argsObj = args as Record<string, unknown>;
           if (
@@ -420,7 +343,6 @@ export function activate(context: vscode.ExtensionContext) {
           terminalName = activeTerminal.name;
         }
 
-        // Fallback to clipboard method if selection wasn't passed via args
         if (!selection && activeTerminal) {
           await vscode.commands.executeCommand(
             "workbench.action.terminal.copySelection"
@@ -446,7 +368,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push({
     dispose: () => {
-      acpClient?.dispose();
+      agentPool?.dispose();
     },
   });
 }
@@ -494,5 +416,5 @@ function updateStatusBar(
  * Cleans up resources when the extension is deactivated.
  */
 export function deactivate() {
-  acpClient?.dispose();
+  agentPool?.dispose();
 }

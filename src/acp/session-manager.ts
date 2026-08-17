@@ -1,23 +1,14 @@
 /**
  * Session management abstraction for VSCode ACP.
  *
- * Provides a pluggable architecture for session history:
+ * Provides session history and persistence across agents:
  *   - `SessionInfo`: common metadata for a session entry
- *   - `SessionManager`: abstract base class defining the contract
- *   - `AgentSessionManager`: concrete implementation that delegates to the ACP agent
- *     and persists a local cache of sessions for agents that do not support
- *     the `session/list` capability.
- *   - Future: `LocalSessionManager`, `HybridSessionManager`, etc.
+ *   - `StoredSessionRecord`: locally persisted session data
+ *   - `LocalSessionManager`: concrete implementation managing local session history across agents
  */
 
 import * as vscode from "vscode";
-import type {
-  NewSessionResponse,
-  ListSessionsResponse,
-  SessionNotification,
-  SessionInfoUpdate,
-} from "@agentclientprotocol/sdk";
-import { ACPClient } from "./client";
+import type { SessionInfoUpdate } from "@agentclientprotocol/sdk";
 
 // ---------------------------------------------------------------------------
 // Common types
@@ -27,6 +18,10 @@ import { ACPClient } from "./client";
 export interface SessionInfo {
   /** Unique session identifier (used by the agent / protocol). */
   sessionId: string;
+  /** Agent identifier that owns this session. */
+  agentId: string;
+  /** Human-readable agent display name. */
+  agentName?: string;
   /** Human-readable title – may be generated from the first message or provided by the agent. */
   title: string;
   /** Working directory the session was created in. */
@@ -40,6 +35,7 @@ export interface SessionInfo {
 /** A locally persisted session record. */
 export interface StoredSessionRecord {
   sessionId: string;
+  agentId: string;
   title: string;
   cwd: string;
   /** ISO-8601 timestamp of when the session was first recorded locally. */
@@ -78,9 +74,6 @@ export interface SessionStore {
 
 /**
  * Factory that creates a per-agent `SessionStore`.
- *
- * This allows sessions recorded for different agents to be isolated from
- * each other while keeping `AgentSessionManager` agnostic of VS Code APIs.
  */
 export type SessionStoreFactory = (agentId: string) => SessionStore;
 
@@ -90,9 +83,8 @@ export type SessionStoreFactory = (agentId: string) => SessionStore;
 
 /**
  * In-memory `SessionStore`. Data is lost when the extension host exits.
- * Useful when `enablePersistentSessions` is `false`.
  */
-export function inMemorySessionStore(): SessionStore {
+export function inMemorySessionStore(defaultAgentId = "default"): SessionStore {
   const sessions = new Map<string, StoredSessionRecord>();
   return {
     async read() {
@@ -102,6 +94,9 @@ export function inMemorySessionStore(): SessionStore {
       return sessions.get(sessionId);
     },
     async writeOne(session: StoredSessionRecord) {
+      if (!session.agentId) {
+        session.agentId = defaultAgentId;
+      }
       sessions.set(session.sessionId, session);
     },
     async deleteOne(sessionId: string) {
@@ -119,12 +114,17 @@ export function inMemorySessionStore(): SessionStore {
 export function globalStateSessionStore(
   globalState: vscode.Memento,
   prefix: string,
-  cleanupOptions?: SessionCleanupOptions
+  cleanupOptions?: SessionCleanupOptions,
+  inferredAgentId?: string
 ): SessionStore {
   const cache = new Map<string, StoredSessionRecord>();
   const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
   const WRITE_DEBOUNCE_MS = 1000;
   let loaded = false;
+
+  // Infer agent ID from prefix if not provided (e.g. "vscode-acp-chat.localSessions.v1.opencode" -> "opencode")
+  const agentIdFromPrefix =
+    inferredAgentId ?? prefix.split(".").pop() ?? "default";
 
   function scheduleFlush(sessionId: string): void {
     const existing = pendingWrites.get(sessionId);
@@ -174,7 +174,12 @@ export function globalStateSessionStore(
     const keys = globalState.keys().filter((k) => k.startsWith(`${prefix}.`));
     for (const key of keys) {
       const record = globalState.get<StoredSessionRecord>(key);
-      if (record) cache.set(record.sessionId, record);
+      if (record) {
+        if (!record.agentId) {
+          record.agentId = agentIdFromPrefix;
+        }
+        cache.set(record.sessionId, record);
+      }
     }
     if (cleanupOptions) {
       cleanup(cleanupOptions).catch((err) =>
@@ -194,13 +199,21 @@ export function globalStateSessionStore(
       let record = cache.get(sessionId);
       if (!record) {
         record = globalState.get<StoredSessionRecord>(`${prefix}.${sessionId}`);
-        if (record) cache.set(sessionId, record);
+        if (record) {
+          if (!record.agentId) {
+            record.agentId = agentIdFromPrefix;
+          }
+          cache.set(sessionId, record);
+        }
       }
       return record;
     },
 
     async writeOne(session: StoredSessionRecord): Promise<void> {
       ensureLoaded();
+      if (!session.agentId) {
+        session.agentId = agentIdFromPrefix;
+      }
       cache.set(session.sessionId, session);
       scheduleFlush(session.sessionId);
     },
@@ -217,186 +230,45 @@ export function globalStateSessionStore(
 }
 
 // ---------------------------------------------------------------------------
-// Abstract base class
-// ---------------------------------------------------------------------------
-
+// Local-only Multi-Agent Session Manager
 /**
- * Contract that every concrete session manager must fulfil.
+ * Local session history manager for VSCode ACP.
  *
- * Design goals:
- *   - Decouple session storage / retrieval from the rest of the extension
- *   - Allow future implementations (local cache, cloud sync, …) without
- *     touching ChatViewProvider or extension.ts
- *   - Graceful degradation: when the agent doesn't support `loadSession`,
- *     `listSessions()` simply returns an empty array.
+ * Manages persisted and in-memory session metadata across multiple agents,
+ * workspaces, and local session stores with automatic timestamp sorting and
+ * key-based indexing.
  */
-export abstract class SessionManager {
-  /** Human-readable name of this implementation (shown in debug / diagnostics). */
-  abstract readonly kind: string;
-
-  /**
-   * Return all discoverable sessions for the current agent + working directory.
-   *
-   * Sorted newest-first so the QuickPick shows the most recent session at the top.
-   */
-  abstract listSessions(cwd: string): Promise<SessionInfo[]>;
-
-  /**
-   * Load (resume) an existing session.
-   *
-   * The agent is expected to stream the full conversation history back via
-   * `session/notification` messages. The caller's existing
-   * `handleSessionUpdate` pipeline should render these without changes.
-   */
-  abstract loadSession(
-    sessionId: string,
-    cwd: string
-  ): Promise<LoadSessionResult>;
-
-  /**
-   * Create a new session via the agent and record it in the local cache.
-   *
-   * This is the single entry-point for session creation. The manager
-   * delegates to the ACP client and then persists the session locally so it
-   * can be listed later even when the agent does not support `session/list`.
-   */
-  abstract newSession(workingDirectory: string): Promise<NewSessionResponse>;
-
-  /**
-   * Whether this manager can actually load sessions (agent advertises the
-   * `loadSession` capability). When `false`, `loadSession()` may still be
-   * called but is expected to fail or fall back.
-   */
-  abstract get supportsLoadSession(): boolean;
-
-  /**
-   * Whether this manager can list discoverable sessions (agent advertises the
-   * `sessionCapabilities.list` capability). When `false`, `listSessions()` may
-   * still be called but is expected to fall back to locally stored records.
-   */
-  abstract get supportsListSessions(): boolean;
-
-  /**
-   * Whether this manager can delete sessions (agent advertises the
-   * `sessionCapabilities.delete` capability). When `false`, `deleteSession()`
-   * should still remove the session from the local cache but cannot ask the
-   * agent to delete it server-side.
-   */
-  abstract get supportsDeleteSession(): boolean;
-
-  /**
-   * Delete an existing session.
-   *
-   * If the agent advertises `sessionCapabilities.delete`, the request is
-   * forwarded to the agent via `session/delete`. The session is also removed
-   * from the local cache regardless.
-   */
-  abstract deleteSession(sessionId: string): Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
-// Agent-backed implementation
-// ---------------------------------------------------------------------------
-
-/**
- * Manages sessions via the ACP agent's native session methods.
- *
- * Lifecycle:
- *   1. `connect()` is called on the ACPClient (once per agent switch / startup)
- *   2. During `initialize`, the agent reports `agentCapabilities`
- *   3. This class reads `loadSession` and `sessionCapabilities.list` and
- *      gates `loadSession` / `listSessions` accordingly.
- *
- * If the agent does **not** advertise `loadSession`, `supportsLoadSession` is
- * `false` and the UI can hide or disable loading of history sessions.
- * If the agent does **not** advertise `sessionCapabilities.list`,
- * `supportsListSessions` is `false` and `listSessions()` falls back to the
- * local session cache stored in `globalState`.
- */
-export class AgentSessionManager extends SessionManager {
-  readonly kind = "agent";
-
-  private _supportsLoadSession = false;
-  private _supportsListSessions = false;
-  private _supportsDeleteSession = false;
-  private _initialized = false;
-  private readonly _stores = new Map<string, SessionStore>();
+export class LocalSessionManager {
+  private readonly stores = new Map<string, SessionStore>();
 
   constructor(
-    private readonly acpClient: ACPClient,
-    private readonly storeFactory: SessionStoreFactory
-  ) {
-    super();
-  }
+    private readonly storeFactory: SessionStoreFactory,
+    private readonly globalState?: vscode.Memento
+  ) {}
 
-  private getStore(): SessionStore {
-    const agentId = this.acpClient.getAgentId();
-    let store = this._stores.get(agentId);
+  /**
+   * Retrieves or creates the session store for a specific agent.
+   */
+  getStore(agentId: string): SessionStore {
+    let store = this.stores.get(agentId);
     if (!store) {
       store = this.storeFactory(agentId);
-      this._stores.set(agentId, store);
+      this.stores.set(agentId, store);
     }
     return store;
   }
 
-  private _unsubscribeSessionUpdate: (() => void) | null = null;
-
-  /** Call after `acpClient.connect()` to read the agent capabilities. */
-  syncCapabilities(): void {
-    const caps = this.acpClient.getAgentCapabilities();
-    this._supportsLoadSession = caps?.loadSession ?? false;
-    this._supportsListSessions = !!caps?.sessionCapabilities?.list;
-    this._supportsDeleteSession = !!caps?.sessionCapabilities?.delete;
-    this._initialized = true;
-
-    this._unsubscribeSessionUpdate?.();
-    this._unsubscribeSessionUpdate = this.acpClient.setOnSessionUpdate(
-      async (notification: SessionNotification) => {
-        if (notification.update.sessionUpdate === "session_info_update") {
-          const sessionId =
-            notification.sessionId ?? this.acpClient.getCurrentSessionId();
-          if (sessionId) {
-            await this.applySessionInfoUpdate(
-              notification.update as SessionInfoUpdate,
-              sessionId
-            );
-          }
-        }
-      }
-    );
-  }
-
-  get supportsLoadSession(): boolean {
-    return this._supportsLoadSession;
-  }
-
-  get supportsListSessions(): boolean {
-    return this._supportsListSessions;
-  }
-
-  get supportsDeleteSession(): boolean {
-    return this._supportsDeleteSession;
-  }
-
   /**
-   * Create a new session via the agent and record it in the local cache.
+   * Records or updates a session record in the agent's store.
    */
-  async newSession(workingDirectory: string): Promise<NewSessionResponse> {
-    const response = await this.acpClient.newSession(workingDirectory);
-    await this.recordSession(response.sessionId, workingDirectory);
-    return response;
-  }
-
-  /**
-   * Record a session in the local cache.
-   */
-  private async recordSession(
+  async recordSession(
+    agentId: string,
     sessionId: string,
     cwd: string,
     title?: string
   ): Promise<void> {
     const now = new Date().toISOString();
-    const store = this.getStore();
+    const store = this.getStore(agentId);
     const existing = await store.readOne(sessionId);
 
     if (existing) {
@@ -409,6 +281,7 @@ export class AgentSessionManager extends SessionManager {
     } else {
       await store.writeOne({
         sessionId,
+        agentId,
         title: title ?? `Session ${sessionId}`,
         cwd,
         createdAt: now,
@@ -418,18 +291,16 @@ export class AgentSessionManager extends SessionManager {
   }
 
   /**
-   * Apply a `session_info_update` notification to the local cache.
+   * Applies an asynchronous session info update notification (e.g. title change) from an agent.
    */
-  private async applySessionInfoUpdate(
-    update: SessionInfoUpdate,
-    sessionId: string
+  async applySessionInfoUpdate(
+    agentId: string,
+    sessionId: string,
+    update: SessionInfoUpdate
   ): Promise<void> {
-    const store = this.getStore();
+    const store = this.getStore(agentId);
     const session = await store.readOne(sessionId);
-
-    if (!session) {
-      return;
-    }
+    if (!session) return;
 
     if (update.title !== undefined) {
       session.title = update.title ?? session.title;
@@ -442,147 +313,136 @@ export class AgentSessionManager extends SessionManager {
   }
 
   /**
-   * List sessions for the given working directory.
-   *
-   * The agent result is queried (and returned directly, without writing back
-   * to the local cache) only when the agent advertises `sessionCapabilities.list`
-   * **and** the `useAgentSessionList` setting is enabled. Otherwise, the local
-   * cache is filtered by `cwd` and returned as a fallback.
+   * Lists stored sessions for a specific agent, optionally filtered by working directory.
    */
-  async listSessions(cwd: string): Promise<SessionInfo[]> {
-    if (!this._initialized) {
-      throw new Error(
-        "AgentSessionManager not yet synced – call syncCapabilities() first"
-      );
-    }
-
-    const useAgentList = vscode.workspace
-      .getConfiguration("vscode-acp-chat")
-      .get<boolean>("useAgentSessionList", true);
-
-    if (!this._supportsListSessions || !useAgentList) {
-      if (useAgentList) {
-        // Agent doesn't advertise session/list – unexpected fallback
-        console.warn(
-          "[SessionManager] Agent does not support session/list; falling back to local cache"
-        );
-      } else {
-        // User opted out via useAgentSessionList – expected behavior
-        console.log(
-          "[SessionManager] useAgentSessionList is disabled; using local session cache"
-        );
-      }
-      return this.listLocalSessions(cwd);
-    }
-
-    try {
-      const response = await this.acpClient.listSessions({ cwd });
-      return this.mapAgentSessions(response, cwd);
-    } catch (error) {
-      // Agent call failed – fall back to local cache
-      console.warn(
-        "[SessionManager] Failed to list sessions from agent; falling back to local cache:",
-        error
-      );
-      return this.listLocalSessions(cwd);
-    }
-  }
-
-  /**
-   * Load a session via the ACP `session/load` method.
-   *
-   * The agent will stream the full conversation history back as
-   * `session/notification` messages, which the existing
-   * `handleSessionUpdate` pipeline in ChatViewProvider already handles.
-   *
-   * @throws If the agent doesn't support `loadSession` or isn't connected.
-   */
-  async loadSession(
-    sessionId: string,
-    cwd: string
-  ): Promise<LoadSessionResult> {
-    if (!this._supportsLoadSession) {
-      throw new Error(
-        "Current agent does not support the `loadSession` capability"
-      );
-    }
-
-    await this.acpClient.loadSession({ sessionId, cwd });
-
-    return {
-      sessionId,
-      supportedByAgent: true,
-    };
-  }
-
-  /**
-   * Delete an existing session via the ACP `session/delete` method.
-   *
-   * @throws If the agent doesn't support `sessionCapabilities.delete`.
-   */
-  async deleteSession(sessionId: string): Promise<void> {
-    if (!this._supportsDeleteSession) {
-      throw new Error(
-        "Current agent does not support the `session/delete` capability"
-      );
-    }
-
-    // Delete server-side first; if the agent call succeeds but the local
-    // store write fails, re-listing from the agent would reconcile.
-    await this.acpClient.deleteSession({ sessionId });
-
-    const store = this.getStore();
-    await store.deleteOne(sessionId);
-  }
-
-  /**
-   * Map agent-returned sessions to `SessionInfo` without touching the local
-   * cache.
-   *
-   * Per the ACP spec, the agent is responsible for filtering by `cwd` in
-   * `session/list`, so agent-returned sessions are trusted as-is. Re-filtering
-   * here with a case-sensitive path comparison broke agents on Windows (and
-   * other case-insensitive filesystems) that returned cwd paths in a different
-   * case than the client's requested path.
-   */
-  private mapAgentSessions(
-    response: ListSessionsResponse,
-    cwd: string
-  ): SessionInfo[] {
-    return response.sessions
-      .sort(
-        (a, b) =>
-          new Date(b.updatedAt ?? 0).getTime() -
-          new Date(a.updatedAt ?? 0).getTime()
-      )
-      .map((s) => ({
-        sessionId: s.sessionId,
-        title: s.title ?? `Session ${s.sessionId}`,
-        cwd: s.cwd ?? cwd,
-        updatedAt: s.updatedAt ?? new Date().toISOString(),
-      }));
-  }
-
-  /**
-   * Filter and sort the local session cache by `cwd`.
-   *
-   * Sorted newest-first by `updatedAt`.
-   */
-  private async listLocalSessions(cwd: string): Promise<SessionInfo[]> {
-    const store = this.getStore();
+  async listSessions(agentId: string, cwd?: string): Promise<SessionInfo[]> {
+    const store = this.getStore(agentId);
     const sessions = await store.read();
-
     return sessions
-      .filter((s) => s.cwd === cwd)
+      .filter((s) => !cwd || s.cwd === cwd)
       .sort(
         (a, b) =>
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       )
       .map((s) => ({
         sessionId: s.sessionId,
+        agentId: s.agentId || agentId,
         title: s.title,
         cwd: s.cwd,
         updatedAt: s.updatedAt,
       }));
+  }
+
+  /**
+   * Lists all stored sessions across all agents in the workspace.
+   *
+   * Utilizes a robust two-phase retrieval strategy:
+   * 1. Phase 1 (Persistent Scan): When `globalState` is available, scans all keys
+   *    matching `vscode-acp-chat.localSessions.v1.*` to retrieve sessions across all
+   *    configured agents (including agents that have not yet been instantiated in this session).
+   * 2. Phase 2 (Active Store Scan): Queries all active/in-memory `stores` to capture
+   *    un-flushed debounced writes or memory-only sessions (when persistent storage is disabled).
+   * 3. Deduplication & Ordering: Deduplicates records by `sessionId` and sorts descending by `updatedAt`.
+   */
+  async listAllSessions(cwd?: string): Promise<SessionInfo[]> {
+    const allSessions: SessionInfo[] = [];
+    const seenSessionIds = new Set<string>();
+
+    // Phase 1: If globalState is available, scan all agent session keys directly
+    if (this.globalState) {
+      const prefixRoot = "vscode-acp-chat.localSessions.v1.";
+      const keys = this.globalState
+        .keys()
+        .filter((k) => k.startsWith(prefixRoot));
+
+      for (const key of keys) {
+        const record = this.globalState.get<StoredSessionRecord>(key);
+        if (record && !seenSessionIds.has(record.sessionId)) {
+          if (!cwd || record.cwd === cwd) {
+            seenSessionIds.add(record.sessionId);
+            // Infer agentId from key if record lacks it
+            const parts = key.substring(prefixRoot.length).split(".");
+            const agentId = record.agentId || parts[0] || "default";
+            allSessions.push({
+              sessionId: record.sessionId,
+              agentId,
+              title: record.title,
+              cwd: record.cwd,
+              updatedAt: record.updatedAt,
+            });
+          }
+        }
+      }
+    }
+
+    // Phase 2: Also read from all instantiated stores in memory
+    for (const [agentId, store] of this.stores.entries()) {
+      const records = await store.read();
+      for (const record of records) {
+        if (!seenSessionIds.has(record.sessionId)) {
+          if (!cwd || record.cwd === cwd) {
+            seenSessionIds.add(record.sessionId);
+            allSessions.push({
+              sessionId: record.sessionId,
+              agentId: record.agentId || agentId,
+              title: record.title,
+              cwd: record.cwd,
+              updatedAt: record.updatedAt,
+            });
+          }
+        }
+      }
+    }
+
+    return allSessions.sort(
+      (a, b) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+  }
+
+  /**
+   * Finds a session record across active stores or persistent storage.
+   */
+  async findSession(
+    sessionId: string
+  ): Promise<StoredSessionRecord | undefined> {
+    for (const store of this.stores.values()) {
+      const record = await store.readOne(sessionId);
+      if (record) return record;
+    }
+
+    if (this.globalState) {
+      const prefixRoot = "vscode-acp-chat.localSessions.v1.";
+      const keys = this.globalState
+        .keys()
+        .filter((k) => k.startsWith(prefixRoot) && k.endsWith(`.${sessionId}`));
+      for (const key of keys) {
+        const record = this.globalState.get<StoredSessionRecord>(key);
+        if (record) {
+          if (!record.agentId) {
+            const parts = key.substring(prefixRoot.length).split(".");
+            record.agentId = parts[0] || "default";
+          }
+          return record;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Deletes a session record from the agent's store.
+   */
+  async deleteSession(agentId: string, sessionId: string): Promise<void> {
+    const store = this.getStore(agentId);
+    await store.deleteOne(sessionId);
+  }
+
+  get supportsLoadSession(): boolean {
+    return true;
+  }
+
+  get supportsDeleteSession(): boolean {
+    return true;
   }
 }

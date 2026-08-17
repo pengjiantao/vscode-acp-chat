@@ -25,7 +25,12 @@ suite("Mentions Logic", () => {
       notify: async () => {},
     };
     (client as any).agentCtx = mockAgentCtx;
-    (client as any).currentSessionId = "test-session";
+    (client as any).sessionMetadataMap.set("test-session", {
+      modes: null,
+      models: null,
+      genericConfigOptions: [],
+      commands: null,
+    });
 
     const mentions: Mention[] = [
       { name: "file.ts", path: "/path/file.ts", type: "file" },
@@ -33,8 +38,8 @@ suite("Mentions Logic", () => {
         name: "file.ts:1-5",
         path: "/path/file.ts",
         type: "selection",
-        content: "const x = 1;",
         range: { startLine: 1, endLine: 5 },
+        content: "const x = 1;",
       },
       {
         name: "Terminal",
@@ -43,7 +48,12 @@ suite("Mentions Logic", () => {
       },
     ];
 
-    const result = await client.sendMessage("my message", [], mentions as any);
+    const result = await client.sendMessage(
+      "my message",
+      [],
+      mentions as any,
+      "test-session"
+    );
     const prompt = (result as any).prompt;
 
     assert.strictEqual(prompt[0].text, "my message");

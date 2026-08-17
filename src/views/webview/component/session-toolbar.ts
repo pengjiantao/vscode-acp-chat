@@ -153,6 +153,8 @@ export class SessionToolbarComponent implements MessageHandler {
     this.modelDropdown?.setValue(modelId);
   }
 
+  getSessionContext?: () => { sessionId?: string; agentId?: string };
+
   updateContextUsage(msg: ExtensionMessage): void {
     updateContextUsageRing(this.elements.contextUsageRing, {
       used: msg.used,
@@ -167,19 +169,34 @@ export class SessionToolbarComponent implements MessageHandler {
 
   private initDropdowns(): void {
     this.modeDropdown = new Dropdown(this.elements.modeDropdown, (id) => {
-      this.ctx.vscode.postMessage({ type: "selectMode", modeId: id });
+      const sessionCtx = this.getSessionContext?.() || {};
+      this.ctx.vscode.postMessage({
+        type: "selectMode",
+        modeId: id,
+        sessionId: sessionCtx.sessionId,
+        agentId: sessionCtx.agentId,
+      });
     });
 
     this.modelDropdown = new Dropdown(
       this.elements.modelDropdown,
       (id) => {
-        this.ctx.vscode.postMessage({ type: "selectModel", modelId: id });
+        const sessionCtx = this.getSessionContext?.() || {};
+        this.ctx.vscode.postMessage({
+          type: "selectModel",
+          modelId: id,
+          sessionId: sessionCtx.sessionId,
+          agentId: sessionCtx.agentId,
+        });
       },
       (id, isStarred) => {
+        const sessionCtx = this.getSessionContext?.() || {};
         this.ctx.vscode.postMessage({
           type: "toggleModelStar",
           modelId: id,
           isStarred,
+          sessionId: sessionCtx.sessionId,
+          agentId: sessionCtx.agentId,
         });
       }
     );
@@ -317,10 +334,13 @@ export class SessionToolbarComponent implements MessageHandler {
     if (existing) return existing;
 
     const dropdown = new Dropdown(wrapper, (value) => {
+      const sessionCtx = this.getSessionContext?.() || {};
       this.ctx.vscode.postMessage({
         type: "selectConfigOption",
         configId,
         value,
+        sessionId: sessionCtx.sessionId,
+        agentId: sessionCtx.agentId,
       });
     });
     this.configOptionDropdowns.set(configId, dropdown);

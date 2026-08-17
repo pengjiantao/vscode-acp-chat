@@ -135,6 +135,16 @@ export class InputPanelComponent implements MessageHandler {
     inputEl.scrollTop = scrollTop;
   }
 
+  saveInputState(): { html: string } {
+    return { html: this.elements.inputEl.innerHTML };
+  }
+
+  restoreInputState(state?: { html: string }): void {
+    this.elements.inputEl.innerHTML = state?.html || "";
+    this.adjustHeight();
+    this.updateInputState();
+  }
+
   handlePaste(event: PasteEventLike, onImage: (file: File) => void): boolean {
     const items = event.clipboardData?.items;
     if (items) {
@@ -181,6 +191,8 @@ export class InputPanelComponent implements MessageHandler {
     reader.readAsDataURL(file);
   }
 
+  getSessionContext?: () => { sessionId?: string; agentId?: string };
+
   setGenerating(isGenerating: boolean): void {
     this.isGenerating = isGenerating;
     this.elements.sendBtn.style.display = isGenerating ? "none" : "flex";
@@ -197,11 +209,15 @@ export class InputPanelComponent implements MessageHandler {
     const msg = this.collectMessage();
     if (!msg) return;
 
+    const sessionCtx = this.getSessionContext?.() || {};
+
     this.ctx.vscode.postMessage({
       type: "sendMessage",
       text: msg.text,
       images: msg.images,
       mentions: msg.mentions,
+      sessionId: sessionCtx.sessionId,
+      agentId: sessionCtx.agentId,
     });
 
     this.clearInput();
@@ -374,7 +390,12 @@ export class InputPanelComponent implements MessageHandler {
 
     sendBtn.addEventListener("click", () => this.send());
     stopBtn.addEventListener("click", () => {
-      this.ctx.vscode.postMessage({ type: "stop" });
+      const sessionCtx = this.getSessionContext?.() || {};
+      this.ctx.vscode.postMessage({
+        type: "stop",
+        sessionId: sessionCtx.sessionId,
+        agentId: sessionCtx.agentId,
+      });
     });
 
     inputEl.addEventListener("keydown", (e) => {

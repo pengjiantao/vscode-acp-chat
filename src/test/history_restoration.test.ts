@@ -170,7 +170,7 @@ suite("History Restoration Order Integration", () => {
   test("serializes webview postMessage calls so streamEnd cannot overtake earlier messages", async () => {
     const memento = new MockMemento();
     const mockAcpClient = createHistoryLoadClient();
-    const provider = new ChatViewProvider(
+    const provider = ChatViewProvider.createForTest(
       vscode.Uri.file("/test"),
       mockAcpClient as any,
       memento
@@ -192,16 +192,22 @@ suite("History Restoration Order Integration", () => {
     );
   });
 
-  test("new chat closes the previous session before creating a new one", async () => {
+  test("new chat creates a new session in a tab without closing existing ones", async () => {
     const memento = new MockMemento();
     const mockAcpClient = createHistoryLoadClient();
-    const provider = new ChatViewProvider(
+    const provider = ChatViewProvider.createForTest(
       vscode.Uri.file("/test"),
       mockAcpClient as any,
       memento
     );
     const mockView = new MockWebviewView();
     (provider as any).view = mockView;
+    (provider as any).activeSessionId = "current-session";
+    (provider as any).openSessions.set("current-session", {
+      sessionId: "current-session",
+      agentId: "test-agent",
+      title: "Current",
+    });
 
     await (provider as any).handleNewChat();
     await waitForProviderQueues(provider);
@@ -209,19 +215,25 @@ suite("History Restoration Order Integration", () => {
     const lifecycleCalls = mockAcpClient.calls.filter(
       (call: string) => call.startsWith("close") || call === "new"
     );
-    assert.deepStrictEqual(lifecycleCalls, ["close:current-session", "new"]);
+    assert.deepStrictEqual(lifecycleCalls, ["new"]);
   });
 
-  test("agent switch closes the previous session before connecting", async () => {
+  test("agent switch creates a new session without closing existing ones", async () => {
     const memento = new MockMemento();
     const mockAcpClient = createHistoryLoadClient();
-    const provider = new ChatViewProvider(
+    const provider = ChatViewProvider.createForTest(
       vscode.Uri.file("/test"),
       mockAcpClient as any,
       memento
     );
     const mockView = new MockWebviewView();
     (provider as any).view = mockView;
+    (provider as any).activeSessionId = "current-session";
+    (provider as any).openSessions.set("current-session", {
+      sessionId: "current-session",
+      agentId: "test-agent",
+      title: "Current",
+    });
 
     await (provider as any).handleAgentChange("opencode");
     await waitForProviderQueues(provider);
@@ -229,19 +241,25 @@ suite("History Restoration Order Integration", () => {
     const lifecycleCalls = mockAcpClient.calls.filter(
       (call: string) => call.startsWith("close") || call === "new"
     );
-    assert.deepStrictEqual(lifecycleCalls, ["close:current-session", "new"]);
+    assert.deepStrictEqual(lifecycleCalls, ["new"]);
   });
 
-  test("load history closes the previous session before loading", async () => {
+  test("load history creates a tab and loads session without closing existing ones", async () => {
     const memento = new MockMemento();
     const mockAcpClient = createHistoryLoadClient();
-    const provider = new ChatViewProvider(
+    const provider = ChatViewProvider.createForTest(
       vscode.Uri.file("/test"),
       mockAcpClient as any,
       memento
     );
     const mockView = new MockWebviewView();
     (provider as any).view = mockView;
+    (provider as any).activeSessionId = "current-session";
+    (provider as any).openSessions.set("current-session", {
+      sessionId: "current-session",
+      agentId: "test-agent",
+      title: "Current",
+    });
 
     await provider.loadHistorySession("history-session");
     await waitForProviderQueues(provider);
@@ -249,10 +267,7 @@ suite("History Restoration Order Integration", () => {
     const lifecycleCalls = mockAcpClient.calls.filter(
       (call: string) => call.startsWith("close") || call.startsWith("load")
     );
-    assert.deepStrictEqual(lifecycleCalls, [
-      "close:current-session",
-      "load:history-session",
-    ]);
+    assert.deepStrictEqual(lifecycleCalls, ["load:history-session"]);
   });
 
   test("forwards messageId during history replay", async () => {
@@ -276,7 +291,7 @@ suite("History Restoration Order Integration", () => {
       }
     };
 
-    const provider = new ChatViewProvider(
+    const provider = ChatViewProvider.createForTest(
       vscode.Uri.file("/test"),
       mockAcpClient as any,
       memento
@@ -294,65 +309,72 @@ suite("History Restoration Order Integration", () => {
     assert.strictEqual(chunks[0].messageId, "msg_history_1");
   });
 
-  test("falls back to cancel and continues when session close fails", async () => {
+  test("closeSession falls back to cancel and continues when session close fails", async () => {
     const memento = new MockMemento();
     const mockAcpClient = createHistoryLoadClient();
     mockAcpClient.closeSession = async (params: { sessionId: string }) => {
       mockAcpClient.calls.push(`close:${params.sessionId}`);
       throw new Error("close failed");
     };
-    const provider = new ChatViewProvider(
+    const provider = ChatViewProvider.createForTest(
       vscode.Uri.file("/test"),
       mockAcpClient as any,
       memento
     );
     const mockView = new MockWebviewView();
     (provider as any).view = mockView;
+    (provider as any).activeSessionId = "current-session";
+    (provider as any).openSessions.set("current-session", {
+      sessionId: "current-session",
+      agentId: "test-agent",
+      title: "Current",
+    });
 
-    await provider.loadHistorySession("history-session");
+    await provider.closeSession("test-agent", "current-session");
     await waitForProviderQueues(provider);
 
     assert.deepStrictEqual(
       mockAcpClient.calls.filter(
-        (call: string) =>
-          call.startsWith("close") ||
-          call === "cancel" ||
-          call.startsWith("load")
+        (call: string) => call.startsWith("close") || call === "cancel"
       ),
-      ["close:current-session", "cancel", "load:history-session"]
+      ["close:current-session", "cancel"]
     );
   });
 
-  test("uses cancel when the agent does not advertise session close", async () => {
+  test("closeSession uses cancel when the agent does not advertise session close", async () => {
     const memento = new MockMemento();
     const mockAcpClient = createHistoryLoadClient();
     (mockAcpClient as any).getAgentCapabilities = () => ({
       loadSession: true,
       sessionCapabilities: {},
     });
-    const provider = new ChatViewProvider(
+    const provider = ChatViewProvider.createForTest(
       vscode.Uri.file("/test"),
       mockAcpClient as any,
       memento
     );
     const mockView = new MockWebviewView();
     (provider as any).view = mockView;
+    (provider as any).activeSessionId = "current-session";
+    (provider as any).openSessions.set("current-session", {
+      sessionId: "current-session",
+      agentId: "test-agent",
+      title: "Current",
+    });
 
-    await provider.loadHistorySession("history-session");
+    await provider.closeSession("test-agent", "current-session");
     await waitForProviderQueues(provider);
 
     assert.deepStrictEqual(
-      mockAcpClient.calls.filter(
-        (call: string) => call === "cancel" || call.startsWith("load")
-      ),
-      ["cancel", "load:history-session"]
+      mockAcpClient.calls.filter((call: string) => call === "cancel"),
+      ["cancel"]
     );
   });
 
   test("posts final history streamEnd after queued session updates are rendered", async () => {
     const memento = new MockMemento();
     const mockAcpClient = createHistoryLoadClient();
-    const provider = new ChatViewProvider(
+    const provider = ChatViewProvider.createForTest(
       vscode.Uri.file("/test"),
       mockAcpClient as any,
       memento
@@ -416,7 +438,7 @@ suite("History Restoration Order Integration", () => {
       dispose: () => {},
     };
 
-    const provider = new ChatViewProvider(
+    const provider = ChatViewProvider.createForTest(
       vscode.Uri.file("/test"),
       mockAcpClient as any,
       memento
@@ -515,7 +537,7 @@ suite("History Restoration Order Integration", () => {
       dispose: () => {},
     };
 
-    const provider = new ChatViewProvider(
+    const provider = ChatViewProvider.createForTest(
       vscode.Uri.file("/test"),
       mockAcpClient as any,
       memento

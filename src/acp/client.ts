@@ -335,8 +335,7 @@ export class ACPClient {
   private connectionHandle: ClientConnection | null = null;
   private agentCtx: ClientContext | null = null;
   private state: ACPConnectionState = "disconnected";
-  private currentSessionId: string | null = null;
-  private sessionMetadata: SessionMetadata | null = null;
+  private sessionMetadataMap: Map<string, SessionMetadata> = new Map();
   private pendingCommands: AvailableCommand[] | null = null;
   private agentCapabilities: AgentCapabilities | null = null;
   private stateChangeListeners: Set<StateChangeCallback> = new Set();
@@ -643,8 +642,12 @@ export class ACPClient {
           const update = params.update as {
             availableCommands: AvailableCommand[];
           };
-          if (this.sessionMetadata) {
-            this.sessionMetadata.commands = update.availableCommands;
+          if (
+            params.sessionId &&
+            this.sessionMetadataMap.has(params.sessionId)
+          ) {
+            this.sessionMetadataMap.get(params.sessionId)!.commands =
+              update.availableCommands;
           } else {
             this.pendingCommands = update.availableCommands;
           }
@@ -875,20 +878,21 @@ export class ACPClient {
       acp.methods.agent.session.load,
       request
     );
-    this.currentSessionId = params.sessionId;
 
     // Extract models/modes/generic config options from configOptions if available
     if (response.configOptions) {
       const converted = extractConfigOptions(response.configOptions);
-      this.sessionMetadata = {
-        modes: converted.modes ?? this.sessionMetadata?.modes ?? null,
-        models: converted.models ?? this.sessionMetadata?.models ?? null,
+      const existing = this.sessionMetadataMap.get(params.sessionId);
+      const metadata: SessionMetadata = {
+        modes: converted.modes ?? existing?.modes ?? null,
+        models: converted.models ?? existing?.models ?? null,
         genericConfigOptions:
           converted.generic.length > 0
             ? converted.generic
-            : (this.sessionMetadata?.genericConfigOptions ?? []),
-        commands: this.sessionMetadata?.commands ?? null,
+            : (existing?.genericConfigOptions ?? []),
+        commands: existing?.commands ?? null,
       };
+      this.sessionMetadataMap.set(params.sessionId, metadata);
     }
 
     return response;
@@ -897,7 +901,7 @@ export class ACPClient {
   /**
    * List existing sessions via the ACP `session/list` method.
    *
-   * The caller (e.g. `AgentSessionManager`) is responsible for checking
+   * The caller (e.g. `LocalSessionManager` or `ChatViewProvider`) is responsible for checking
    * `agentCapabilities.sessionCapabilities.list` and deciding whether to
    * gracefully degrade. This low-level method forwards the request as-is.
    *
@@ -943,7 +947,16 @@ export class ACPClient {
       sessionId: params.sessionId,
     };
 
-    return this.agentCtx.request(acp.methods.agent.session.delete, request);
+    const response = await this.agentCtx.request(
+      acp.methods.agent.session.delete,
+      request
+    );
+
+    if (params.sessionId) {
+      this.sessionMetadataMap.delete(params.sessionId);
+    }
+
+    return response;
   }
 
   /**
@@ -978,8 +991,8 @@ export class ACPClient {
       request
     );
 
-    if (this.currentSessionId === params.sessionId) {
-      this.currentSessionId = null;
+    if (params.sessionId) {
+      this.sessionMetadataMap.delete(params.sessionId);
     }
 
     return response;
@@ -1067,9 +1080,7 @@ export class ACPClient {
       }
     );
 
-    this.currentSessionId = response.sessionId;
-
-    // Prefer configOptions (new ACP format), fall back to models/modes (old format), then existing metadata
+    // Prefer configOptions (new ACP format), fall back to models/modes (old format)
     let models: SessionModelState | null = null;
     let modes: SessionModeState | null = null;
     let genericConfigOptions: GenericConfigOption[] = [];
@@ -1084,40 +1095,58 @@ export class ACPClient {
     // Fall back to old format if configOptions didn't provide model/mode
     modes = modes ?? response.modes ?? null;
 
-    // Fall back to existing session metadata
-    models = models ?? this.sessionMetadata?.models ?? null;
-    modes = modes ?? this.sessionMetadata?.modes ?? null;
-    if (genericConfigOptions.length === 0) {
-      genericConfigOptions = this.sessionMetadata?.genericConfigOptions ?? [];
-    }
-
-    this.sessionMetadata = {
+    this.sessionMetadataMap.set(response.sessionId, {
       modes,
       models,
       genericConfigOptions,
-      commands: this.pendingCommands ?? this.sessionMetadata?.commands ?? null,
-    };
+      commands: this.pendingCommands,
+    });
     this.pendingCommands = null;
 
     return response;
   }
 
-  getSessionMetadata(): SessionMetadata | null {
-    return this.sessionMetadata;
+  private resolveSessionId(sessionId?: string): string {
+    if (sessionId) return sessionId;
+    if (this.sessionMetadataMap.size === 1) {
+      return this.sessionMetadataMap.keys().next().value!;
+    }
+    if (this.sessionMetadataMap.size === 0) {
+      throw new Error("No active session");
+    }
+    throw new Error(
+      "Ambiguous session: sessionId must be explicitly provided when multiple sessions exist"
+    );
   }
 
-  setLastUsageUpdate(payload: ContextUsageUpdate): void {
-    if (!this.sessionMetadata) return;
-    this.sessionMetadata.lastUsageUpdate = {
+  getSessionMetadata(sessionId?: string): SessionMetadata | null {
+    if (sessionId) {
+      return this.sessionMetadataMap.get(sessionId) ?? null;
+    }
+    if (this.sessionMetadataMap.size === 1) {
+      return this.sessionMetadataMap.values().next().value ?? null;
+    }
+    return null;
+  }
+
+  getLastUsageUpdate(sessionId?: string): ContextUsageUpdate | null {
+    return this.getSessionMetadata(sessionId)?.lastUsageUpdate ?? null;
+  }
+
+  setLastUsageUpdate(payload: ContextUsageUpdate, sessionId?: string): void {
+    const meta = this.getSessionMetadata(sessionId);
+    if (!meta) return;
+    meta.lastUsageUpdate = {
       used: payload.used,
       size: payload.size,
       cost: payload.cost ?? null,
     };
   }
 
-  clearLastUsageUpdate(): void {
-    if (this.sessionMetadata) {
-      this.sessionMetadata.lastUsageUpdate = null;
+  clearLastUsageUpdate(sessionId?: string): void {
+    const meta = this.getSessionMetadata(sessionId);
+    if (meta) {
+      meta.lastUsageUpdate = null;
     }
   }
 
@@ -1126,94 +1155,111 @@ export class ACPClient {
    * Used when receiving `config_option_update` notifications from the agent.
    */
   updateSessionMetadataFromConfigOptions(
-    configOptions: Array<SessionConfigOption>
+    configOptions: Array<SessionConfigOption>,
+    sessionId?: string
   ): void {
-    if (!this.sessionMetadata) return;
+    const meta = this.getSessionMetadata(sessionId);
+    if (!meta) return;
     const converted = extractConfigOptions(configOptions);
-    if (converted.models) this.sessionMetadata.models = converted.models;
-    if (converted.modes) this.sessionMetadata.modes = converted.modes;
-    this.sessionMetadata.genericConfigOptions = converted.generic;
+    if (converted.models) meta.models = converted.models;
+    if (converted.modes) meta.modes = converted.modes;
+    meta.genericConfigOptions = converted.generic;
   }
 
-  getCurrentSessionId(): string | null {
-    return this.currentSessionId;
-  }
-
-  async setMode(modeId: string): Promise<void> {
-    if (!this.agentCtx || !this.currentSessionId) {
-      throw new Error("No active session");
+  async setMode(modeId: string, sessionId?: string): Promise<void> {
+    if (!this.agentCtx) {
+      throw new Error("Not connected");
     }
+    const targetSessionId = this.resolveSessionId(sessionId);
 
     try {
       // Prefer setSessionConfigOption (returns configOptions for metadata update)
       const response = await this.agentCtx.request(
         acp.methods.agent.session.setConfigOption,
         {
-          sessionId: this.currentSessionId,
+          sessionId: targetSessionId,
           configId: "mode",
           value: modeId,
         }
       );
       if (response.configOptions) {
-        this.updateSessionMetadataFromConfigOptions(response.configOptions);
+        this.updateSessionMetadataFromConfigOptions(
+          response.configOptions,
+          targetSessionId
+        );
       }
     } catch {
       // Fallback for agents that don't support setSessionConfigOption
       await this.agentCtx.request(acp.methods.agent.session.setMode, {
-        sessionId: this.currentSessionId,
+        sessionId: targetSessionId,
         modeId,
       });
-      if (this.sessionMetadata?.modes) {
-        this.sessionMetadata.modes.currentModeId = modeId;
+      const meta = this.getSessionMetadata(targetSessionId);
+      if (meta?.modes) {
+        meta.modes.currentModeId = modeId;
       }
     }
   }
 
-  async setModel(modelId: string): Promise<void> {
-    if (!this.agentCtx || !this.currentSessionId) {
-      throw new Error("No active session");
+  async setModel(modelId: string, sessionId?: string): Promise<void> {
+    if (!this.agentCtx) {
+      throw new Error("Not connected");
     }
+    const targetSessionId = this.resolveSessionId(sessionId);
 
     // Use setSessionConfigOption (returns configOptions for metadata update)
     const response = await this.agentCtx.request(
       acp.methods.agent.session.setConfigOption,
       {
-        sessionId: this.currentSessionId,
+        sessionId: targetSessionId,
         configId: "model",
         value: modelId,
       }
     );
     if (response.configOptions) {
-      this.updateSessionMetadataFromConfigOptions(response.configOptions);
+      this.updateSessionMetadataFromConfigOptions(
+        response.configOptions,
+        targetSessionId
+      );
     }
   }
 
-  async setConfigOption(configId: string, value: string): Promise<void> {
-    if (!this.agentCtx || !this.currentSessionId) {
-      throw new Error("No active session");
+  async setConfigOption(
+    configId: string,
+    value: string,
+    sessionId?: string
+  ): Promise<void> {
+    if (!this.agentCtx) {
+      throw new Error("Not connected");
     }
+    const targetSessionId = this.resolveSessionId(sessionId);
 
     const response = await this.agentCtx.request(
       acp.methods.agent.session.setConfigOption,
       {
-        sessionId: this.currentSessionId,
+        sessionId: targetSessionId,
         configId,
         value,
       }
     );
     if (response.configOptions) {
-      this.updateSessionMetadataFromConfigOptions(response.configOptions);
+      this.updateSessionMetadataFromConfigOptions(
+        response.configOptions,
+        targetSessionId
+      );
     }
   }
 
   async sendMessage(
     message: string,
     images: string[] = [],
-    mentions: Mention[] = []
+    mentions: Mention[] = [],
+    sessionId?: string
   ): Promise<PromptResponse> {
-    if (!this.agentCtx || !this.currentSessionId) {
-      throw new Error("No active session");
+    if (!this.agentCtx) {
+      throw new Error("Not connected");
     }
+    const targetSessionId = this.resolveSessionId(sessionId);
 
     try {
       // Use the new serializer to format mentions
@@ -1250,7 +1296,7 @@ export class ACPClient {
       const response: PromptResponse = await this.agentCtx.request(
         acp.methods.agent.session.prompt,
         {
-          sessionId: this.currentSessionId,
+          sessionId: targetSessionId,
           prompt,
         }
       );
@@ -1265,14 +1311,20 @@ export class ACPClient {
     }
   }
 
-  async cancel(): Promise<void> {
-    if (!this.agentCtx || !this.currentSessionId) {
-      return;
+  async cancel(sessionId?: string): Promise<void> {
+    if (!this.agentCtx) return;
+    try {
+      const targetSessionId = this.resolveSessionId(sessionId);
+      await this.agentCtx.notify(acp.methods.agent.session.cancel, {
+        sessionId: targetSessionId,
+      });
+    } catch (error) {
+      if (this.debugLoggingEnabled) {
+        this.debugLogger(
+          `[ACP] Cancel skipped or failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
     }
-
-    await this.agentCtx.notify(acp.methods.agent.session.cancel, {
-      sessionId: this.currentSessionId,
-    });
   }
 
   /**
@@ -1299,10 +1351,22 @@ export class ACPClient {
       this.process = null;
     }
     this.teardownConnection();
-    this.currentSessionId = null;
-    this.sessionMetadata = null;
+    this.sessionMetadataMap.clear();
     this.pendingCommands = null;
     this.agentCapabilities = null;
+    this.stateChangeListeners.clear();
+    this.sessionUpdateListeners.clear();
+    this.stderrListeners.clear();
+    this.readTextFileHandler = null;
+    this.writeTextFileHandler = null;
+    this.createTerminalHandler = null;
+    this.terminalOutputHandler = null;
+    this.waitForTerminalExitHandler = null;
+    this.killTerminalCommandHandler = null;
+    this.releaseTerminalHandler = null;
+    this.permissionRequestListeners.clear();
+    this.elicitationRequestListeners.clear();
+    this.elicitationCompleteListeners.clear();
   }
 
   /**
@@ -1328,7 +1392,12 @@ export class ACPClient {
     }
     return {
       didOpen: !!doc.didOpen,
-      didChange: doc.didChange ?? null,
+      didChange: doc.didChange
+        ? {
+            syncKind:
+              doc.didChange.syncKind === "full" ? "full" : "incremental",
+          }
+        : null,
       didClose: !!doc.didClose,
       didSave: !!doc.didSave,
       didFocus: !!doc.didFocus,
@@ -1340,23 +1409,28 @@ export class ACPClient {
     text: string;
     languageId: string;
     version: number;
+    sessionId?: string;
   }): Promise<void> {
-    if (!this.agentCtx || !this.currentSessionId) {
+    if (!this.agentCtx || !this.getNesDocumentCapabilities().didOpen) {
       return;
     }
-    if (!this.getNesDocumentCapabilities().didOpen) {
-      return;
-    }
-    const notification: DidOpenDocumentNotification = {
-      sessionId: this.currentSessionId,
-      uri: params.uri,
-      text: params.text,
-      languageId: params.languageId,
-      version: params.version,
-    };
-    await this.agentCtx.notify(
-      acp.methods.agent.document.didOpen,
-      notification
+    const targetSessionIds = params.sessionId
+      ? [params.sessionId]
+      : Array.from(this.sessionMetadataMap.keys());
+    await Promise.all(
+      targetSessionIds.map((sessionId) => {
+        const notification: DidOpenDocumentNotification = {
+          sessionId,
+          uri: params.uri,
+          text: params.text,
+          languageId: params.languageId,
+          version: params.version,
+        };
+        return this.agentCtx!.notify(
+          acp.methods.agent.document.didOpen,
+          notification
+        );
+      })
     );
   }
 
@@ -1364,57 +1438,75 @@ export class ACPClient {
     uri: string;
     contentChanges: Array<{ range?: Range | null; text: string }>;
     version: number;
+    sessionId?: string;
   }): Promise<void> {
-    if (!this.agentCtx || !this.currentSessionId) {
+    if (!this.agentCtx || !this.getNesDocumentCapabilities().didChange) {
       return;
     }
-    const cap = this.getNesDocumentCapabilities().didChange;
-    if (!cap) {
-      return;
-    }
-    const notification: DidChangeDocumentNotification = {
-      sessionId: this.currentSessionId,
-      uri: params.uri,
-      contentChanges: params.contentChanges,
-      version: params.version,
-    };
-    await this.agentCtx.notify(
-      acp.methods.agent.document.didChange,
-      notification
+    const targetSessionIds = params.sessionId
+      ? [params.sessionId]
+      : Array.from(this.sessionMetadataMap.keys());
+    await Promise.all(
+      targetSessionIds.map((sessionId) => {
+        const notification: DidChangeDocumentNotification = {
+          sessionId,
+          uri: params.uri,
+          contentChanges: params.contentChanges,
+          version: params.version,
+        };
+        return this.agentCtx!.notify(
+          acp.methods.agent.document.didChange,
+          notification
+        );
+      })
     );
   }
 
-  async notifyDidCloseDocument(params: { uri: string }): Promise<void> {
-    if (!this.agentCtx || !this.currentSessionId) {
+  async notifyDidCloseDocument(params: {
+    uri: string;
+    sessionId?: string;
+  }): Promise<void> {
+    if (!this.agentCtx || !this.getNesDocumentCapabilities().didClose) {
       return;
     }
-    if (!this.getNesDocumentCapabilities().didClose) {
-      return;
-    }
-    const notification: DidCloseDocumentNotification = {
-      sessionId: this.currentSessionId,
-      uri: params.uri,
-    };
-    await this.agentCtx.notify(
-      acp.methods.agent.document.didClose,
-      notification
+    const targetSessionIds = params.sessionId
+      ? [params.sessionId]
+      : Array.from(this.sessionMetadataMap.keys());
+    await Promise.all(
+      targetSessionIds.map((sessionId) => {
+        const notification: DidCloseDocumentNotification = {
+          sessionId,
+          uri: params.uri,
+        };
+        return this.agentCtx!.notify(
+          acp.methods.agent.document.didClose,
+          notification
+        );
+      })
     );
   }
 
-  async notifyDidSaveDocument(params: { uri: string }): Promise<void> {
-    if (!this.agentCtx || !this.currentSessionId) {
+  async notifyDidSaveDocument(params: {
+    uri: string;
+    sessionId?: string;
+  }): Promise<void> {
+    if (!this.agentCtx || !this.getNesDocumentCapabilities().didSave) {
       return;
     }
-    if (!this.getNesDocumentCapabilities().didSave) {
-      return;
-    }
-    const notification: DidSaveDocumentNotification = {
-      sessionId: this.currentSessionId,
-      uri: params.uri,
-    };
-    await this.agentCtx.notify(
-      acp.methods.agent.document.didSave,
-      notification
+    const targetSessionIds = params.sessionId
+      ? [params.sessionId]
+      : Array.from(this.sessionMetadataMap.keys());
+    await Promise.all(
+      targetSessionIds.map((sessionId) => {
+        const notification: DidSaveDocumentNotification = {
+          sessionId,
+          uri: params.uri,
+        };
+        return this.agentCtx!.notify(
+          acp.methods.agent.document.didSave,
+          notification
+        );
+      })
     );
   }
 
@@ -1423,23 +1515,28 @@ export class ACPClient {
     position: Position;
     version: number;
     visibleRange: Range;
+    sessionId?: string;
   }): Promise<void> {
-    if (!this.agentCtx || !this.currentSessionId) {
+    if (!this.agentCtx || !this.getNesDocumentCapabilities().didFocus) {
       return;
     }
-    if (!this.getNesDocumentCapabilities().didFocus) {
-      return;
-    }
-    const notification: DidFocusDocumentNotification = {
-      sessionId: this.currentSessionId,
-      uri: params.uri,
-      position: params.position,
-      version: params.version,
-      visibleRange: params.visibleRange,
-    };
-    await this.agentCtx.notify(
-      acp.methods.agent.document.didFocus,
-      notification
+    const targetSessionIds = params.sessionId
+      ? [params.sessionId]
+      : Array.from(this.sessionMetadataMap.keys());
+    await Promise.all(
+      targetSessionIds.map((sessionId) => {
+        const notification: DidFocusDocumentNotification = {
+          sessionId,
+          uri: params.uri,
+          position: params.position,
+          version: params.version,
+          visibleRange: params.visibleRange,
+        };
+        return this.agentCtx!.notify(
+          acp.methods.agent.document.didFocus,
+          notification
+        );
+      })
     );
   }
 

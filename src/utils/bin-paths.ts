@@ -1,6 +1,7 @@
 import { execSync } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
+import * as vscode from "vscode";
 
 /**
  * Returns an array of global bin directory paths where CLI tools may be installed.
@@ -108,6 +109,43 @@ export function isCommandAvailable(command: string): boolean {
   if (path.isAbsolute(command)) {
     return fs.existsSync(command);
   }
+
+  // Check workspace-relative path if workspace is open
+  try {
+    const folders = vscode.workspace.workspaceFolders;
+    const hasPathSep = command.includes("/") || command.includes("\\");
+    if (folders && hasPathSep) {
+      for (const folder of folders) {
+        const localPath = path.resolve(folder.uri.fsPath, command);
+        if (fs.existsSync(localPath)) {
+          const stat = fs.statSync(localPath);
+          if (stat.isFile()) {
+            if (process.platform === "win32") {
+              const pathext = (
+                process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD;.JS;.TS;.MJS"
+              )
+                .toLowerCase()
+                .split(";");
+              const ext = path.extname(localPath).toLowerCase();
+              if (pathext.includes(ext) || ext === "") {
+                return true;
+              }
+              for (const pe of pathext) {
+                if (pe && fs.existsSync(localPath + pe)) {
+                  return true;
+                }
+              }
+            } else {
+              // POSIX: check executable bits (user, group, or others)
+              if ((stat.mode & 0o111) !== 0) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch {}
 
   // Check standard PATH using which/where
   try {

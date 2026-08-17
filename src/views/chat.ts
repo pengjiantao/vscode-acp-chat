@@ -1,13 +1,19 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { searchWorkspaceFiles } from "../utils/file-search";
 import { getWorkspaceRoot } from "../utils/workspace";
 import { ACPClient, type ContextUsageUpdate } from "../acp/client";
-import { getAgent, getFirstAvailableAgent } from "../acp/agents";
+import { AgentPool } from "../acp/agent-pool";
+import {
+  getAgent,
+  getFirstAvailableAgent,
+  getAgentsWithStatus,
+} from "../acp/agents";
 import { DiffManager } from "../acp/diff-manager";
 import { FileHandler } from "../acp/file-handler";
 import { TerminalHandler } from "../acp/terminal-handler";
 import {
-  AgentSessionManager,
+  LocalSessionManager,
   globalStateSessionStore,
   inMemorySessionStore,
   type SessionInfo,
@@ -25,6 +31,7 @@ import {
   type CreateElicitationResponse,
   type CompleteElicitationNotification,
 } from "@agentclientprotocol/sdk";
+import type { SessionTab } from "./webview/types";
 
 const SELECTED_AGENT_KEY = "vscode-acp-chat.selectedAgent";
 const AGENT_PREFS_KEY = "vscode-acp-chat.agentPreferences.v1";
@@ -61,7 +68,11 @@ interface WebviewMessage {
     | "acceptAllDiffs"
     | "rollbackAllDiffs"
     | "toggleModelStar"
-    | "confirmActionResponse";
+    | "confirmActionResponse"
+    | "switchSession"
+    | "closeSession"
+    | "showOpenSessions"
+    | "getAgents";
   text?: string;
   modeId?: string;
   modelId?: string;
@@ -92,20 +103,11 @@ interface WebviewMessage {
   action?: string;
   actionLabel?: string;
   checkExists?: boolean;
+  sessionId?: string;
+  agentId?: string;
 }
 
 type FileLineRange = { startLine: number; endLine: number };
-
-function formatJsonValue(value: unknown): string {
-  if (typeof value === "object" && value !== null) {
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return String(value);
-    }
-  }
-  return String(value);
-}
 
 function parseFileLineRange(value: string): FileLineRange | undefined {
   const match = value.match(/^L?(\d+)(?:-L?(\d+))?$/);
@@ -120,7 +122,6 @@ function splitTrailingLineSuffix(pathText: string): {
   path: string;
   range?: FileLineRange;
 } {
-  // Supports common markdown file links such as path/to/file.ts:10 and path/to/file.ts:10-20.
   const match = pathText.match(/^(.*):(\d+)(?:-(\d+)|:\d+)?$/);
   if (!match || !match[1] || /^[a-zA-Z]$/.test(match[1])) {
     return { path: pathText };
@@ -161,6 +162,8 @@ interface ToolCallState {
   content?: ToolCall["content"];
   locations?: ToolCall["locations"];
   baseContent?: Promise<string | undefined>;
+  agentId?: string;
+  sessionId?: string;
 }
 
 export class ChatViewProvider
@@ -169,163 +172,117 @@ export class ChatViewProvider
   public static readonly viewType = "vscode-acp-chat.chatView";
 
   private view?: vscode.WebviewView;
-  private hasSession = false;
   private globalState: vscode.Memento;
-  private hasRestoredModeModel = false;
-  private sessionManager: AgentSessionManager;
-  private userMessageBuffer: string = "";
-  /** Stores image dataUrl for current user message being reconstructed during history load */
-  private userMessageImages: string[] = [];
-  private toolCalls: Map<string, ToolCallState> = new Map();
-  private textDecoder = new TextDecoder();
+  private agentPool: AgentPool;
+  private sessionManager: LocalSessionManager;
   private diffManager: DiffManager;
   private fileHandler: FileHandler;
   private terminalHandler: TerminalHandler;
   private documentSyncManager: DocumentSyncManager;
+
+  private openSessions = new Map<string, SessionTab>();
+  private activeSessionId: string | null = null;
+  private activeAgentId: string = "default";
+
+  private userMessageBuffers = new Map<
+    string,
+    { buffer: string; images: string[] }
+  >();
+  private toolCalls: Map<string, ToolCallState> = new Map();
+
   private permissionQueue: Array<{
     id: string;
+    agentId: string;
+    sessionId?: string;
     params: RequestPermissionRequest;
     resolver: (response: RequestPermissionResponse) => void;
   }> = [];
+
   private elicitationQueue: Array<{
     id: string;
+    agentId: string;
+    sessionId?: string;
     elicitationId?: string;
     params: CreateElicitationRequest;
     resolver: (response: CreateElicitationResponse) => void;
   }> = [];
-  // Serializes ACP session updates so they render in arrival order.
-  // Without this, rapid updates can interleave and cause out-of-order
-  // messages (e.g. streamEnd arriving before the last tool_call_complete).
-  private sessionUpdateNotifier = new AsyncSerialProcessor<SessionNotification>(
-    (update) => this.handleSessionUpdate(update)
-  );
-  // Serializes webview.postMessage calls so fast messages (streamEnd)
-  // cannot overtake slower ones (streamChunk) that are still pending.
+
+  private sessionUpdateNotifier = new AsyncSerialProcessor<{
+    agentId: string;
+    notification: SessionNotification;
+  }>((item) => this.handleSessionUpdate(item.agentId, item.notification));
+
   private webviewPostNotifier = new AsyncSerialQueue();
 
-  // Flag to track if we're currently loading history via loadSession
-  private isLoadingHistory = false;
-
-  // Flag to track if the agent is currently generating a response
-  private isGenerating = false;
-
-  // Pending confirmation requests from isGenerating guard
   private pendingConfirmations = new Map<
     string,
     (confirmed: boolean) => void
   >();
 
+  private generatingSessions = new Set<string>();
+
+  /**
+   * Test-only factory to construct a ChatViewProvider with a single mocked ACPClient or AgentPool.
+   */
+  public static createForTest(
+    extensionUri: vscode.Uri,
+    clientOrPool: ACPClient | AgentPool,
+    globalState: vscode.Memento
+  ): ChatViewProvider {
+    if (clientOrPool instanceof AgentPool) {
+      return new ChatViewProvider(extensionUri, clientOrPool, globalState);
+    }
+    const pool = new AgentPool({
+      clientFactory: () => clientOrPool,
+    });
+    const provider = new ChatViewProvider(extensionUri, pool, globalState);
+    provider.wireClientHandlers(clientOrPool, provider.activeAgentId);
+    return provider;
+  }
+
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly acpClient: ACPClient,
+    agentPool: AgentPool,
     globalState: vscode.Memento
   ) {
     this.globalState = globalState;
     this.diffManager = new DiffManager();
     this.fileHandler = new FileHandler(this.diffManager);
     this.terminalHandler = new TerminalHandler();
-    // Choose session store based on user preference:
-    //   - enablePersistentSessions=false → in-memory store, sessions lost on restart
-    //   - enablePersistentSessions=true  → globalState-backed store with automatic
-    //     cleanup of sessions older than `sessionRetentionDays` and enforcement of
-    //     a per-agent `maxSessionsPerAgent` cap (runs once on first load)
-    this.sessionManager = new AgentSessionManager(acpClient, (agentId) => {
+
+    const savedAgentId = this.globalState.get<string>(SELECTED_AGENT_KEY);
+    this.activeAgentId = savedAgentId || getFirstAvailableAgent().id;
+    this.agentPool = agentPool;
+
+    this.sessionManager = new LocalSessionManager((agentId) => {
       const config = vscode.workspace.getConfiguration("vscode-acp-chat");
       const persistent = config.get<boolean>("enablePersistentSessions", true);
       if (!persistent) {
-        return inMemorySessionStore();
+        return inMemorySessionStore(agentId);
       }
       const retentionDays = config.get<number>("sessionRetentionDays", 30);
       const maxSessions = config.get<number>("maxSessionsPerAgent", 300);
       return globalStateSessionStore(
         globalState,
         `vscode-acp-chat.localSessions.v1.${agentId}`,
-        { retentionDays, maxSessions }
+        { retentionDays, maxSessions },
+        agentId
       );
-    });
-    this.documentSyncManager = new DocumentSyncManager(acpClient);
+    }, globalState);
+
+    this.documentSyncManager = new DocumentSyncManager(() =>
+      this.agentPool.getActiveClients()
+    );
 
     vscode.workspace.registerTextDocumentContentProvider(
       "acp-old-content",
       this
     );
 
-    const savedAgentId = this.globalState.get<string>(SELECTED_AGENT_KEY);
-    if (savedAgentId) {
-      const agent = getAgent(savedAgentId);
-      if (agent) {
-        this.acpClient.setAgent(agent);
-      }
-    } else {
-      this.acpClient.setAgent(getFirstAvailableAgent());
-    }
-
-    this.acpClient.setOnStateChange((state) => {
-      this.postMessage({ type: "connectionState", state });
-      if (state === "disconnected" || state === "error") {
-        this.postMessage({ type: "streamEnd", stopReason: "error" });
-        if (this.stderrBuffer.trim().length > 0) {
-          const lastLines = this.stderrBuffer
-            .trim()
-            .split("\n")
-            .slice(-5)
-            .join("\n");
-          this.postMessage({
-            type: "agentError",
-            text: `Agent process ${state}.\nLast stderr:\n${lastLines}`,
-          });
-          this.stderrBuffer = "";
-        }
-      }
+    // Wire handlers for any newly created ACPClient in the pool
+    this.agentPool.onClientCreated((client, agentId) => {
+      this.wireClientHandlers(client, agentId);
     });
-
-    this.acpClient.setOnSessionUpdate((update) => {
-      this.sessionUpdateNotifier.push(update);
-    });
-
-    this.acpClient.setOnStderr((text) => {
-      this.handleStderr(text);
-    });
-
-    this.acpClient.setOnReadTextFile(async (params) => {
-      return this.fileHandler.handleReadTextFile(params);
-    });
-
-    this.acpClient.setOnWriteTextFile(async (params) => {
-      return this.fileHandler.handleWriteTextFile(params);
-    });
-
-    this.acpClient.setOnCreateTerminal(async (params) => {
-      return this.terminalHandler.handleCreateTerminal(params);
-    });
-
-    this.acpClient.setOnTerminalOutput(async (params) => {
-      return this.terminalHandler.handleTerminalOutput(params);
-    });
-
-    this.acpClient.setOnWaitForTerminalExit(async (params) => {
-      return this.terminalHandler.handleWaitForTerminalExit(params);
-    });
-
-    this.acpClient.setOnKillTerminalCommand(async (params) => {
-      return this.terminalHandler.handleKillTerminalCommand(params);
-    });
-
-    this.acpClient.setOnReleaseTerminal(async (params) => {
-      return this.terminalHandler.handleReleaseTerminal(params);
-    });
-
-    this.acpClient.setOnPermissionRequest(
-      this.handlePermissionRequest.bind(this)
-    );
-
-    this.acpClient.setOnElicitationRequest(
-      this.handleElicitationRequest.bind(this)
-    );
-
-    this.acpClient.setOnElicitationComplete(
-      this.handleElicitationComplete.bind(this)
-    );
 
     this.diffManager.onDidChange((changes) => {
       const config = vscode.workspace.getConfiguration("vscode-acp-chat");
@@ -333,6 +290,7 @@ export class ChatViewProvider
       if (enabled) {
         this.postMessage({
           type: "diffSummary",
+          sessionId: this.activeSessionId ?? undefined,
           changes: changes.map((c) => ({
             path: c.path,
             relativePath: vscode.workspace.asRelativePath(c.path),
@@ -342,6 +300,100 @@ export class ChatViewProvider
           })),
         });
       }
+    });
+  }
+
+  public get activeClient(): ACPClient {
+    return (
+      this.agentPool.getExistingClient(this.activeAgentId) ||
+      this.agentPool.getDefaultClient(this.activeAgentId)
+    );
+  }
+
+  public get acpClient(): ACPClient {
+    return this.activeClient;
+  }
+
+  public get userMessageBuffer(): string {
+    const sessionId = this.activeSessionId || "";
+    return this.userMessageBuffers.get(sessionId)?.buffer || "";
+  }
+
+  public set userMessageBuffer(val: string) {
+    const sessionId = this.activeSessionId || "";
+    let entry = this.userMessageBuffers.get(sessionId);
+    if (!entry) {
+      entry = { buffer: "", images: [] };
+      this.userMessageBuffers.set(sessionId, entry);
+    }
+    entry.buffer = val;
+  }
+
+  private getClient(agentId?: string): ACPClient | null {
+    const targetAgentId =
+      agentId || this.acpClient?.getAgentId?.() || this.activeAgentId;
+    return this.agentPool.getExistingClient(targetAgentId) || this.acpClient;
+  }
+
+  private wireClientHandlers(client: ACPClient, agentId: string): void {
+    client.setOnStateChange((state) => {
+      this.postMessage({ type: "connectionState", state, agentId });
+      if (state === "disconnected" || state === "error") {
+        this.postMessage({
+          type: "streamEnd",
+          stopReason: "error",
+          agentId,
+          sessionId: this.activeSessionId ?? undefined,
+        });
+      }
+    });
+
+    client.setOnSessionUpdate((notification) => {
+      this.sessionUpdateNotifier.push({ agentId, notification });
+    });
+
+    client.setOnStderr((text) => {
+      this.handleStderr(agentId, text);
+    });
+
+    client.setOnReadTextFile(async (params) => {
+      return this.fileHandler.handleReadTextFile(params);
+    });
+
+    client.setOnWriteTextFile(async (params) => {
+      return this.fileHandler.handleWriteTextFile(params);
+    });
+
+    client.setOnCreateTerminal(async (params) => {
+      return this.terminalHandler.handleCreateTerminal(params);
+    });
+
+    client.setOnTerminalOutput(async (params) => {
+      return this.terminalHandler.handleTerminalOutput(params);
+    });
+
+    client.setOnWaitForTerminalExit(async (params) => {
+      return this.terminalHandler.handleWaitForTerminalExit(params);
+    });
+
+    client.setOnKillTerminalCommand(async (params) => {
+      return this.terminalHandler.handleKillTerminalCommand(params);
+    });
+
+    client.setOnReleaseTerminal(async (params) => {
+      return this.terminalHandler.handleReleaseTerminal(params);
+    });
+
+    client.setOnPermissionRequest((params) => {
+      return this.handlePermissionRequest(agentId, params);
+    });
+
+    client.setOnElicitationRequest((params) => {
+      return this.handleElicitationRequest(agentId, params);
+    });
+
+    client.setOnElicitationComplete((notification) => {
+      this.handleElicitationComplete(notification);
     });
   }
 
@@ -366,48 +418,154 @@ export class ChatViewProvider
 
     webviewView.webview.html = this.getHtmlContent(webviewView.webview);
 
-    this.handleConnect().catch((err) => {
-      console.error("[Chat] Auto-connect failed:", err);
-    });
-
     webviewView.webview.onDidReceiveMessage(async (message: WebviewMessage) => {
       switch (message.type) {
-        case "sendMessage":
+        case "ready": {
+          this.postMessage({
+            type: "availableAgents",
+            agents: getAgentsWithStatus(),
+          });
+
+          if (this.openSessions.size === 0) {
+            await this.createNewSession(this.activeAgentId);
+          } else {
+            this.postMessage({
+              type: "allSessions",
+              sessions: Array.from(this.openSessions.values()),
+              activeSessionId: this.activeSessionId,
+            });
+            if (this.activeSessionId) {
+              this.sendSessionMetadata(
+                this.activeAgentId,
+                this.activeSessionId
+              );
+              this.sendContextUsage(this.activeAgentId, this.activeSessionId);
+            }
+          }
+          break;
+        }
+
+        case "getAgents": {
+          this.postMessage({
+            type: "availableAgents",
+            agents: getAgentsWithStatus(),
+          });
+          break;
+        }
+
+        case "newChat": {
+          if (message.agentId) {
+            await this.createNewSession(message.agentId);
+          } else {
+            await this.showNewChatQuickPick();
+          }
+          break;
+        }
+
+        case "switchSession": {
+          if (message.sessionId && this.openSessions.has(message.sessionId)) {
+            this.activeSessionId = message.sessionId;
+            const tab = this.openSessions.get(message.sessionId);
+            if (tab) {
+              this.activeAgentId = tab.agentId;
+            }
+            this.sendSessionMetadata(this.activeAgentId, this.activeSessionId);
+            this.sendContextUsage(this.activeAgentId, this.activeSessionId);
+          }
+          break;
+        }
+
+        case "closeSession": {
+          if (message.sessionId) {
+            const tab = this.openSessions.get(message.sessionId);
+            const agentId =
+              message.agentId || tab?.agentId || this.activeAgentId;
+            await this.closeSession(agentId, message.sessionId);
+          }
+          break;
+        }
+
+        case "showOpenSessions": {
+          await this.showOpenSessionsQuickPick();
+          break;
+        }
+
+        case "sendMessage": {
           if (
             message.text !== undefined ||
             (message.images && message.images.length > 0)
           ) {
+            const agentId = message.agentId || this.activeAgentId;
+            const sessionId = message.sessionId || this.activeSessionId;
             await this.handleUserMessage(
+              agentId,
+              sessionId,
               message.text || "",
               message.images,
               message.mentions
             );
           }
           break;
-        case "selectMode":
+        }
+
+        case "stop": {
+          const agentId = message.agentId || this.activeAgentId;
+          const sessionId = message.sessionId || this.activeSessionId;
+          this.dismissPendingPermissions(sessionId ?? undefined);
+          this.dismissPendingElicitations(sessionId ?? undefined);
+          if (sessionId) {
+            await this.agentPool.cancelSession(agentId, sessionId);
+            this.generatingSessions.delete(sessionId);
+            this.postMessage({
+              type: "streamEnd",
+              stopReason: "cancelled",
+              agentId,
+              sessionId,
+            });
+          }
+          break;
+        }
+
+        case "selectMode": {
           if (message.modeId) {
-            await this.handleModeChange(message.modeId);
+            const agentId = message.agentId || this.activeAgentId;
+            const sessionId = message.sessionId || this.activeSessionId;
+            await this.handleModeChange(agentId, sessionId, message.modeId);
           }
           break;
-        case "selectModel":
+        }
+
+        case "selectModel": {
           if (message.modelId) {
-            await this.handleModelChange(message.modelId);
+            const agentId = message.agentId || this.activeAgentId;
+            const sessionId = message.sessionId || this.activeSessionId;
+            await this.handleModelChange(agentId, sessionId, message.modelId);
           }
           break;
-        case "selectConfigOption":
+        }
+
+        case "selectConfigOption": {
           if (message.configId && message.value !== undefined) {
+            const agentId = message.agentId || this.activeAgentId;
+            const sessionId = message.sessionId || this.activeSessionId;
             await this.handleConfigOptionChange(
+              agentId,
+              sessionId,
               message.configId,
               message.value
             );
           }
           break;
-        case "toggleModelStar":
+        }
+
+        case "toggleModelStar": {
           if (
             message.modelId !== undefined &&
             message.isStarred !== undefined
           ) {
-            await this.updateCurrentAgentPreference((pref) => {
+            const agentId = message.agentId || this.activeAgentId;
+            const sessionId = message.sessionId || this.activeSessionId;
+            await this.updateAgentPreference(agentId, (pref) => {
               const starred = new Set(pref.starredModels);
               if (message.isStarred) {
                 starred.add(message.modelId!);
@@ -416,171 +574,12 @@ export class ChatViewProvider
               }
               return { ...pref, starredModels: Array.from(starred) };
             });
-            this.sendSessionMetadata();
+            this.sendSessionMetadata(agentId, sessionId ?? undefined);
           }
           break;
-        case "connect":
-          await this.handleConnect();
-          break;
-        case "newChat":
-          await this.handleNewChat();
-          break;
-        case "clearChat":
-          this.handleClearChat();
-          break;
-        case "copyMessage":
-          if (message.text) {
-            await vscode.env.clipboard.writeText(message.text);
-            vscode.window.showInformationMessage("Message copied to clipboard");
-          }
-          break;
-        case "searchFiles":
-          if (message.text !== undefined) {
-            const query = message.text;
-            // use the search helper that supports both files and folders
-            const results = await searchWorkspaceFiles(query, {
-              maxResults: 20,
-              includeHidden: true,
-            });
+        }
 
-            this.postMessage({
-              type: "fileSearchResults",
-              results,
-            });
-          }
-          break;
-        case "openFile":
-          {
-            let uri: vscode.Uri | undefined;
-            let range: { startLine: number; endLine: number } | undefined;
-
-            if (message.href) {
-              try {
-                let pathPart = message.href;
-                let fragmentPart = "";
-                const hashIndex = message.href.indexOf("#");
-                if (hashIndex !== -1) {
-                  pathPart = message.href.substring(0, hashIndex);
-                  fragmentPart = message.href.substring(hashIndex + 1);
-                }
-
-                if (fragmentPart) {
-                  range = parseFileLineRange(fragmentPart);
-                } else {
-                  const parsedPath = splitTrailingLineSuffix(pathPart);
-                  pathPart = parsedPath.path;
-                  range = parsedPath.range;
-                }
-
-                if (pathPart.startsWith("file://")) {
-                  uri = vscode.Uri.parse(pathPart);
-                  if (!range) {
-                    const parsedFsPath = splitTrailingLineSuffix(uri.fsPath);
-                    if (parsedFsPath.range) {
-                      uri = vscode.Uri.file(parsedFsPath.path);
-                      range = parsedFsPath.range;
-                    }
-                  }
-                } else {
-                  // decodeURIComponent might throw if percent-encoding is malformed,
-                  // which is handled by the outer try/catch.
-                  const decodedPath = decodeURIComponent(pathPart);
-                  const parsedDecodedPath = range
-                    ? { path: decodedPath }
-                    : splitTrailingLineSuffix(decodedPath);
-                  if (parsedDecodedPath.range) {
-                    range = parsedDecodedPath.range;
-                  }
-
-                  const filePath = parsedDecodedPath.path;
-                  if (
-                    filePath.startsWith("/") ||
-                    /^[a-zA-Z]:[/\\]/.test(filePath)
-                  ) {
-                    uri = vscode.Uri.file(filePath);
-                  } else {
-                    const workspaceFolders = vscode.workspace.workspaceFolders;
-                    if (workspaceFolders && workspaceFolders.length > 0) {
-                      // Attempt to resolve the relative path against each active workspace folder.
-                      for (const folder of workspaceFolders) {
-                        const possibleUri = vscode.Uri.joinPath(
-                          folder.uri,
-                          filePath
-                        );
-                        try {
-                          await vscode.workspace.fs.stat(possibleUri);
-                          uri = possibleUri;
-                          break;
-                        } catch {
-                          // The file does not exist in this folder; ignore and continue checking other folders.
-                        }
-                      }
-                      // Fallback to the first workspace folder if not resolved anywhere else
-                      if (!uri) {
-                        uri = vscode.Uri.joinPath(
-                          workspaceFolders[0].uri,
-                          filePath
-                        );
-                      }
-                    } else {
-                      uri = vscode.Uri.file(filePath);
-                    }
-                  }
-                }
-              } catch (err) {
-                console.error("Failed to parse href:", message.href, err);
-              }
-            } else if (message.path) {
-              uri = vscode.Uri.file(message.path);
-            }
-
-            if (uri) {
-              let stat: vscode.FileStat | undefined;
-              if (message.checkExists) {
-                try {
-                  stat = await vscode.workspace.fs.stat(uri);
-                } catch {
-                  vscode.window.showErrorMessage(
-                    `File does not exist: ${uri.fsPath}`
-                  );
-                  return;
-                }
-              }
-
-              try {
-                const fileStat = stat || (await vscode.workspace.fs.stat(uri));
-                if (fileStat.type === vscode.FileType.Directory) {
-                  await vscode.commands.executeCommand("revealInExplorer", uri);
-                } else {
-                  const options: vscode.TextDocumentShowOptions = {
-                    preview: true,
-                  };
-                  if (range) {
-                    const start = new vscode.Position(
-                      Math.max(0, range.startLine - 1),
-                      0
-                    );
-                    const end = new vscode.Position(
-                      Math.max(0, range.endLine - 1),
-                      0
-                    );
-                    options.selection = new vscode.Range(start, end);
-                  }
-                  await vscode.window.showTextDocument(uri, options);
-                }
-              } catch {
-                // Fallback to opening the document directly if stat fails (e.g. file is not local or lacks read access).
-                await vscode.window.showTextDocument(uri);
-              }
-            }
-          }
-          break;
-        case "stop":
-          this.dismissPendingPermissions();
-          this.dismissPendingElicitations();
-          await this.acpClient.cancel();
-          break;
-        case "permissionResponse":
+        case "permissionResponse": {
           if (message.requestId && message.outcome) {
             const pending = this.permissionQueue.find(
               (p) => p.id === message.requestId
@@ -600,7 +599,9 @@ export class ChatViewProvider
             }
           }
           break;
-        case "elicitationResponse":
+        }
+
+        case "elicitationResponse": {
           if (message.requestId && message.elicitationAction) {
             const pending = this.elicitationQueue.find(
               (p) => p.id === message.requestId
@@ -620,28 +621,9 @@ export class ChatViewProvider
             }
           }
           break;
-        case "reviewDiff":
-          if (message.path) {
-            await this.handleReviewDiff(message.path);
-          }
-          break;
-        case "acceptDiff":
-          if (message.path) {
-            this.diffManager.accept(message.path);
-          }
-          break;
-        case "rollbackDiff":
-          if (message.path) {
-            await this.diffManager.rollback(message.path);
-          }
-          break;
-        case "acceptAllDiffs":
-          this.diffManager.acceptAll();
-          break;
-        case "rollbackAllDiffs":
-          await this.diffManager.rollbackAll();
-          break;
-        case "confirmActionResponse":
+        }
+
+        case "confirmActionResponse": {
           if (message.requestId && message.confirmed !== undefined) {
             const resolver = this.pendingConfirmations.get(message.requestId);
             if (resolver) {
@@ -650,227 +632,968 @@ export class ChatViewProvider
             }
           }
           break;
-        case "ready":
-          this.postMessage({
-            type: "connectionState",
-            state: this.acpClient.getState(),
-          });
-          this.postMessage({
-            type: "agentChanged",
-            agentId: this.acpClient.getAgentId(),
-            agentName: this.acpClient.getAgentName(),
-          });
-          this.sendSessionMetadata();
-          this.sendContextUsage();
+        }
+
+        case "searchFiles": {
+          if (message.text !== undefined) {
+            const query = message.text;
+            const results = await searchWorkspaceFiles(query, {
+              maxResults: 20,
+              includeHidden: true,
+            });
+            this.postMessage({
+              type: "fileSearchResults",
+              results,
+            });
+          }
           break;
+        }
+
+        case "openFile": {
+          await this.handleOpenFile(message);
+          break;
+        }
+
+        case "copyMessage": {
+          if (message.text) {
+            await vscode.env.clipboard.writeText(message.text);
+            vscode.window.showInformationMessage("Message copied to clipboard");
+          }
+          break;
+        }
+
+        case "clearChat": {
+          this.handleClearChat();
+          break;
+        }
+
+        case "reviewDiff": {
+          if (message.path) {
+            await this.handleReviewDiff(message.path);
+          }
+          break;
+        }
+
+        case "acceptDiff": {
+          if (message.path) {
+            this.diffManager.accept(message.path);
+          }
+          break;
+        }
+
+        case "rollbackDiff": {
+          if (message.path) {
+            await this.diffManager.rollback(message.path);
+          }
+          break;
+        }
+
+        case "acceptAllDiffs": {
+          this.diffManager.acceptAll();
+          break;
+        }
+
+        case "rollbackAllDiffs": {
+          await this.diffManager.rollbackAll();
+          break;
+        }
       }
     });
   }
 
-  private async handleReviewDiff(path: string): Promise<void> {
-    const changes = this.diffManager.getPendingChanges();
-    const change = changes.find((c) => c.path === path);
-    if (change) {
-      const uri = vscode.Uri.file(path);
-      if (change.oldText === null) {
-        // New file
-        await vscode.window.showTextDocument(uri);
+  // -------------------------------------------------------------------
+  // Session Creation & Lifecycle
+  // -------------------------------------------------------------------
+
+  public async closeCurrentSession(): Promise<void> {
+    if (this.activeSessionId) {
+      await this.closeSession(this.activeAgentId, this.activeSessionId);
+    }
+  }
+
+  public async handleNewChat(agentId?: string): Promise<void> {
+    const targetAgentId = agentId || this.activeAgentId;
+    await this.createNewSession(targetAgentId);
+  }
+
+  public async handleAgentChange(agentId: string): Promise<void> {
+    this.activeAgentId = agentId;
+    const client = this.acpClient;
+    const agent = getAgent(agentId) ?? {
+      id: agentId,
+      name: agentId,
+      command: agentId,
+      args: [],
+    };
+    if (client) {
+      client.setAgent(agent);
+    }
+    await this.createNewSession(agentId);
+  }
+
+  public async createNewSession(agentId: string): Promise<SessionTab> {
+    const cwd = getWorkspaceRoot();
+    const client = await this.agentPool.getClient(agentId, cwd);
+    const response = await client.newSession(cwd);
+    const sessionId = response.sessionId;
+
+    this.agentPool.registerSession(agentId, sessionId);
+    await this.sessionManager.recordSession(agentId, sessionId, cwd);
+
+    const sessionTab: SessionTab = {
+      sessionId,
+      agentId,
+      agentName: client.getAgentName(),
+      title: "New session",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    this.openSessions.set(sessionId, sessionTab);
+    this.activeSessionId = sessionId;
+    this.activeAgentId = agentId;
+    this.globalState.update(SELECTED_AGENT_KEY, agentId);
+
+    this.postMessage({
+      type: "sessionCreated",
+      session: sessionTab,
+    });
+
+    await this.restoreSessionPreferences(agentId);
+    this.sendSessionMetadata(agentId, sessionId);
+    this.documentSyncManager.syncCapabilities();
+
+    return sessionTab;
+  }
+
+  public async closeSession(agentId: string, sessionId: string): Promise<void> {
+    if (this.generatingSessions.has(sessionId)) {
+      await this.agentPool.cancelSession(agentId, sessionId);
+      this.generatingSessions.delete(sessionId);
+    }
+
+    const client = this.agentPool.getExistingClient(agentId) || this.acpClient;
+    if (client) {
+      const caps = client.getAgentCapabilities();
+      if (caps?.sessionCapabilities?.close) {
+        try {
+          await client.closeSession({ sessionId });
+        } catch (err) {
+          console.warn(
+            `[Chat] Failed to close session "${sessionId}" on agent "${agentId}", falling back to cancel:`,
+            err
+          );
+          try {
+            await client.cancel(sessionId);
+          } catch {
+            // ignore
+          }
+        }
       } else {
-        // Modified file - open diff view
-        // VS Code doesn't have a direct "diff with string" command that's easy to use here
-        // without writing to a temp file.
-        // Actually, we can use a custom FileSystemProvider or just use the current disk state.
-        // Since we already modified the disk, we need the OLD content to show a diff.
+        try {
+          await client.cancel(sessionId);
+        } catch {
+          // ignore
+        }
+      }
+    }
 
-        // Strategy: use a custom TextDocumentContentProvider for the old content
+    this.agentPool.unregisterSession(agentId, sessionId);
+    this.openSessions.delete(sessionId);
+    this.userMessageBuffers.delete(sessionId);
 
-        await vscode.commands.executeCommand(
-          "vscode.diff",
-          vscode.Uri.parse(`acp-old-content:${path}`),
-          uri,
-          `Diff: ${vscode.workspace.asRelativePath(path)} (Original ↔ Modified)`
-        );
+    this.postMessage({
+      type: "sessionClosed",
+      sessionId,
+      agentId,
+    });
+
+    if (this.activeSessionId === sessionId) {
+      const remaining = Array.from(this.openSessions.values());
+      if (remaining.length > 0) {
+        const next = remaining[remaining.length - 1];
+        this.activeSessionId = next.sessionId;
+        this.activeAgentId = next.agentId;
+        this.postMessage({
+          type: "activeSessionChanged",
+          sessionId: next.sessionId,
+        });
+        this.sendSessionMetadata(this.activeAgentId, this.activeSessionId);
+        this.sendContextUsage(this.activeAgentId, this.activeSessionId);
+      } else {
+        this.activeSessionId = null;
       }
     }
   }
 
-  public newChat(): void {
-    this.handleNewChat().catch((err) => {
-      console.error("[Chat] handleNewChat failed:", err);
-    });
-  }
-
-  public clearChat(): void {
-    this.handleClearChat();
-  }
-
-  /**
-   * List available history sessions for the current agent.
-   * Returns an empty array when the agent doesn't support `loadSession`.
-   */
-  public async listSessions(): Promise<SessionInfo[]> {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    const cwd = workspaceFolder?.uri.fsPath || process.cwd();
-    return this.sessionManager.listSessions(cwd);
-  }
-
-  /**
-   * Return whether the current agent supports `session/load`.
-   */
-  public getSupportsLoadSession(): boolean {
-    return this.sessionManager.supportsLoadSession;
-  }
-
-  /**
-   * Return whether the current agent supports `session/list`.
-   */
-  public getSupportsListSessions(): boolean {
-    return this.sessionManager.supportsListSessions;
-  }
-
-  /**
-   * Return whether the current agent supports `session/delete`.
-   */
-  public getSupportsDeleteSession(): boolean {
-    return this.sessionManager.supportsDeleteSession;
-  }
-
-  /**
-   * Delete a history session. Removes it from the agent (if supported) and
-   * the local cache.
-   */
-  public async deleteHistorySession(sessionId: string): Promise<void> {
-    await this.sessionManager.deleteSession(sessionId);
-  }
-
-  /**
-   * Load a history session. Clears current chat, then loads via ACP.
-   * The agent will stream the full conversation history back.
-   */
-  public async loadHistorySession(sessionId: string): Promise<void> {
-    if (this.acpClient.getCurrentSessionId() === sessionId) {
+  public async loadHistorySession(
+    sessionId: string,
+    agentId?: string
+  ): Promise<void> {
+    // 1. If already open in tabs, just activate that tab
+    if (this.openSessions.has(sessionId)) {
+      this.activeSessionId = sessionId;
+      const tab = this.openSessions.get(sessionId);
+      if (tab) this.activeAgentId = tab.agentId;
+      this.postMessage({
+        type: "activeSessionChanged",
+        sessionId,
+      });
+      this.sendSessionMetadata(this.activeAgentId, this.activeSessionId);
+      this.sendContextUsage(this.activeAgentId, this.activeSessionId);
       return;
     }
 
-    if (this.isGenerating) {
-      const ok = await this.confirmIfGenerating(
-        `confirm-loadHistory-${Date.now()}`,
-        "loadHistory",
-        "Load History"
-      );
-      if (!ok) return;
+    // 2. Look up agent ID from stored record if omitted
+    let targetAgentId = agentId;
+    let sessionTitle = `Session ${sessionId}`;
+    const record = await this.sessionManager.findSession(sessionId);
+    if (record) {
+      targetAgentId = targetAgentId || record.agentId;
+      sessionTitle = record.title || sessionTitle;
     }
+    targetAgentId = targetAgentId || getFirstAvailableAgent().id;
 
-    await this.closeCurrentSession();
-
-    this.userMessageBuffer = "";
-    this.userMessageImages = [];
     const cwd = getWorkspaceRoot();
+    const client = await this.agentPool.getClient(targetAgentId, cwd);
+    this.agentPool.registerSession(targetAgentId, sessionId);
 
-    // Clear the current UI
-    this.hasSession = false;
-    this.hasRestoredModeModel = false;
-    this.clearToolCallMetadata();
-    this.diffManager.clear();
-    this.postMessage({ type: "chatCleared" });
+    const sessionTab: SessionTab = {
+      sessionId,
+      agentId: targetAgentId,
+      agentName: client.getAgentName(),
+      title: sessionTitle,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    this.openSessions.set(sessionId, sessionTab);
+    this.activeSessionId = sessionId;
+    this.activeAgentId = targetAgentId;
+
     this.postMessage({
-      type: "sessionMetadata",
-      modes: null,
-      models: null,
-      genericConfigOptions: [],
+      type: "sessionCreated",
+      session: sessionTab,
     });
-    this.acpClient.clearLastUsageUpdate();
-    this.sendContextUsage();
 
     try {
-      if (!this.acpClient.isConnected()) {
-        await this.acpClient.connect(cwd);
-      }
-      this.sessionManager.syncCapabilities();
-      this.documentSyncManager.syncCapabilities();
-
-      // Set flag to indicate we're loading history
-      this.isLoadingHistory = true;
-      await this.sessionManager.loadSession(sessionId, cwd);
-      // Wait for all queued session updates to finish rendering before
-      // sending the final streamEnd — otherwise the webview receives
-      // streamEnd before the history content arrives.
+      await client.loadSession({ sessionId, cwd });
       await this.sessionUpdateNotifier.waitForIdle();
-      // Flush buffer and send streamEnd to separate thinking blocks
-      this.flushUserMessageBuffer();
-      // Finalize the last agent response in the history
-      this.postMessage({ type: "streamEnd", stopReason: "history_load" });
-      this.isLoadingHistory = false;
-
-      this.hasSession = true;
-      this.sendSessionMetadata();
+      this.flushUserMessageBuffer(sessionId);
+      this.postMessage({
+        type: "streamEnd",
+        stopReason: "history_load",
+        agentId: targetAgentId,
+        sessionId,
+      });
+      this.sendSessionMetadata(targetAgentId, sessionId);
+      this.documentSyncManager.syncCapabilities();
     } catch (error) {
       console.error("[Chat] Failed to load history session:", error);
-      this.isLoadingHistory = false;
       const errorMessage =
         error instanceof Error ? error.message : JSON.stringify(error);
       this.postMessage({
         type: "error",
         text: `Failed to load history: ${errorMessage}`,
+        agentId: targetAgentId,
+        sessionId,
       });
-      this.sendSessionMetadata();
     }
   }
 
-  public addSelection(selection: SelectionMention): void {
+  public async deleteHistorySession(
+    agentId: string,
+    sessionId: string
+  ): Promise<void> {
+    const client = this.agentPool.getExistingClient(agentId);
+    if (client && client.isConnected()) {
+      const caps = client.getAgentCapabilities();
+      if (caps?.sessionCapabilities?.delete) {
+        try {
+          await client.deleteSession({ sessionId });
+        } catch (err) {
+          console.warn("[Chat] Agent deleteSession failed:", err);
+        }
+      }
+    }
+    await this.sessionManager.deleteSession(agentId, sessionId);
+  }
+
+  public async listAllSessions(): Promise<SessionInfo[]> {
+    const cwd = getWorkspaceRoot();
+    return this.sessionManager.listAllSessions(cwd);
+  }
+
+  public async listSessions(): Promise<SessionInfo[]> {
+    return this.listAllSessions();
+  }
+
+  public getOpenSession(sessionId: string): SessionTab | undefined {
+    return this.openSessions.get(sessionId);
+  }
+
+  public getSupportsLoadSession(): boolean {
+    return this.sessionManager.supportsLoadSession;
+  }
+
+  public getSupportsDeleteSession(): boolean {
+    return this.sessionManager.supportsDeleteSession;
+  }
+
+  public async finalizePendingToolCalls(stopReason?: string): Promise<void> {
+    for (const [toolCallId, state] of this.toolCalls.entries()) {
+      if (state.pending) {
+        this.toolCalls.delete(toolCallId);
+        this.postMessage({
+          type: "toolCallComplete",
+          toolCallId,
+          status: stopReason === "error" ? "failed" : "completed",
+          title: state.title,
+          kind: state.kind,
+          rawInput: state.rawInput,
+          content: state.content,
+        });
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // Session Updates & Streaming
+  // -------------------------------------------------------------------
+
+  public async handleSessionUpdate(
+    agentIdOrNotification: string | SessionNotification,
+    maybeNotification?: SessionNotification
+  ): Promise<void> {
+    let agentId: string;
+    let notification: SessionNotification;
+
+    if (typeof agentIdOrNotification === "string") {
+      agentId = agentIdOrNotification;
+      notification = maybeNotification!;
+    } else {
+      notification = agentIdOrNotification;
+      agentId =
+        (notification.sessionId
+          ? this.openSessions.get(notification.sessionId)?.agentId
+          : undefined) || this.activeAgentId;
+    }
+
+    const client = this.getClient(agentId);
+    const sessionId = notification.sessionId || this.activeSessionId || "";
+    const update = notification.update;
+
+    if (update.sessionUpdate === "agent_message_chunk") {
+      this.flushUserMessageBuffer(sessionId);
+      if (update.content?.type === "text") {
+        this.postMessage({
+          type: "streamChunk",
+          agentId,
+          sessionId,
+          text: update.content.text,
+          messageId: update.messageId ?? null,
+        });
+      }
+    } else if (update.sessionUpdate === "user_message_chunk") {
+      if (update.content?.type === "text") {
+        let entry = this.userMessageBuffers.get(sessionId);
+        if (!entry) {
+          entry = { buffer: "", images: [] };
+          this.userMessageBuffers.set(sessionId, entry);
+        }
+        entry.buffer += update.content.text;
+      }
+    } else if (update.sessionUpdate === "agent_thought_chunk") {
+      this.flushUserMessageBuffer(sessionId);
+      if (update.content?.type === "text") {
+        this.postMessage({
+          type: "thoughtChunk",
+          agentId,
+          sessionId,
+          text: update.content.text,
+          messageId: update.messageId ?? null,
+        });
+      }
+    } else if (update.sessionUpdate === "tool_call") {
+      this.flushUserMessageBuffer(sessionId);
+      this.rememberToolCallMetadata(update, agentId, sessionId);
+      const state = this.toolCalls.get(update.toolCallId);
+      if (state) state.pending = true;
+
+      if (this.isFinalToolCall(update)) {
+        if (state) state.pending = false;
+        this.toolCalls.delete(update.toolCallId);
+        const terminalOutput = this.extractTerminalOutput(update.rawOutput);
+        this.postMessage({
+          type: "toolCallComplete",
+          agentId,
+          sessionId,
+          toolCallId: update.toolCallId,
+          status: update.status,
+          title: update.title || state?.title,
+          kind: update.kind || state?.kind,
+          rawInput: update.rawInput || state?.rawInput,
+          rawOutput: update.rawOutput,
+          content: update.content || state?.content,
+          terminalOutput,
+        });
+      } else {
+        this.postMessage({
+          type: "toolCallStart",
+          agentId,
+          sessionId,
+          name: update.title || "Tool",
+          toolCallId: update.toolCallId,
+          kind: update.kind,
+          rawInput: update.rawInput,
+        });
+      }
+    } else if (update.sessionUpdate === "tool_call_update") {
+      this.rememberToolCallMetadata(update, agentId, sessionId);
+      if (this.isFinalToolCall(update)) {
+        const state = this.toolCalls.get(update.toolCallId);
+        if (state) state.pending = false;
+        this.toolCalls.delete(update.toolCallId);
+        const terminalOutput = this.extractTerminalOutput(update.rawOutput);
+
+        this.postMessage({
+          type: "toolCallComplete",
+          agentId,
+          sessionId,
+          toolCallId: update.toolCallId,
+          status: update.status,
+          title: update.title || state?.title,
+          kind: update.kind || state?.kind,
+          rawInput: update.rawInput || state?.rawInput,
+          rawOutput: update.rawOutput,
+          content: update.content || state?.content,
+          terminalOutput,
+        });
+      }
+    } else if (update.sessionUpdate === "session_info_update") {
+      if (sessionId) {
+        await this.sessionManager.applySessionInfoUpdate(
+          agentId,
+          sessionId,
+          update
+        );
+        if (update.title) {
+          const tab = this.openSessions.get(sessionId);
+          if (tab) tab.title = update.title;
+          this.postMessage({
+            type: "sessionUpdated",
+            agentId,
+            sessionId,
+            title: update.title,
+          });
+        }
+      }
+    } else if (update.sessionUpdate === "current_mode_update") {
+      this.postMessage({
+        type: "modeUpdate",
+        agentId,
+        sessionId,
+        modeId: update.currentModeId,
+      });
+    } else if (update.sessionUpdate === "available_commands_update") {
+      this.postMessage({
+        type: "availableCommands",
+        agentId,
+        sessionId,
+        commands: update.availableCommands,
+      });
+    } else if (update.sessionUpdate === "plan") {
+      this.postMessage({
+        type: "plan",
+        agentId,
+        sessionId,
+        plan: { entries: update.entries },
+      });
+    } else if (update.sessionUpdate === "config_option_update") {
+      client?.updateSessionMetadataFromConfigOptions(
+        update.configOptions,
+        sessionId
+      );
+      this.sendSessionMetadata(agentId, sessionId);
+    } else if (update.sessionUpdate === "usage_update") {
+      const u = update as Partial<ContextUsageUpdate>;
+      if (
+        typeof u.used === "number" &&
+        typeof u.size === "number" &&
+        u.size > 0
+      ) {
+        client?.setLastUsageUpdate(
+          {
+            used: u.used,
+            size: u.size,
+            cost: u.cost,
+          },
+          sessionId
+        );
+        this.sendContextUsage(agentId, sessionId);
+      }
+    }
+  }
+
+  private extractTerminalOutput(rawOutput: unknown): string | undefined {
+    if (typeof rawOutput === "string") {
+      return rawOutput;
+    }
+    if (rawOutput && typeof rawOutput === "object") {
+      const obj = rawOutput as Record<string, unknown>;
+      if (typeof obj.formatted_output === "string") {
+        return obj.formatted_output;
+      }
+      if (typeof obj.text === "string") {
+        return obj.text;
+      }
+      if (typeof obj.output === "string") {
+        return obj.output;
+      }
+      return Object.entries(obj)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join("\n");
+    }
+    return undefined;
+  }
+
+  public flushUserMessageBuffer(sessionId?: string): void {
+    const targetSessionId = sessionId || this.activeSessionId || "";
+    const entry = this.userMessageBuffers.get(targetSessionId);
+    if (entry && entry.buffer) {
+      this.postMessage({
+        type: "streamEnd",
+        stopReason: "end_turn",
+        sessionId: targetSessionId || undefined,
+      });
+      const { text, mentions } = extractMentions(entry.buffer);
+      this.postMessage({
+        type: "userMessage",
+        sessionId: targetSessionId || undefined,
+        text,
+        mentions,
+      });
+      entry.buffer = "";
+      entry.images = [];
+    }
+  }
+
+  public async handleUserMessage(
+    agentId: string,
+    sessionId: string | null,
+    text: string,
+    images: string[] = [],
+    mentions: Array<{
+      name: string;
+      path?: string;
+      type?: "file" | "folder" | "selection" | "terminal" | "image";
+      content?: string;
+      range?: { startLine: number; endLine: number };
+      dataUrl?: string;
+    }> = []
+  ): Promise<void> {
+    const cwd = getWorkspaceRoot();
+    const client = await this.agentPool.getClient(agentId, cwd);
+
+    let activeSession = sessionId
+      ? this.openSessions.get(sessionId)
+      : undefined;
+    if (!activeSession || !sessionId) {
+      activeSession = await this.createNewSession(agentId);
+      sessionId = activeSession.sessionId;
+    }
+    const resolvedSessionId = sessionId;
+
+    if (this.generatingSessions.has(resolvedSessionId)) return;
+    this.generatingSessions.add(resolvedSessionId);
+
     this.postMessage({
-      type: "addMention",
-      mention: {
-        type: selection.type,
-        name: selection.name,
-        path: selection.path,
-        content: selection.content,
-        range: selection.range,
-      },
+      type: "userMessage",
+      agentId,
+      sessionId: resolvedSessionId,
+      text,
+      images,
+      mentions,
+    });
+
+    try {
+      this.postMessage({
+        type: "streamStart",
+        agentId,
+        sessionId: resolvedSessionId,
+      });
+
+      const response = await client.sendMessage(
+        text,
+        images,
+        mentions,
+        resolvedSessionId
+      );
+      await this.finalizePendingToolCalls(response.stopReason);
+      this.postMessage({
+        type: "streamEnd",
+        agentId,
+        sessionId: resolvedSessionId,
+        stopReason: response.stopReason,
+      });
+    } catch (error) {
+      console.error("[Chat] Error in handleUserMessage:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : JSON.stringify(error);
+      await this.finalizePendingToolCalls("error");
+      this.postMessage({
+        type: "error",
+        agentId,
+        sessionId: resolvedSessionId,
+        text: `Error: ${errorMessage}`,
+      });
+      this.postMessage({
+        type: "streamEnd",
+        agentId,
+        sessionId: resolvedSessionId,
+        stopReason: "error",
+      });
+    } finally {
+      this.generatingSessions.delete(resolvedSessionId);
+    }
+  }
+
+  public sendSessionMetadata(agentId?: string, sessionId?: string): void {
+    const targetSessionId = sessionId || this.activeSessionId;
+    const targetAgentId =
+      agentId ||
+      (targetSessionId
+        ? this.openSessions.get(targetSessionId)?.agentId
+        : undefined) ||
+      this.activeAgentId;
+    const client = this.getClient(targetAgentId);
+    const metadata = client?.getSessionMetadata(targetSessionId ?? undefined);
+
+    const prefs = this.getAgentPreferences(targetAgentId);
+    const starredModels = prefs.starredModels || [];
+
+    this.postMessage({
+      type: "sessionMetadata",
+      agentId: targetAgentId,
+      sessionId: targetSessionId ?? undefined,
+      modes: metadata?.modes || null,
+      models: metadata?.models || null,
+      genericConfigOptions: metadata?.genericConfigOptions || [],
+      commands: metadata?.commands || null,
+      starredModels,
     });
   }
 
-  private stderrBuffer = "";
+  public sendContextUsage(agentId?: string, sessionId?: string): void {
+    const targetSessionId = sessionId || this.activeSessionId;
+    const targetAgentId =
+      agentId ||
+      (targetSessionId
+        ? this.openSessions.get(targetSessionId)?.agentId
+        : undefined) ||
+      this.activeAgentId;
+    const client = this.getClient(targetAgentId);
+    const metadata = client?.getSessionMetadata?.(targetSessionId ?? undefined);
+    const usage =
+      metadata?.lastUsageUpdate ||
+      client?.getLastUsageUpdate?.(targetSessionId ?? undefined);
 
-  private handleStderr(text: string): void {
-    this.stderrBuffer += text;
+    this.postMessage({
+      type: "contextUsage",
+      agentId: targetAgentId,
+      sessionId: targetSessionId ?? undefined,
+      used: usage ? usage.used : null,
+      size: usage ? usage.size : null,
+      cost: usage ? usage.cost : null,
+    });
+  }
 
-    const errorMatch = this.stderrBuffer.match(
-      /(\w+Error):\s*(\w+)?\s*\n?\s*data:\s*\{([^}]+)\}/
-    );
-    if (errorMatch) {
-      const errorType = errorMatch[1];
-      const errorData = errorMatch[3];
-      const providerMatch = errorData.match(/providerID:\s*"([^"]+)"/);
-      const modelMatch = errorData.match(/modelID:\s*"([^"]+)"/);
+  public async restoreSessionPreferences(agentId?: string): Promise<void> {
+    const client = this.getClient(agentId);
+    if (!client) return;
 
-      let message = `Agent error: ${errorType}`;
-      if (providerMatch && modelMatch) {
-        message = `Model not found: ${providerMatch[1]}/${modelMatch[1]}`;
+    const targetAgentId =
+      agentId || this.acpClient?.getAgentId?.() || this.activeAgentId;
+    const pref = this.getAgentPreferences(targetAgentId);
+    const metadata = client.getSessionMetadata();
+
+    // Restore mode
+    if (pref.modeId && metadata?.modes) {
+      const hasMode = metadata.modes.availableModes.some(
+        (m) => m.id === pref.modeId
+      );
+      if (hasMode) {
+        await client.setMode(pref.modeId);
       }
-
-      this.postMessage({ type: "agentError", text: message });
-      this.stderrBuffer = "";
     }
 
-    if (this.stderrBuffer.length > 10000) {
-      this.stderrBuffer = this.stderrBuffer.slice(-5000);
+    // Restore model
+    if (pref.modelId && metadata?.models) {
+      const hasModel = metadata.models.availableModels.some(
+        (m) => m.modelId === pref.modelId
+      );
+      if (hasModel) {
+        await client.setModel(pref.modelId);
+      }
+    }
+
+    // Restore generic config options
+    if (pref.configOptionValues && metadata?.genericConfigOptions) {
+      for (const opt of metadata.genericConfigOptions) {
+        const val = pref.configOptionValues[opt.id];
+        if (val && opt.options.some((o) => o.value === val)) {
+          await client.setConfigOption(opt.id, val);
+        }
+      }
+    }
+
+    if (pref.modelId) {
+      await this.restorePerModelConfigOptions(pref.modelId, targetAgentId);
     }
   }
 
-  private async handlePermissionRequest(
-    params: RequestPermissionRequest
+  private getThoughtLevelConfigOptionIds(agentId?: string): Set<string> {
+    const client = this.getClient(agentId);
+    const metadata = client?.getSessionMetadata();
+    const ids = new Set<string>();
+    if (metadata?.genericConfigOptions) {
+      for (const opt of metadata.genericConfigOptions) {
+        if (opt.category === "thought_level" || opt.id === "thought_level") {
+          ids.add(opt.id);
+        }
+      }
+    }
+    return ids;
+  }
+
+  public async restorePerModelConfigOptions(
+    modelId: string,
+    agentId?: string
+  ): Promise<void> {
+    const client = this.getClient(agentId);
+    if (!client) return;
+
+    const targetAgentId =
+      agentId || this.acpClient?.getAgentId?.() || this.activeAgentId;
+    const pref = this.getAgentPreferences(targetAgentId);
+    const metadata = client.getSessionMetadata();
+    const saved = pref.modelConfigOptionValues?.[modelId];
+    if (saved && metadata?.genericConfigOptions) {
+      for (const opt of metadata.genericConfigOptions) {
+        const val = saved[opt.id];
+        if (val && opt.options.some((o) => o.value === val)) {
+          await client.setConfigOption(opt.id, val);
+        }
+      }
+    }
+  }
+
+  public async handleModeChange(
+    agentIdOrModeId: string,
+    sessionId?: string | null,
+    maybeModeId?: string
+  ): Promise<void> {
+    let agentId = this.acpClient?.getAgentId?.() || this.activeAgentId;
+    let targetSessionId = this.activeSessionId;
+    let modeId = agentIdOrModeId;
+
+    if (maybeModeId !== undefined) {
+      agentId = agentIdOrModeId;
+      targetSessionId = sessionId ?? this.activeSessionId;
+      modeId = maybeModeId;
+    }
+
+    const client = this.getClient(agentId);
+    if (client) {
+      try {
+        await client.setMode(modeId, targetSessionId ?? undefined);
+        await this.updateAgentPreference(agentId, (pref) => ({
+          ...pref,
+          modeId,
+        }));
+        this.sendSessionMetadata(agentId, targetSessionId ?? undefined);
+      } catch (error) {
+        console.error("[Chat] Failed to set mode:", error);
+      }
+    }
+  }
+
+  public async handleModelChange(
+    agentIdOrModelId: string,
+    sessionId?: string | null,
+    maybeModelId?: string
+  ): Promise<void> {
+    let agentId = this.acpClient?.getAgentId?.() || this.activeAgentId;
+    let targetSessionId = this.activeSessionId;
+    let modelId = agentIdOrModelId;
+
+    if (maybeModelId !== undefined) {
+      agentId = agentIdOrModelId;
+      targetSessionId = sessionId ?? this.activeSessionId;
+      modelId = maybeModelId;
+    }
+
+    const client = this.getClient(agentId);
+    if (client) {
+      try {
+        await client.setModel(modelId, targetSessionId ?? undefined);
+        await this.updateAgentPreference(agentId, (pref) => ({
+          ...pref,
+          modelId,
+        }));
+        await this.restorePerModelConfigOptions(modelId, agentId);
+        this.sendSessionMetadata(agentId, targetSessionId ?? undefined);
+      } catch (error) {
+        console.error("[Chat] Failed to set model:", error);
+      }
+    }
+  }
+
+  public async handleConfigOptionChange(
+    agentIdOrConfigId: string,
+    sessionIdOrValue?: string | null,
+    maybeConfigId?: string,
+    maybeValue?: string
+  ): Promise<void> {
+    let agentId = this.acpClient?.getAgentId?.() || this.activeAgentId;
+    let targetSessionId = this.activeSessionId;
+    let configId = agentIdOrConfigId;
+    let value = sessionIdOrValue as string;
+
+    if (maybeConfigId !== undefined && maybeValue !== undefined) {
+      agentId = agentIdOrConfigId;
+      targetSessionId = sessionIdOrValue ?? this.activeSessionId;
+      configId = maybeConfigId;
+      value = maybeValue;
+    }
+
+    const client = this.getClient(agentId);
+    if (client) {
+      try {
+        await client.setConfigOption(
+          configId,
+          value,
+          targetSessionId ?? undefined
+        );
+        const thoughtLevelIds = this.getThoughtLevelConfigOptionIds(agentId);
+        await this.updateAgentPreference(agentId, (pref) => {
+          const updated: AgentPreference = {
+            ...pref,
+            configOptionValues: {
+              ...pref.configOptionValues,
+              [configId]: value,
+            },
+          };
+          if (thoughtLevelIds.has(configId) && pref.modelId) {
+            const modelValues = { ...(updated.modelConfigOptionValues ?? {}) };
+            modelValues[pref.modelId] = {
+              ...(modelValues[pref.modelId] ?? {}),
+              [configId]: value,
+            };
+            updated.modelConfigOptionValues = modelValues;
+          }
+          return updated;
+        });
+        this.sendSessionMetadata(agentId, targetSessionId ?? undefined);
+      } catch (error) {
+        console.error("[Chat] Failed to set config option:", error);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // Preferences & Helpers
+  // -------------------------------------------------------------------
+
+  public getAgentPreferences(agentId?: string): AgentPreference {
+    const targetId =
+      agentId || this.acpClient?.getAgentId?.() || this.activeAgentId;
+    const all =
+      (this.globalState.get<AgentPreferences>(
+        AGENT_PREFS_KEY
+      ) as AgentPreferences) || {};
+    return all[targetId] || { configOptionValues: {}, starredModels: [] };
+  }
+
+  public async updateAgentPreference(
+    agentId: string,
+    updater: (current: AgentPreference) => AgentPreference
+  ): Promise<void> {
+    const targetId =
+      agentId || this.acpClient?.getAgentId?.() || this.activeAgentId;
+    const all: AgentPreferences = {
+      ...((this.globalState.get<AgentPreferences>(
+        AGENT_PREFS_KEY
+      ) as AgentPreferences) || {}),
+    };
+    const current = all[targetId] || {
+      configOptionValues: {},
+      starredModels: [],
+    };
+    all[targetId] = updater(current);
+    await this.globalState.update(AGENT_PREFS_KEY, all);
+  }
+
+  public async updateCurrentAgentPreference(
+    updater: (current: AgentPreference) => AgentPreference
+  ): Promise<void> {
+    const targetId = this.acpClient?.getAgentId?.() || this.activeAgentId;
+    await this.updateAgentPreference(targetId, updater);
+  }
+
+  private handleClearChat(): void {
+    this.postMessage({
+      type: "chatCleared",
+      sessionId: this.activeSessionId ?? undefined,
+    });
+  }
+
+  private handleStderr(agentId: string, text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const isFatalError =
+      /^error:\s/im.test(trimmed) ||
+      /^fatal:\s/im.test(trimmed) ||
+      /uncaughtexception/i.test(trimmed) ||
+      /syntaxerror/i.test(trimmed) ||
+      /referenceerror/i.test(trimmed);
+
+    const client = this.agentPool.getExistingClient(agentId);
+    const isClientInError = client?.getState() === "error";
+
+    if (isFatalError || isClientInError) {
+      const formattedText = trimmed.startsWith(`[${agentId}]`)
+        ? trimmed
+        : `[${agentId}] ${trimmed}`;
+      this.postMessage({
+        type: "agentError",
+        agentId,
+        sessionId: this.activeSessionId ?? undefined,
+        text: formattedText,
+      });
+    }
+  }
+
+  public async handlePermissionRequest(
+    agentIdOrParams: string | RequestPermissionRequest,
+    maybeParams?: RequestPermissionRequest
   ): Promise<RequestPermissionResponse> {
-    // Automatically approve tool kinds listed in the configuration without
-    // showing the permission dialog.
+    let agentId = this.activeAgentId;
+    let params: RequestPermissionRequest;
+
+    if (typeof agentIdOrParams === "string") {
+      agentId = agentIdOrParams;
+      params = maybeParams!;
+    } else {
+      params = agentIdOrParams;
+    }
+
     const autoApprovedKinds = vscode.workspace
       .getConfiguration("vscode-acp-chat")
       .get<string[]>("autoApprovePermissionKinds", []);
-    const toolKind = params.toolCall?.kind;
+    const toolKind = params?.toolCall?.kind;
     if (toolKind && autoApprovedKinds.includes(toolKind)) {
-      // Prefer a single-use "allow" option, then an "always" option. If the
-      // agent offers neither, fall through to the normal permission dialog
-      // instead of declining.
       const options = params.options || [];
       const allowOption =
         options.find((opt) => opt.kind === "allow_once") ??
@@ -887,34 +1610,24 @@ export class ChatViewProvider
 
     return new Promise((resolve) => {
       const requestId = `perm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-      // Add to queue
       this.permissionQueue.push({
         id: requestId,
+        agentId,
         params,
         resolver: resolve,
       });
 
-      if (params.toolCall?.toolCallId) {
-        this.markToolCallPending(params.toolCall.toolCallId);
-        this.postMessage({
-          type: "toolCallStart",
-          name: params.toolCall.title || "Tool",
-          toolCallId: params.toolCall.toolCallId,
-          kind: params.toolCall.kind,
-        });
-      }
-
-      // Send to webview
       this.postMessage({
         type: "permissionRequest",
+        agentId,
+        sessionId: this.activeSessionId ?? undefined,
         requestId,
-        toolCallId: params.toolCall?.toolCallId,
+        toolCallId: params?.toolCall?.toolCallId,
         toolCall: {
-          kind: params.toolCall?.kind || "Unknown",
-          title: params.toolCall?.title || "Tool Call",
+          kind: params?.toolCall?.kind || "Unknown",
+          title: params?.toolCall?.title || "Tool Call",
         },
-        options: (params.options || []).map((opt) => ({
+        options: (params?.options || []).map((opt) => ({
           optionId: opt.optionId,
           kind: opt.kind,
           name: opt.name,
@@ -923,19 +1636,27 @@ export class ChatViewProvider
     });
   }
 
-  private handleElicitationRequest(
-    params: CreateElicitationRequest
+  public handleElicitationRequest(
+    agentIdOrParams: string | CreateElicitationRequest,
+    maybeParams?: CreateElicitationRequest
   ): Promise<CreateElicitationResponse> {
+    let agentId = this.activeAgentId;
+    let params: CreateElicitationRequest;
+
+    if (typeof agentIdOrParams === "string") {
+      agentId = agentIdOrParams;
+      params = maybeParams!;
+    } else {
+      params = agentIdOrParams;
+    }
+
     return new Promise((resolve) => {
       const requestId = `elic-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-      // Add to queue
       this.elicitationQueue.push({
         id: requestId,
-        // The request union includes a custom `mode: string` variant with an
-        // index signature, so property access needs an explicit cast here.
+        agentId,
         elicitationId:
-          params.mode === "url"
+          params?.mode === "url"
             ? (params as CreateElicitationRequest & { elicitationId?: string })
                 .elicitationId
             : undefined,
@@ -943,36 +1664,29 @@ export class ChatViewProvider
         resolver: resolve,
       });
 
-      // Send to webview
       this.postMessage({
         type: "elicitationRequest",
+        agentId,
+        sessionId: this.activeSessionId ?? undefined,
         requestId,
-        message: params.message,
-        mode: params.mode,
-        ...(params.mode === "form"
+        message: params?.message,
+        mode: params?.mode,
+        ...(params?.mode === "form"
           ? { schema: params.requestedSchema }
-          : params.mode === "url"
+          : params?.mode === "url"
             ? { url: params.url, elicitationId: params.elicitationId }
             : {}),
       });
     });
   }
 
-  private handleElicitationComplete(
+  public handleElicitationComplete(
     notification: CompleteElicitationNotification
   ): void {
-    // An agent may close a URL elicitation with a complete notification
-    // before the user clicks "completed". Resolve any still-pending entry so
-    // the JSON-RPC request gets a response, then tell the webview to remove
-    // its block. Entries already resolved by the user are absent from the
-    // queue; the notification is not forwarded so a stale complete can never
-    // close a different request's block.
     const pending = this.elicitationQueue.find(
       (p) => p.elicitationId === notification.elicitationId
     );
-    if (!pending) {
-      return;
-    }
+    if (!pending) return;
     pending.resolver({ action: "accept" });
     this.elicitationQueue = this.elicitationQueue.filter(
       (p) => p.id !== pending.id
@@ -983,38 +1697,47 @@ export class ChatViewProvider
     });
   }
 
-  private clearToolCallMetadata(): void {
-    this.toolCalls.clear();
-    this.fileHandler.clearLastFileContents();
-  }
-
-  private cleanupToolCall(toolCallId: string): void {
-    this.toolCalls.delete(toolCallId);
-  }
-
-  private getToolCallState(toolCallId: string): ToolCallState {
-    let state = this.toolCalls.get(toolCallId);
-    if (!state) {
-      state = {};
-      this.toolCalls.set(toolCallId, state);
+  private dismissPendingPermissions(sessionId?: string): void {
+    for (const pending of this.permissionQueue) {
+      if (!sessionId || pending.sessionId === sessionId) {
+        pending.resolver({ outcome: { outcome: "cancelled" } });
+      }
     }
-    return state;
+    this.permissionQueue = sessionId
+      ? this.permissionQueue.filter((p) => p.sessionId !== sessionId)
+      : [];
+    this.postMessage({ type: "permissionCleared", sessionId });
   }
 
-  private markToolCallPending(toolCallId: string): ToolCallState {
-    const state = this.getToolCallState(toolCallId);
-    state.pending = true;
-    return state;
+  private dismissPendingElicitations(sessionId?: string): void {
+    for (const pending of this.elicitationQueue) {
+      if (!sessionId || pending.sessionId === sessionId) {
+        pending.resolver({ action: "cancel" });
+      }
+    }
+    this.elicitationQueue = sessionId
+      ? this.elicitationQueue.filter((p) => p.sessionId !== sessionId)
+      : [];
+    this.postMessage({ type: "elicitationCleared", sessionId });
   }
 
-  private isToolCallPending(toolCallId: string): boolean {
-    return this.toolCalls.get(toolCallId)?.pending === true;
-  }
-
-  private getPendingToolCallIds(): string[] {
-    return Array.from(this.toolCalls.entries())
-      .filter(([, state]) => state.pending)
-      .map(([toolCallId]) => toolCallId);
+  private rememberToolCallMetadata(
+    update: ToolCallMetadataUpdate,
+    agentId?: string,
+    sessionId?: string
+  ): void {
+    let state = this.toolCalls.get(update.toolCallId);
+    if (!state) {
+      state = { agentId, sessionId };
+      this.toolCalls.set(update.toolCallId, state);
+    }
+    if (update.rawInput)
+      state.rawInput = update.rawInput as Record<string, unknown>;
+    if (update.rawOutput) state.rawOutput = update.rawOutput;
+    if (update.kind) state.kind = update.kind;
+    if (update.title) state.title = update.title;
+    if (update.content) state.content = update.content;
+    if (update.locations) state.locations = update.locations;
   }
 
   private isFinalToolCall(
@@ -1023,1059 +1746,263 @@ export class ChatViewProvider
     return update.status === "completed" || update.status === "failed";
   }
 
-  private asRecord(value: unknown): Record<string, unknown> | undefined {
-    return value && typeof value === "object"
-      ? (value as Record<string, unknown>)
-      : undefined;
-  }
-
-  private asToolCallRawInput(
-    rawInput: unknown
-  ): Record<string, unknown> | undefined {
-    return this.asRecord(rawInput);
-  }
-
-  private extractOutputText(value: unknown): string | undefined {
-    if (value === undefined || value === null) {
-      return undefined;
-    }
-
-    const text = String(value);
-    return text.length > 0 ? text : undefined;
-  }
-
-  private extractRawOutputText(rawOutput: unknown): string | undefined {
-    const rawOutputRecord = this.asRecord(rawOutput);
-    if (!rawOutputRecord) {
-      return this.extractOutputText(rawOutput);
-    }
-
-    const knownOutput =
-      this.extractOutputText(rawOutputRecord.formatted_output) ||
-      this.extractOutputText(rawOutputRecord.output) ||
-      this.extractOutputText(rawOutputRecord.text);
-
-    if (knownOutput) {
-      return knownOutput;
-    }
-
-    const keys = Object.keys(rawOutputRecord);
-    if (keys.length > 0) {
-      return keys
-        .map((key) => `${key}: ${formatJsonValue(rawOutputRecord[key])}`)
-        .join("\n");
-    }
-
-    return undefined;
-  }
-
-  private hasToolCallPresentation(update: ToolCallUpdate): boolean {
-    // Updates without kind/title/content/locations/rawInput are metadata-only
-    // (e.g. status changes) and should not create or redraw a visible tool card.
-    return (
-      update.kind !== undefined ||
-      update.title !== undefined ||
-      update.content !== undefined ||
-      update.locations !== undefined ||
-      update.rawInput !== undefined
-    );
-  }
-
-  private rememberToolCallMetadata(
-    update: ToolCallMetadataUpdate,
-    resetStartTime = false
-  ): void {
-    const state = this.getToolCallState(update.toolCallId);
-    const rawInput = this.asToolCallRawInput(update.rawInput);
-    if (rawInput) {
-      state.rawInput = rawInput;
-    }
-    if (update.rawOutput !== undefined) {
-      state.rawOutput = update.rawOutput;
-    }
-    if (typeof update.kind === "string") {
-      state.kind = update.kind;
-    }
-    if (typeof update.title === "string") {
-      state.title = update.title;
-    }
-    if (Array.isArray(update.content)) {
-      state.content = update.content;
-    }
-    if (Array.isArray(update.locations)) {
-      state.locations = update.locations;
-    }
-    if (resetStartTime || state.startTime === undefined) {
-      state.startTime = Date.now();
-    }
-  }
-
-  private captureToolCallBaseContent(
-    update: Pick<
-      ToolCall | ToolCallUpdate,
-      "toolCallId" | "rawInput" | "kind" | "title"
-    >
-  ): void {
-    const state = this.getToolCallState(update.toolCallId);
-    if (state.baseContent) {
-      return;
-    }
-
-    const rawInput = this.asToolCallRawInput(update.rawInput) || state.rawInput;
-    const path = this.extractPath(rawInput);
-    if (!path) {
-      return;
-    }
-
-    const kind = update.kind || state.kind;
-    const title = update.title || state.title;
-    state.baseContent = this.captureBaseContent(kind, title, rawInput);
-  }
-
-  private async completeToolCall(update: FinalToolCallUpdate): Promise<void> {
-    if (!this.isToolCallPending(update.toolCallId)) {
-      return;
-    }
-
-    const state = this.getToolCallState(update.toolCallId);
-    let content = update.content ?? state.content;
-    const rawOutput =
-      update.rawOutput !== undefined ? update.rawOutput : state.rawOutput;
-    const locations = update.locations ?? state.locations;
-    let terminalOutput = this.extractRawOutputText(rawOutput);
-
-    if (!terminalOutput && content && content.length > 0) {
-      const terminalContent = content.find(
-        (c) => c.type === "terminal" && "terminalId" in c
-      );
-      if (terminalContent && "terminalId" in terminalContent) {
-        terminalOutput = `[Terminal: ${terminalContent.terminalId}]`;
-      }
-    }
-
-    // Enrich with diff if it's a file modification and missing
-    const rawInput = this.asToolCallRawInput(update.rawInput) || state.rawInput;
-    const path = this.extractPath(rawInput);
-
-    const kind = update.kind || state.kind;
-    const title = update.title || state.title;
-
-    if (
-      typeof path === "string" &&
-      (kind === "write" ||
-        kind === "edit" ||
-        title?.toLowerCase().includes("write") ||
-        title?.toLowerCase().includes("edit"))
-    ) {
-      let oldText: string | undefined;
-
-      // Prefer pre-write snapshot from handleWriteTextFile (captured right
-      // before the disk write). This avoids a race where captureBaseContent
-      // reads the file AFTER the write has already landed.
-      const captured = this.fileHandler.getLastFileContent(path);
-      if (captured !== undefined) {
-        oldText = captured ?? undefined;
+  private async handleReviewDiff(path: string): Promise<void> {
+    const changes = this.diffManager.getPendingChanges();
+    const change = changes.find((c) => c.path === path);
+    if (change) {
+      const uri = vscode.Uri.file(path);
+      if (change.oldText === null) {
+        await vscode.window.showTextDocument(uri);
       } else {
-        const oldTextPromise = state.baseContent;
-        oldText = oldTextPromise ? await oldTextPromise : undefined;
-
-        if (!this.isToolCallPending(update.toolCallId)) {
-          return;
-        }
-
-        // Only re-capture if we never attempted it during tool_call.
-        // If oldTextPromise exists but resolved to undefined, the file
-        // didn't exist at capture time (new file). Re-reading now would
-        // pick up content already written by the agent, making oldText
-        // equal to newText and producing an empty diff.
-        if (oldText === undefined && !oldTextPromise) {
-          oldText = await this.captureBaseContent(kind, title, rawInput);
-          if (!this.isToolCallPending(update.toolCallId)) {
-            return;
-          }
-        }
+        await vscode.commands.executeCommand(
+          "vscode.diff",
+          vscode.Uri.parse(`acp-old-content:${path}`),
+          uri,
+          `Diff: ${vscode.workspace.asRelativePath(path)} (Original ↔ Modified)`
+        );
       }
+    }
+  }
 
-      let newText: string | undefined =
-        (rawInput?.content as string) ||
-        (rawInput?.text as string) ||
-        (rawInput?.newContent as string) ||
-        (rawInput?.newText as string) ||
-        (rawInput?.new_string as string) ||
-        (rawInput?.replacement as string) ||
-        (rawInput?.data as string) ||
-        (rawInput?.text_content as string) ||
-        (rawInput?.modified_content as string);
+  private async handleOpenFile(message: WebviewMessage): Promise<void> {
+    let uri: vscode.Uri | undefined;
+    let range: { startLine: number; endLine: number } | undefined;
 
-      // For edit-type tools (old_string + new_string), compute the full
-      // new content by applying the replacement to the original text.
-      // Otherwise newText is only the replacement fragment, which makes
-      // the diff show every unchanged line as deleted.
-      //
-      // Use replaceAll so the agent's replacement matches its intent
-      // when old_string appears multiple times. If old_string is not
-      // found in oldText, fall back to reading the file from disk —
-      // a broken diff (full file as removed, replacement as added) is
-      // more misleading than a correct diff.
-      let editReconstructed = false;
-      if (
-        rawInput?.old_string !== undefined &&
-        rawInput?.new_string !== undefined &&
-        oldText !== undefined
-      ) {
-        const oldString = String(rawInput.old_string);
-        const newString = String(rawInput.new_string);
-        if (oldText.includes(oldString)) {
-          newText = oldText.split(oldString).join(newString);
-          editReconstructed = true;
+    if (message.href) {
+      try {
+        const decoded = decodeURIComponent(message.href);
+        let target = decoded;
+        const hashIndex = target.indexOf("#");
+        if (hashIndex !== -1) {
+          const frag = target.substring(hashIndex + 1);
+          target = target.substring(0, hashIndex);
+          range = parseFileLineRange(frag);
         } else {
-          try {
-            const uri = vscode.Uri.file(path);
-            const currentBytes = await vscode.workspace.fs.readFile(uri);
-            newText = this.textDecoder.decode(currentBytes);
-            // If the file on disk matches oldText, the write was a no-op
-            // (or round-tripped back to the original) — no diff to show.
-            editReconstructed = newText !== oldText;
-          } catch {
-            editReconstructed = false;
-          }
+          const parsed = splitTrailingLineSuffix(target);
+          target = parsed.path;
+          range = parsed.range;
         }
-      }
 
-      // For edit tools where we could not reconstruct the full new
-      // content, skip the diff entirely. Pushing just the replacement
-      // fragment would make the diff show the entire file as removed.
-      const hasEditFields =
-        rawInput?.old_string !== undefined &&
-        rawInput?.new_string !== undefined;
-      const shouldEmitDiff = !hasEditFields || editReconstructed;
-      if (
-        shouldEmitDiff &&
-        newText !== undefined &&
-        !content?.some((c) => c.type === "diff")
-      ) {
-        content = content ? [...content] : [];
-        content.push({
-          type: "diff",
-          path: path,
-          oldText,
-          newText: String(newText),
-        });
-      }
-    }
-
-    const duration = state.startTime ? Date.now() - state.startTime : undefined;
-
-    this.postMessage({
-      type: "toolCallComplete",
-      toolCallId: update.toolCallId,
-      title,
-      kind,
-      content,
-      rawInput,
-      rawOutput,
-      status: update.status,
-      terminalOutput,
-      locations,
-      duration,
-    });
-
-    this.cleanupToolCall(update.toolCallId);
-  }
-
-  private async finalizePendingToolCalls(
-    stopReason: string | undefined
-  ): Promise<void> {
-    const pendingToolCallIds = this.getPendingToolCallIds();
-    if (pendingToolCallIds.length === 0) {
-      return;
-    }
-
-    const status =
-      stopReason === "cancelled" || stopReason === "error"
-        ? "failed"
-        : "completed";
-    for (const toolCallId of pendingToolCallIds) {
-      if (!this.isToolCallPending(toolCallId)) {
-        continue;
-      }
-      await this.completeToolCall({
-        toolCallId,
-        status,
-      });
-    }
-  }
-
-  public dispose(): void {
-    this.sessionUpdateNotifier.dispose();
-    this.webviewPostNotifier.dispose();
-    this.diffManager.dispose();
-    this.documentSyncManager.dispose();
-    this.fileHandler.dispose();
-    this.terminalHandler.dispose();
-    this.clearToolCallMetadata();
-  }
-
-  private async handleSessionUpdate(
-    notification: SessionNotification
-  ): Promise<void> {
-    const update = notification.update;
-
-    // During normal conversation (not loading history), ignore user_message_chunk
-    // because opencode echoes back user messages, which would cause duplicate display
-    // and trigger premature streamEnd via flushUserMessageBuffer
-    if (
-      update.sessionUpdate === "user_message_chunk" &&
-      !this.isLoadingHistory
-    ) {
-      return;
-    }
-
-    // Only content-bearing chunks that represent a new assistant turn should
-    // trigger a flush of the user message buffer. Metadata updates
-    // (available_commands_update, config_option_update, usage_update, etc.)
-    // must NOT trigger flush because opencode may send them via setTimeout
-    // between user message chunks during history replay, which would split
-    // a single user message into two.
-    const isContentChunk = [
-      "agent_message_chunk",
-      "agent_thought_chunk",
-      "tool_call",
-      "tool_call_update",
-    ].includes(update.sessionUpdate);
-
-    if (update.sessionUpdate !== "user_message_chunk" && isContentChunk) {
-      this.flushUserMessageBuffer();
-    }
-
-    // Handle user message chunks (for history session restoration)
-    if (update.sessionUpdate === "user_message_chunk") {
-      if (update.content.type === "text") {
-        this.userMessageBuffer += update.content.text;
-      } else if (update.content.type === "image") {
-        // Store image dataUrl for later reconstruction during history load
-        // This allows us to restore image preview chips if agent supports it
-        if (update.content.data && update.content.mimeType) {
-          const dataUrl = `data:${update.content.mimeType};base64,${update.content.data}`;
-          this.userMessageImages.push(dataUrl);
+        if (target.startsWith("file://")) {
+          uri = vscode.Uri.parse(target);
+        } else if (path.isAbsolute(target)) {
+          uri = vscode.Uri.file(target);
+        } else {
+          const root = getWorkspaceRoot();
+          uri = vscode.Uri.file(path.resolve(root, target));
         }
-      }
-    } else if (update.sessionUpdate === "agent_message_chunk") {
-      if (update.content.type === "text") {
-        this.postMessage({
-          type: "streamChunk",
-          text: update.content.text,
-          messageId: update.messageId ?? null,
-        });
-      }
-    } else if (update.sessionUpdate === "tool_call") {
-      this.markToolCallPending(update.toolCallId);
-      this.rememberToolCallMetadata(update, true);
-      this.captureToolCallBaseContent(update);
-
-      if (this.isFinalToolCall(update)) {
-        await this.completeToolCall(update);
-      } else {
-        this.postMessage({
-          type: "toolCallStart",
-          name: update.title,
-          toolCallId: update.toolCallId,
-          kind: update.kind,
-          rawInput: update.rawInput,
-        });
-
-        // Cleanup after 10 minutes to prevent leaks if protocol fails
-        setTimeout(
-          () => this.cleanupToolCall(update.toolCallId),
-          10 * 60 * 1000
-        );
-      }
-    } else if (update.sessionUpdate === "tool_call_update") {
-      if (this.isFinalToolCall(update)) {
-        if (!this.isToolCallPending(update.toolCallId)) {
-          this.markToolCallPending(update.toolCallId);
-        }
-        this.rememberToolCallMetadata(update);
-        await this.completeToolCall(update);
-      } else {
-        this.rememberToolCallMetadata(update);
-        // Try to capture base content if we haven't already. We do NOT await
-        // here to avoid blocking the notification loop.
-        this.captureToolCallBaseContent(update);
-
-        if (this.hasToolCallPresentation(update)) {
-          const state = this.markToolCallPending(update.toolCallId);
-          this.postMessage({
-            type: "toolCallStart",
-            name: update.title || state.title || "Tool",
-            toolCallId: update.toolCallId,
-            kind: update.kind || state.kind,
-            rawInput: update.rawInput || state.rawInput,
-          });
-        }
-      }
-    } else if (update.sessionUpdate === "current_mode_update") {
-      this.postMessage({ type: "modeUpdate", modeId: update.currentModeId });
-    } else if (update.sessionUpdate === "available_commands_update") {
-      this.postMessage({
-        type: "availableCommands",
-        commands: update.availableCommands,
-      });
-    } else if (update.sessionUpdate === "plan") {
-      this.postMessage({
-        type: "plan",
-        plan: { entries: update.entries },
-      });
-    } else if (update.sessionUpdate === "agent_thought_chunk") {
-      if (update.content?.type === "text") {
-        this.postMessage({
-          type: "thoughtChunk",
-          text: update.content.text,
-          messageId: update.messageId ?? null,
-        });
-      }
-    } else if (update.sessionUpdate === "config_option_update") {
-      // Update session metadata from configOptions (new ACP protocol format)
-      this.acpClient.updateSessionMetadataFromConfigOptions(
-        update.configOptions
-      );
-      this.sendSessionMetadata();
-    } else if (update.sessionUpdate === "usage_update") {
-      const u = update as Partial<ContextUsageUpdate>;
-      if (
-        typeof u.size !== "number" ||
-        u.size <= 0 ||
-        typeof u.used !== "number"
-      ) {
-        return;
-      }
-      const cost =
-        u.cost &&
-        typeof u.cost.amount === "number" &&
-        typeof u.cost.currency === "string"
-          ? { amount: u.cost.amount, currency: u.cost.currency }
-          : null;
-      this.acpClient.setLastUsageUpdate({
-        used: u.used,
-        size: u.size,
-        cost,
-      });
-      this.sendContextUsage();
-    }
-  }
-
-  private flushUserMessageBuffer(): void {
-    if (this.userMessageBuffer) {
-      // Ensure the PREVIOUS assistant response is finalized before starting the next user message
-      // This is critical during history restoration to correctly separate turns and add toolbars
-      this.postMessage({ type: "streamEnd", stopReason: "end_turn" });
-
-      const { text, mentions } = extractMentions(this.userMessageBuffer);
-
-      // Merge collected image dataUrls into their corresponding mentions
-      // This enables image preview chips during history restoration
-      if (this.userMessageImages.length > 0) {
-        let imageIdx = 0;
-        for (const mention of mentions) {
-          if (mention.type === "image" && !mention.dataUrl) {
-            // Agent provided image chunk - use it for preview
-            if (imageIdx < this.userMessageImages.length) {
-              mention.dataUrl = this.userMessageImages[imageIdx];
-              imageIdx++;
-            }
-          }
-        }
-      }
-
-      this.postMessage({
-        type: "userMessage",
-        text,
-        mentions,
-      });
-      this.userMessageBuffer = "";
-      this.userMessageImages = [];
-    }
-  }
-
-  private extractPath(
-    rawInput: Record<string, unknown> | undefined
-  ): string | undefined {
-    return (
-      (rawInput?.path as string) ||
-      (rawInput?.file as string) ||
-      (rawInput?.filePath as string) ||
-      (rawInput?.file_path as string) ||
-      (rawInput?.filename as string) ||
-      (rawInput?.uri as string) ||
-      (rawInput?.filepath as string) ||
-      (rawInput?.file_name as string) ||
-      (rawInput?.target as string) ||
-      (rawInput?.target_file as string) ||
-      (rawInput?.destination as string) ||
-      (rawInput?.destination_path as string) ||
-      (rawInput?.source as string) ||
-      (rawInput?.source_path as string)
-    );
-  }
-
-  private async captureBaseContent(
-    kind: string | undefined,
-    title: string | undefined,
-    rawInput: Record<string, unknown> | undefined
-  ): Promise<string | undefined> {
-    const path = this.extractPath(rawInput);
-
-    if (
-      typeof path === "string" &&
-      (kind === "write" ||
-        kind === "edit" ||
-        title?.toLowerCase().includes("write") ||
-        title?.toLowerCase().includes("edit"))
-    ) {
-      try {
-        const uri = vscode.Uri.file(path);
-        const fileContent = await vscode.workspace.fs.readFile(uri);
-        return this.textDecoder.decode(fileContent);
-      } catch (error) {
-        if (
-          error instanceof vscode.FileSystemError &&
-          error.code === "FileNotFound"
-        ) {
-          // File doesn't exist, it's a new file. No base content.
-          return undefined;
-        }
-        console.error(
-          `[Chat] Unexpected error capturing base content for ${path}:`,
-          error
-        );
-        return undefined;
-      }
-    }
-    return undefined;
-  }
-
-  private async handleUserMessage(
-    text: string,
-    images: string[] = [],
-    mentions: Array<{
-      name: string;
-      path?: string;
-      type?: "file" | "folder" | "selection" | "terminal" | "image";
-      content?: string;
-      range?: { startLine: number; endLine: number };
-      dataUrl?: string;
-    }> = []
-  ): Promise<void> {
-    if (this.isGenerating) return;
-    this.isGenerating = true;
-
-    // Clear history restoration buffer on new user interaction
-    this.userMessageBuffer = "";
-    this.userMessageImages = [];
-    this.postMessage({ type: "userMessage", text, images, mentions });
-
-    try {
-      const workingDir = getWorkspaceRoot();
-
-      if (!this.acpClient.isConnected()) {
-        await this.acpClient.connect(workingDir);
-      }
-
-      if (!this.hasSession) {
-        await this.sessionManager.newSession(workingDir);
-        this.hasSession = true;
-        this.sendSessionMetadata();
-      }
-
-      this.stderrBuffer = "";
-      this.postMessage({ type: "streamStart" });
-      const response = await this.acpClient.sendMessage(text, images, mentions);
-
-      await this.finalizePendingToolCalls(response.stopReason);
-      this.postMessage({
-        type: "streamEnd",
-        stopReason: response.stopReason,
-      });
-    } catch (error) {
-      console.error("[Chat] Error in handleUserMessage:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : JSON.stringify(error);
-      this.postMessage({
-        type: "error",
-        text: `Error: ${errorMessage}`,
-      });
-      await this.finalizePendingToolCalls("error");
-      this.postMessage({ type: "streamEnd", stopReason: "error" });
-      this.stderrBuffer = "";
-    } finally {
-      this.isGenerating = false;
-    }
-  }
-
-  public async switchAgent(agentId: string): Promise<void> {
-    await this.handleAgentChange(agentId);
-  }
-
-  private async handleAgentChange(agentId: string): Promise<void> {
-    const agent = getAgent(agentId);
-    if (agent) {
-      if (this.isGenerating) {
-        const currentAgentName = this.acpClient.getAgentName();
-        const ok = await this.confirmIfGenerating(
-          `confirm-switchAgent-${Date.now()}`,
-          "switchAgent",
-          `Switch Agent: ${currentAgentName} → ${agent.name}`
-        );
-        if (!ok) return;
-      }
-
-      await this.closeCurrentSession();
-      this.acpClient.setAgent(agent);
-      this.globalState.update(SELECTED_AGENT_KEY, agentId);
-      this.hasSession = false;
-      this.hasRestoredModeModel = false;
-      this.diffManager.clear();
-      this.sessionManager.syncCapabilities();
-      this.documentSyncManager.syncCapabilities();
-      this.postMessage({
-        type: "agentChanged",
-        agentId,
-        agentName: agent.name,
-      });
-      this.postMessage({
-        type: "sessionMetadata",
-        modes: null,
-        models: null,
-        genericConfigOptions: [],
-      });
-      this.acpClient.clearLastUsageUpdate();
-      this.sendContextUsage();
-
-      try {
-        await this.handleConnect();
-      } catch (error) {
-        console.error(
-          "[Chat] Auto-reconnect failed after agent change:",
-          error
-        );
-      }
-    }
-  }
-
-  private async handleModeChange(modeId: string): Promise<void> {
-    try {
-      await this.acpClient.setMode(modeId);
-      await this.updateCurrentAgentPreference((pref) => ({ ...pref, modeId }));
-      this.sendSessionMetadata();
-    } catch (error) {
-      console.error("[Chat] Failed to set mode:", error);
-    }
-  }
-
-  private async handleModelChange(modelId: string): Promise<void> {
-    try {
-      await this.acpClient.setModel(modelId);
-      await this.updateCurrentAgentPreference((pref) => ({ ...pref, modelId }));
-      await this.restorePerModelConfigOptions(modelId);
-      this.sendSessionMetadata();
-    } catch (error) {
-      console.error("[Chat] Failed to set model:", error);
-    }
-  }
-
-  private async handleConfigOptionChange(
-    configId: string,
-    value: string
-  ): Promise<void> {
-    try {
-      await this.acpClient.setConfigOption(configId, value);
-      const thoughtLevelIds = this.getThoughtLevelConfigOptionIds();
-      await this.updateCurrentAgentPreference((pref) => {
-        const updated: AgentPreference = {
-          ...pref,
-          configOptionValues: {
-            ...pref.configOptionValues,
-            [configId]: value,
-          },
-        };
-        if (thoughtLevelIds.has(configId) && pref.modelId) {
-          const modelValues = { ...(updated.modelConfigOptionValues ?? {}) };
-          modelValues[pref.modelId] = {
-            ...(modelValues[pref.modelId] ?? {}),
-            [configId]: value,
-          };
-          updated.modelConfigOptionValues = modelValues;
-        }
-        return updated;
-      });
-      this.sendSessionMetadata();
-    } catch (error) {
-      console.error(`[Chat] Failed to set config option ${configId}:`, error);
-    }
-  }
-
-  private async handleConnect(): Promise<void> {
-    try {
-      const workingDir = getWorkspaceRoot();
-
-      if (!this.acpClient.isConnected()) {
-        await this.acpClient.connect(workingDir);
-      }
-      this.sessionManager.syncCapabilities();
-      this.documentSyncManager.syncCapabilities();
-      if (!this.hasSession) {
-        await this.sessionManager.newSession(workingDir);
-        this.hasSession = true;
-        this.sendSessionMetadata();
-      }
-    } catch (error) {
-      this.postMessage({
-        type: "error",
-        text: error instanceof Error ? error.message : "Failed to connect",
-      });
-    }
-  }
-
-  private async handleNewChat(): Promise<void> {
-    if (this.isGenerating) {
-      const ok = await this.confirmIfGenerating(
-        `confirm-newChat-${Date.now()}`,
-        "newChat",
-        "New Chat"
-      );
-      if (!ok) return;
-    }
-
-    await this.closeCurrentSession();
-
-    this.userMessageBuffer = "";
-    this.hasSession = false;
-    this.hasRestoredModeModel = false;
-    this.clearToolCallMetadata();
-    this.diffManager.clear();
-    this.postMessage({ type: "chatCleared" });
-    this.postMessage({
-      type: "sessionMetadata",
-      modes: null,
-      models: null,
-      genericConfigOptions: [],
-    });
-    this.acpClient.clearLastUsageUpdate();
-    this.sendContextUsage();
-
-    try {
-      if (this.acpClient.isConnected()) {
-        const workingDir = getWorkspaceRoot();
-        await this.sessionManager.newSession(workingDir);
-        this.hasSession = true;
-        this.sendSessionMetadata();
-      }
-    } catch (error) {
-      console.error("[Chat] Failed to create new session:", error);
-    }
-  }
-
-  private handleClearChat(): void {
-    this.dismissPendingPermissions();
-    this.dismissPendingElicitations();
-    this.postMessage({ type: "chatCleared" });
-  }
-
-  /**
-   * Resolve every pending permission request as cancelled and tell the
-   * webview to close any open permission UI. Called when the session is
-   * stopped, cleared, or replaced, so stale requests do not linger.
-   */
-  private dismissPendingPermissions(): void {
-    if (this.permissionQueue.length === 0) {
-      return;
-    }
-    for (const pending of this.permissionQueue) {
-      pending.resolver({ outcome: { outcome: "cancelled" } });
-    }
-    this.permissionQueue = [];
-    this.postMessage({ type: "permissionCleared" });
-  }
-
-  private dismissPendingElicitations(): void {
-    if (this.elicitationQueue.length === 0) {
-      return;
-    }
-    for (const pending of this.elicitationQueue) {
-      pending.resolver({ action: "cancel" });
-    }
-    this.elicitationQueue = [];
-    this.postMessage({ type: "elicitationCleared" });
-  }
-
-  /**
-   * Best-effort close of the active session before switching to a new one.
-   *
-   * Prefers `session/close` when the agent advertises support. If close is
-   * unavailable or fails, falls back to `session/cancel` so the old session
-   * does not keep running unchecked.
-   */
-  private async closeCurrentSession(): Promise<void> {
-    this.dismissPendingPermissions();
-    this.dismissPendingElicitations();
-
-    if (!this.acpClient.isConnected()) {
-      return;
-    }
-
-    const sessionId = this.acpClient.getCurrentSessionId();
-    if (!sessionId) {
-      return;
-    }
-
-    const supportsClose =
-      !!this.acpClient.getAgentCapabilities()?.sessionCapabilities?.close;
-    if (supportsClose) {
-      try {
-        await this.acpClient.closeSession({ sessionId });
-        return;
-      } catch (error) {
-        console.error(
-          "[Chat] Failed to close previous session; falling back to cancel:",
-          error
-        );
-      }
-    }
-
-    try {
-      await this.acpClient.cancel();
-    } catch (error) {
-      console.error("[Chat] Failed to cancel previous session:", error);
-    }
-  }
-
-  private requestConfirmation(
-    requestId: string,
-    action: string,
-    actionLabel: string
-  ): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      this.pendingConfirmations.set(requestId, resolve);
-      this.postMessage({
-        type: "confirmAction",
-        requestId,
-        action,
-        actionLabel,
-      });
-    });
-  }
-
-  /**
-   * Ask the user before replacing a session while the current turn is active.
-   *
-   * This only collects consent. The caller is responsible for closing or
-   * cancelling the session afterwards via `closeCurrentSession()`.
-   */
-  private async confirmIfGenerating(
-    requestId: string,
-    action: string,
-    actionLabel: string
-  ): Promise<boolean> {
-    if (!this.isGenerating) return true;
-    return this.requestConfirmation(requestId, action, actionLabel);
-  }
-
-  private sendSessionMetadata(): void {
-    const metadata = this.acpClient.getSessionMetadata();
-    const pref = this.getCurrentAgentPreference();
-    this.postMessage({
-      type: "sessionMetadata",
-      modes: metadata?.modes ?? null,
-      models: metadata?.models ?? null,
-      genericConfigOptions: metadata?.genericConfigOptions ?? [],
-      commands: metadata?.commands ?? null,
-      starredModels: pref.starredModels,
-    });
-
-    if (!this.hasRestoredModeModel && this.hasSession) {
-      this.hasRestoredModeModel = true;
-      this.restoreSessionPreferences().catch((error) =>
-        console.warn(
-          "[Chat] Failed to restore saved session preferences:",
-          error
-        )
-      );
-    }
-  }
-
-  private sendContextUsage(): void {
-    const last = this.acpClient.getSessionMetadata()?.lastUsageUpdate;
-    if (last && typeof last.size === "number" && last.size > 0) {
-      this.postMessage({
-        type: "contextUsage",
-        used: last.used,
-        size: last.size,
-        cost: last.cost ?? null,
-      });
-    } else {
-      this.postMessage({
-        type: "contextUsage",
-        used: null,
-        size: null,
-        cost: null,
-      });
-    }
-  }
-
-  private getCurrentAgentPreference(): AgentPreference {
-    const agentId = this.acpClient.getAgentId();
-    const allPrefs =
-      this.globalState.get<AgentPreferences>(AGENT_PREFS_KEY) ?? {};
-    return allPrefs[agentId] ?? { configOptionValues: {}, starredModels: [] };
-  }
-
-  private async updateCurrentAgentPreference(
-    updater: (pref: AgentPreference) => AgentPreference
-  ): Promise<void> {
-    const agentId = this.acpClient.getAgentId();
-    const allPrefs =
-      this.globalState.get<AgentPreferences>(AGENT_PREFS_KEY) ?? {};
-    allPrefs[agentId] = updater(
-      allPrefs[agentId] ?? { configOptionValues: {}, starredModels: [] }
-    );
-    await this.globalState.update(AGENT_PREFS_KEY, allPrefs);
-  }
-
-  private getThoughtLevelConfigOptionIds(): Set<string> {
-    const metadata = this.acpClient.getSessionMetadata();
-    const generic = metadata?.genericConfigOptions ?? [];
-    const ids = new Set<string>();
-    for (const opt of generic) {
-      if (opt.category === "thought_level") {
-        ids.add(opt.id);
-      }
-    }
-    return ids;
-  }
-
-  private async restorePerModelConfigOptions(
-    modelId: string
-  ): Promise<Set<string>> {
-    const restored = new Set<string>();
-    const pref = this.getCurrentAgentPreference();
-    const modelValues = pref.modelConfigOptionValues?.[modelId];
-    if (!modelValues) return restored;
-
-    const metadata = this.acpClient.getSessionMetadata();
-    const generic = metadata?.genericConfigOptions ?? [];
-    for (const [configId, savedValue] of Object.entries(modelValues)) {
-      const opt = generic.find((o) => o.id === configId);
-      if (!opt) continue;
-      const stillAvailable = opt.options.some((o) => o.value === savedValue);
-      if (!stillAvailable) continue;
-      if (opt.currentValue === savedValue) continue;
-      try {
-        await this.acpClient.setConfigOption(configId, savedValue);
-        await this.updateCurrentAgentPreference((p) => ({
-          ...p,
-          configOptionValues: {
-            ...p.configOptionValues,
-            [configId]: savedValue,
-          },
-        }));
-        restored.add(configId);
       } catch (err) {
-        console.warn(
-          `[Chat] Failed to restore ${configId} for model ${modelId}:`,
+        console.error(
+          "[Chat] Failed to parse openFile href:",
+          message.href,
           err
         );
       }
-    }
-    return restored;
-  }
+    } else if (message.path) {
+      const decoded = decodeURIComponent(message.path);
+      let target = decoded;
+      const parsed = splitTrailingLineSuffix(target);
+      target = parsed.path;
+      range = parsed.range || message.range;
 
-  private async restoreSessionPreferences(): Promise<void> {
-    const metadata = this.acpClient.getSessionMetadata();
-    const availableModes = Array.isArray(metadata?.modes?.availableModes)
-      ? metadata.modes.availableModes
-      : [];
-    const availableModels = Array.isArray(metadata?.models?.availableModels)
-      ? metadata.models.availableModels
-      : [];
-    const genericConfigOptions = Array.isArray(metadata?.genericConfigOptions)
-      ? metadata.genericConfigOptions
-      : [];
-
-    const pref = this.getCurrentAgentPreference();
-
-    let modeRestored = false;
-    let modelRestored = false;
-    const configOptionsRestored = new Set<string>();
-
-    if (
-      pref.modeId &&
-      availableModes.some(
-        (mode: { id: string }) => mode && mode.id === pref.modeId
-      )
-    ) {
-      await this.acpClient.setMode(pref.modeId);
-      modeRestored = true;
+      if (path.isAbsolute(target)) {
+        uri = vscode.Uri.file(target);
+      } else {
+        const root = getWorkspaceRoot();
+        uri = vscode.Uri.file(path.resolve(root, target));
+      }
     }
 
-    if (
-      pref.modelId &&
-      availableModels.some(
-        (model: { modelId: string }) => model && model.modelId === pref.modelId
-      )
-    ) {
-      await this.acpClient.setModel(pref.modelId);
-      modelRestored = true;
-    }
+    if (uri) {
+      if (message.checkExists) {
+        try {
+          await vscode.workspace.fs.stat(uri);
+        } catch {
+          vscode.window.showErrorMessage(
+            `File does not exist: ${vscode.workspace.asRelativePath(uri)}`
+          );
+          return;
+        }
+      }
 
-    const savedConfigValues = pref.configOptionValues ?? {};
-    for (const opt of genericConfigOptions) {
-      const saved = savedConfigValues[opt.id];
-      if (!saved) continue;
-      const stillAvailable = opt.options.some((o) => o.value === saved);
-      if (!stillAvailable) continue;
-      if (saved === opt.currentValue) continue;
       try {
-        await this.acpClient.setConfigOption(opt.id, saved);
-        configOptionsRestored.add(opt.id);
-      } catch (error) {
-        console.warn(
-          `[Chat] Failed to restore config option ${opt.id}:`,
-          error
-        );
+        await vscode.workspace.fs.stat(uri);
+        const options: vscode.TextDocumentShowOptions = { preview: true };
+        if (range) {
+          const start = new vscode.Position(
+            Math.max(0, range.startLine - 1),
+            0
+          );
+          const end = new vscode.Position(Math.max(0, range.endLine - 1), 0);
+          options.selection = new vscode.Range(start, end);
+        }
+        await vscode.window.showTextDocument(uri, options);
+      } catch {
+        await vscode.window.showTextDocument(uri);
       }
-    }
-
-    if (modelRestored && pref.modelId) {
-      const perModelRestored = await this.restorePerModelConfigOptions(
-        pref.modelId
-      );
-      for (const id of perModelRestored) {
-        configOptionsRestored.add(id);
-      }
-    }
-
-    if (modeRestored || modelRestored || configOptionsRestored.size > 0) {
-      const refreshed = this.acpClient.getSessionMetadata();
-      this.postMessage({
-        type: "sessionMetadata",
-        modes: refreshed?.modes ?? null,
-        models: refreshed?.models ?? null,
-        genericConfigOptions: refreshed?.genericConfigOptions ?? [],
-        commands: refreshed?.commands ?? null,
-        starredModels: pref.starredModels,
-      });
     }
   }
 
-  private postMessage(message: Record<string, unknown>): void {
-    const webview = this.view?.webview;
-    if (!webview) {
+  public async showNewChatQuickPick(): Promise<void> {
+    const agents = getAgentsWithStatus(true);
+    const availableAgents = agents.filter((a) => a.available);
+
+    if (availableAgents.length === 0) {
+      vscode.window.showWarningMessage(
+        "No available ACP agents found. Please install an agent CLI or configure custom agents in settings."
+      );
       return;
     }
 
+    const items = availableAgents.map((a) => ({
+      label: a.name,
+      description: a.description || (a.custom ? "(Custom Agent)" : a.id),
+      detail: a.args?.length ? `${a.command} ${a.args.join(" ")}` : a.command,
+      id: a.id,
+    }));
+
+    const quickPick = vscode.window.createQuickPick<(typeof items)[number]>();
+    quickPick.items = items;
+    quickPick.placeholder = "Select an AI agent to start a new session";
+    quickPick.title = "VSCode ACP: New Session";
+
+    quickPick.onDidAccept(async () => {
+      const selected = quickPick.selectedItems[0];
+      quickPick.dispose();
+      if (selected) {
+        try {
+          await this.createNewSession(selected.id);
+          await vscode.commands.executeCommand(
+            "vscode-acp-chat.chatView.focus"
+          );
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          vscode.window.showErrorMessage(`Failed to start session: ${message}`);
+        }
+      }
+    });
+
+    quickPick.onDidHide(() => quickPick.dispose());
+    quickPick.show();
+  }
+
+  public async showOpenSessionsQuickPick(): Promise<void> {
+    const openSessionsList = Array.from(this.openSessions.values());
+    if (openSessionsList.length === 0) {
+      vscode.window.showInformationMessage("No open sessions.");
+      return;
+    }
+
+    type SessionQuickPickItem = vscode.QuickPickItem & {
+      sessionId: string;
+      agentId: string;
+    };
+
+    const buildItems = (): SessionQuickPickItem[] => {
+      return Array.from(this.openSessions.values()).map((s) => {
+        const isCurrent = s.sessionId === this.activeSessionId;
+        return {
+          label: `${isCurrent ? "$(check) " : ""}${s.title || "New session"}`,
+          description: `[${s.agentName || s.agentId}]`,
+          detail: s.sessionId,
+          sessionId: s.sessionId,
+          agentId: s.agentId,
+          buttons: [
+            {
+              iconPath: new vscode.ThemeIcon("close"),
+              tooltip: "Close session",
+            },
+          ],
+        };
+      });
+    };
+
+    const quickPick = vscode.window.createQuickPick<SessionQuickPickItem>();
+    quickPick.items = buildItems();
+    quickPick.placeholder = "Select a session to switch or click ✕ to close";
+    quickPick.title = "VSCode ACP: Open Sessions";
+
+    // Set default selected / highlighted item to the current session
+    const currentItem = quickPick.items.find(
+      (item) => item.sessionId === this.activeSessionId
+    );
+    if (currentItem) {
+      quickPick.activeItems = [currentItem];
+    }
+
+    quickPick.onDidAccept(async () => {
+      const selected = quickPick.selectedItems[0];
+      quickPick.dispose();
+      if (selected) {
+        if (selected.sessionId !== this.activeSessionId) {
+          this.activeSessionId = selected.sessionId;
+          this.activeAgentId = selected.agentId;
+          this.postMessage({
+            type: "activeSessionChanged",
+            sessionId: selected.sessionId,
+          });
+          this.sendSessionMetadata(this.activeAgentId, this.activeSessionId);
+          this.sendContextUsage(this.activeAgentId, this.activeSessionId);
+        }
+        await vscode.commands.executeCommand("vscode-acp-chat.chatView.focus");
+      }
+    });
+
+    quickPick.onDidTriggerItemButton(async (e) => {
+      const item = e.item;
+      try {
+        await this.closeSession(item.agentId, item.sessionId);
+        const remainingItems = buildItems();
+        quickPick.items = remainingItems;
+        if (remainingItems.length === 0) {
+          quickPick.dispose();
+        } else {
+          const newCurrent = remainingItems.find(
+            (i) => i.sessionId === this.activeSessionId
+          );
+          if (newCurrent) {
+            quickPick.activeItems = [newCurrent];
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        vscode.window.showErrorMessage(`Failed to close session: ${message}`);
+      }
+    });
+
+    quickPick.onDidHide(() => quickPick.dispose());
+    quickPick.show();
+  }
+
+  public newChat(): void {
+    this.showNewChatQuickPick().catch((err) => {
+      console.error("[Chat] showNewChatQuickPick failed:", err);
+    });
+  }
+
+  public clearChat(): void {
+    this.handleClearChat();
+  }
+
+  public addSelection(selection: SelectionMention): void {
+    this.postMessage({
+      type: "addMention",
+      sessionId: this.activeSessionId ?? undefined,
+      mention: {
+        type: selection.type,
+        name: selection.name,
+        path: selection.path,
+        content: selection.content,
+        range: selection.range,
+      },
+    });
+  }
+
+  private postMessage(message: unknown): void {
     this.webviewPostNotifier.enqueue(async () => {
       try {
-        await webview.postMessage(message);
+        await this.view?.webview.postMessage(message);
       } catch (error) {
         console.warn("[Chat] Failed to post message to webview:", error);
       }
@@ -2199,7 +2126,8 @@ export class ChatViewProvider
   <div id="image-preview-popover" class="image-preview-popover">
     <img src="" alt="Preview">
   </div>
-<script src="${webviewScriptUri}"></script>
+
+  <script src="${webviewScriptUri}"></script>
 </body>
 </html>`;
   }

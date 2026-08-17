@@ -139,6 +139,30 @@ export interface Mention {
 }
 
 // ---------------------------------------------------------------------------
+// Multi-session & Tab types
+// ---------------------------------------------------------------------------
+
+export interface SessionTab {
+  sessionId: string;
+  agentId: string;
+  agentName: string;
+  title: string;
+  createdAt?: number;
+  updatedAt?: number;
+  isGenerating?: boolean;
+  hasUnread?: boolean;
+}
+
+export interface AgentItem {
+  id: string;
+  name: string;
+  command: string;
+  args?: string[];
+  available: boolean;
+  description?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Extension → webview message
 // ---------------------------------------------------------------------------
 
@@ -155,6 +179,13 @@ export interface ExtensionMessage {
   modelId?: string;
   configId?: string;
   value?: string;
+  sessionId?: string;
+  agentId?: string;
+  agentName?: string;
+  sessions?: SessionTab[];
+  activeSessionId?: string | null;
+  session?: SessionTab;
+  agents?: AgentItem[];
   modes?: {
     availableModes: Array<{
       id: string;
@@ -192,9 +223,6 @@ export interface ExtensionMessage {
   toolCallId?: string;
   /** ACP `messageId` the chunk belongs to. A change signals a new assistant message. */
   messageId?: string | null;
-  /** Agent attribution, set on agentChanged. */
-  agentId?: string;
-  agentName?: string;
   name?: string;
   title?: string;
   kind?: ToolKind;
@@ -254,6 +282,17 @@ export interface ExtensionMessage {
   elicitationId?: string;
 }
 
+export type SessionModeState = ExtensionMessage["modes"];
+export type SessionModelState = ExtensionMessage["models"];
+export type GenericConfigOption = NonNullable<
+  ExtensionMessage["genericConfigOptions"]
+>[number];
+export interface ContextUsageUpdate {
+  used: number;
+  size: number;
+  cost?: { amount: number; currency: string } | null;
+}
+
 // ---------------------------------------------------------------------------
 // Internal webview events (EventBus)
 // ---------------------------------------------------------------------------
@@ -268,6 +307,12 @@ export interface ExtensionMessage {
 export interface WebviewEventMap {
   /** Fired after a user message has been posted to the extension host. */
   messageSent: { text: string; images: string[]; mentions: Mention[] };
+  /** Fired when a tab is selected by the user. */
+  tabSelected: { sessionId: string; agentId: string };
+  /** Fired when a tab close button is clicked. */
+  tabClosed: { sessionId: string; agentId: string };
+  /** Fired when user requests a new session for a specific agent. */
+  newSessionRequested: { agentId: string };
 }
 
 // ---------------------------------------------------------------------------

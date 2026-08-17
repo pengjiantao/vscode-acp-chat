@@ -7,26 +7,25 @@ import { MessageListComponent } from "./component/message-list";
 import { SessionToolbarComponent } from "./component/session-toolbar";
 import { ChipRendererComponent } from "./component/chip-renderer";
 import { WebviewRootComponent } from "./component/webview-root";
+import { TabBarComponent } from "./component/tab-bar";
+import { SessionStore } from "./session-store";
 import { MessageRouter, type MessageHandler } from "./message-router";
 import { StatePersistenceService } from "./state-persistence";
 import { EventBus } from "./event-bus";
 import { AsyncSerialQueue } from "../../utils/async-queue";
 import type { WebviewContext } from "./context";
-import type { VsCodeApi, ExtensionMessage, WebviewEventMap } from "./types";
+import type {
+  VsCodeApi,
+  ExtensionMessage,
+  WebviewEventMap,
+  SessionTab,
+} from "./types";
 
 declare function acquireVsCodeApi(): VsCodeApi;
 
 /**
- * Thin orchestration layer that wires all webview components together.
- *
- * Owns the {@link WebviewContext}, registers for top-level messages that
- * don't belong to any specific component (connection state, errors, chat
- * lifecycle, confirm actions, permission requests), and coordinates
- * cross-cutting concerns like send() and event listeners.
- *
- * All streaming block logic, autocomplete, chip rendering, action buttons,
- * plan/diff panels, and session toolbar logic live in their respective
- * component classes.
+ * Orchestration layer for the webview that wires components, multi-tab bar,
+ * and per-session state caching together.
  */
 export class WebviewController implements MessageHandler {
   private ctx: WebviewContext;
@@ -39,13 +38,18 @@ export class WebviewController implements MessageHandler {
   readonly sessionToolbar: SessionToolbarComponent;
   readonly auxiliaryPanels: AuxiliaryPanelsComponent;
   readonly chipRenderer: ChipRendererComponent;
+  readonly tabBar: TabBarComponent;
+  readonly sessionStore: SessionStore;
 
   private permissionDialog: PermissionDialog;
   private isConnected = false;
+  private activeSessionId: string | null = null;
+  private activeAgentId = "default";
 
   constructor(vscode: VsCodeApi, doc: Document, win: Window) {
     this.messageRouter = new MessageRouter();
     this.stateService = new StatePersistenceService(vscode);
+    this.sessionStore = new SessionStore();
 
     const eventBus = new EventBus<WebviewEventMap>();
 
@@ -56,6 +60,7 @@ export class WebviewController implements MessageHandler {
       stateService: this.stateService,
       messageRouter: this.messageRouter,
       eventBus,
+      sessionStore: this.sessionStore,
     };
 
     const root = new WebviewRootComponent(this.ctx);
@@ -64,6 +69,40 @@ export class WebviewController implements MessageHandler {
     this.inputPanel = root.inputPanel;
     this.sessionToolbar = root.sessionToolbar;
     this.auxiliaryPanels = root.auxiliaryPanels;
+
+    // Attach session context provider to input and toolbar
+    const sessionContextProvider = () => ({
+      sessionId: this.activeSessionId ?? undefined,
+      agentId: this.activeAgentId,
+    });
+    this.inputPanel.getSessionContext = sessionContextProvider;
+    this.sessionToolbar.getSessionContext = sessionContextProvider;
+
+    // Multi-tab bar
+    this.tabBar = new TabBarComponent(this.ctx, {
+      onTabSelect: (sessionId, agentId) => {
+        this.switchActiveSession(sessionId);
+        this.ctx.vscode.postMessage({
+          type: "switchSession",
+          sessionId,
+          agentId,
+        });
+      },
+      onTabClose: (sessionId, agentId) => {
+        this.closeSession(sessionId, agentId);
+      },
+      onSessionClosedNotification: (sessionId) => {
+        this.messageList.removeSession(sessionId);
+      },
+      onMoreClick: () => {
+        this.ctx.vscode.postMessage({
+          type: "showOpenSessions",
+        });
+      },
+    });
+
+    // Insert tab bar at the top of the body
+    doc.body.insertBefore(this.tabBar.containerEl, doc.body.firstChild);
 
     this.permissionDialog = new PermissionDialog(
       this.ctx,
@@ -74,6 +113,11 @@ export class WebviewController implements MessageHandler {
     // Wire cross-component dependencies
     this.messageList.onGeneratingChange = (isGenerating) => {
       this.inputPanel.setGenerating(isGenerating);
+      if (this.activeSessionId) {
+        const session = this.sessionStore.get(this.activeSessionId);
+        if (session) session.isGenerating = isGenerating;
+        this.tabBar.updateSession(this.activeSessionId, { isGenerating });
+      }
       if (!isGenerating) {
         this.inputPanel.focus();
       }
@@ -84,11 +128,6 @@ export class WebviewController implements MessageHandler {
       this.stateService.flush();
       this.inputPanel.updateInputState();
     };
-
-    // The controller is NOT registered in the router to avoid double-dispatch.
-    // Component handlers self-register in their constructors.
-    // The window listener dispatches through the router AND calls the
-    // controller directly for top-level messages.
 
     this.restoreState();
     this.setupEventListeners();
@@ -107,30 +146,163 @@ export class WebviewController implements MessageHandler {
   }
 
   // -------------------------------------------------------------------
+  // Multi-session Management
+  // -------------------------------------------------------------------
+
+  switchActiveSession(sessionId: string): void {
+    if (sessionId === this.activeSessionId) return;
+
+    // 1. Save current session input state
+    if (this.activeSessionId) {
+      const current = this.sessionStore.get(this.activeSessionId);
+      if (current) {
+        current.inputState = this.inputPanel.saveInputState();
+      }
+    }
+
+    // 2. Activate new session
+    this.activeSessionId = sessionId;
+    this.sessionStore.setActiveSessionId(sessionId);
+    const next = this.sessionStore.get(sessionId);
+
+    // Switch message list container to the new session
+    this.messageList.setActiveSession(sessionId);
+
+    if (next) {
+      this.activeAgentId = next.agentId;
+      this.tabBar.setActiveSession(sessionId);
+      this.inputPanel.setPlaceholder(next.agentName || next.agentId);
+
+      // Restore input text & draft
+      this.inputPanel.restoreInputState(next.inputState);
+
+      // Restore toolbar metadata
+      if (next.metadataMsg) {
+        this.sessionToolbar.updateMetadata(next.metadataMsg);
+      } else {
+        this.sessionToolbar.updateMetadata({
+          type: "sessionMetadata",
+          modes: null,
+          models: null,
+          genericConfigOptions: [],
+        });
+      }
+
+      // Restore context usage
+      if (next.contextUsageMsg) {
+        this.sessionToolbar.updateContextUsage(next.contextUsageMsg);
+      } else {
+        this.sessionToolbar.updateContextUsage({
+          type: "contextUsage",
+          used: null,
+          size: null,
+        });
+      }
+
+      // Restore plan & diff summary
+      if (next.plan && next.plan.entries) {
+        this.auxiliaryPanels.showPlan(next.plan.entries);
+      } else {
+        this.auxiliaryPanels.hidePlan();
+      }
+
+      if (next.diffChanges && next.diffChanges.length > 0) {
+        this.auxiliaryPanels.setDiffChanges(next.diffChanges);
+      } else {
+        this.auxiliaryPanels.clearDiff();
+      }
+
+      const isGen = this.messageList.getIsGenerating(sessionId);
+      this.inputPanel.setGenerating(isGen);
+    } else {
+      this.inputPanel.restoreInputState();
+      this.inputPanel.setGenerating(false);
+      this.auxiliaryPanels.hidePlan();
+      this.auxiliaryPanels.clearDiff();
+    }
+
+    this.inputPanel.adjustHeight();
+  }
+
+  closeSession(sessionId: string, agentId: string): void {
+    this.ctx.vscode.postMessage({
+      type: "closeSession",
+      sessionId,
+      agentId,
+    });
+
+    this.sessionStore.remove(sessionId);
+    this.messageList.removeSession(sessionId);
+
+    const remaining = this.sessionStore.getAll();
+    const tabs: SessionTab[] = remaining.map((s) => ({
+      sessionId: s.sessionId,
+      agentId: s.agentId,
+      agentName: s.agentName,
+      title: s.title,
+      isGenerating: s.isGenerating,
+    }));
+
+    if (this.activeSessionId === sessionId) {
+      if (remaining.length > 0) {
+        const next = remaining[remaining.length - 1];
+        this.tabBar.setSessions(tabs, next.sessionId);
+        this.switchActiveSession(next.sessionId);
+      } else {
+        this.activeSessionId = null;
+        this.sessionStore.setActiveSessionId(null);
+        this.tabBar.setSessions([], null);
+        this.resetChatState();
+      }
+    } else {
+      this.tabBar.setSessions(tabs, this.activeSessionId);
+    }
+  }
+
+  // -------------------------------------------------------------------
   // MessageHandler — unified synchronous dispatch
   // -------------------------------------------------------------------
 
-  /**
-   * Handle an incoming extension message. This is the unified entry point
-   * called by the window message listener and by tests directly.
-   *
-   * Processes top-level messages directly, then dispatches to all registered
-   * component handlers synchronously.
-   */
   handleMessage(
     msg: ExtensionMessage
   ): boolean | void | Promise<boolean | void> {
     // 1. Handle top-level messages in this controller
     const topResult = this.handleTopLevelMessage(msg);
 
-    // 2. Dispatch to component handlers
+    // 2. Unconditionally update session data in SessionStore
+    const { targetSessionId, changedKeys } =
+      this.sessionStore.processMessage(msg);
+
+    if (targetSessionId && changedKeys.includes("isGenerating")) {
+      const isGenerating =
+        this.sessionStore.get(targetSessionId)?.isGenerating ?? false;
+      this.tabBar.updateSession(targetSessionId, { isGenerating });
+      if (targetSessionId === this.activeSessionId) {
+        this.inputPanel.setGenerating(isGenerating);
+      }
+    }
+    if (targetSessionId && changedKeys.includes("title")) {
+      const title = this.sessionStore.get(targetSessionId)?.title;
+      if (title) this.tabBar.updateSession(targetSessionId, { title });
+    }
+
+    // 3. Dispatch to component handlers
     const handlers = this.messageRouter.getHandlers(msg.type);
     if (handlers.length === 0) return topResult;
 
-    // If any handler returns a Promise, we need to await everything
+    const isBackground = Boolean(
+      targetSessionId &&
+      this.activeSessionId &&
+      targetSessionId !== this.activeSessionId
+    );
+
     const results: (boolean | void | Promise<boolean | void>)[] = [topResult];
     for (const handler of handlers) {
       try {
+        // MessageListComponent MUST receive the message so background sessions are continuously rendered
+        if (isBackground && handler !== this.messageList) {
+          continue;
+        }
         results.push(handler.handleMessage(msg));
       } catch (error) {
         console.error(
@@ -140,7 +312,26 @@ export class WebviewController implements MessageHandler {
       }
     }
 
-    // If all results are synchronous, return immediately
+    // If active session received plan or diff updates, ensure auxiliary panels reflect the store
+    if (!isBackground && targetSessionId === this.activeSessionId) {
+      if (changedKeys.includes("plan")) {
+        const active = this.sessionStore.getActiveSession();
+        if (active?.plan?.entries) {
+          this.auxiliaryPanels.showPlan(active.plan.entries);
+        } else {
+          this.auxiliaryPanels.hidePlan();
+        }
+      }
+      if (changedKeys.includes("diffChanges")) {
+        const active = this.sessionStore.getActiveSession();
+        if (active?.diffChanges && active.diffChanges.length > 0) {
+          this.auxiliaryPanels.setDiffChanges(active.diffChanges);
+        } else {
+          this.auxiliaryPanels.clearDiff();
+        }
+      }
+    }
+
     const hasAsync = results.some(
       (r) =>
         r !== null &&
@@ -149,7 +340,6 @@ export class WebviewController implements MessageHandler {
     );
     if (!hasAsync) return;
 
-    // Otherwise await all results
     return Promise.all(results.map((r) => Promise.resolve(r))).then(() => {});
   }
 
@@ -163,6 +353,9 @@ export class WebviewController implements MessageHandler {
           this.messageList.updateViewState();
           this.stateService.update("isConnected", this.isConnected);
         }
+        return;
+
+      case "availableAgents":
         return;
 
       case "error":
@@ -283,7 +476,7 @@ export class WebviewController implements MessageHandler {
 }
 
 /**
- * Backward-compatible entry point.
+ * Entry point for initializing the webview controller.
  */
 export function initWebview(
   vscode: VsCodeApi,

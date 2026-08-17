@@ -1,10 +1,9 @@
 import * as assert from "assert";
-import * as vscode from "vscode";
 import { ChildProcess } from "child_process";
 import { type SessionUpdate } from "@agentclientprotocol/sdk";
 import { ACPClient, type SpawnFunction } from "../acp/client";
 import {
-  AgentSessionManager,
+  LocalSessionManager,
   globalStateSessionStore,
   inMemorySessionStore,
   type SessionStore,
@@ -13,512 +12,130 @@ import {
 import { createMockProcess } from "./mocks/acp-server";
 
 suite("SessionManager", () => {
-  suite("AgentSessionManager", () => {
-    let client: ACPClient;
-    let manager: AgentSessionManager;
-    let store: SessionStore;
-    let mockSpawn: SpawnFunction;
+  suite("LocalSessionManager", () => {
+    let manager: LocalSessionManager;
+    let stores: Map<string, SessionStore>;
 
     setup(() => {
-      store = inMemorySessionStore();
-      mockSpawn = (
-        _command: string,
-        _args: string[],
-        _options: unknown
-      ): ChildProcess => {
-        return createMockProcess({
-          enableLoadSession: true,
-        }) as unknown as ChildProcess;
-      };
-
-      client = new ACPClient({
-        agentConfig: {
-          id: "mock-agent",
-          name: "Mock Agent",
-          command: "mock",
-          args: [],
-        },
-        spawn: mockSpawn,
-        skipAvailabilityCheck: true,
-      });
-      manager = new AgentSessionManager(client, () => store);
-    });
-
-    teardown(() => {
-      client.dispose();
-    });
-
-    suite("kind", () => {
-      test("should return 'agent' as the kind", () => {
-        assert.strictEqual(manager.kind, "agent");
-      });
-    });
-
-    suite("supportsLoadSession", () => {
-      test("should be false before syncCapabilities", () => {
-        assert.strictEqual(manager.supportsLoadSession, false);
-      });
-
-      test("should be true after connect with loadSession-capable agent", async () => {
-        await client.connect();
-        manager.syncCapabilities();
-        assert.strictEqual(manager.supportsLoadSession, true);
-      });
-
-      test("should be false for agent without loadSession capability", async () => {
-        const disabledSpawn = (
-          _command: string,
-          _args: string[],
-          _options: unknown
-        ): ChildProcess => {
-          return createMockProcess({
-            enableLoadSession: false,
-          }) as unknown as ChildProcess;
-        };
-
-        const disabledClient = new ACPClient({
-          agentConfig: {
-            id: "mock-disabled",
-            name: "Mock Disabled",
-            command: "mock",
-            args: [],
-          },
-          spawn: disabledSpawn,
-          skipAvailabilityCheck: true,
-        });
-        const disabledManager = new AgentSessionManager(disabledClient, () =>
-          inMemorySessionStore()
-        );
-
-        await disabledClient.connect();
-        disabledManager.syncCapabilities();
-        assert.strictEqual(disabledManager.supportsLoadSession, false);
-
-        disabledClient.dispose();
-      });
-    });
-
-    suite("supportsListSessions", () => {
-      test("should be false before syncCapabilities", () => {
-        assert.strictEqual(manager.supportsListSessions, false);
-      });
-
-      test("should be true after connect with list-capable agent", async () => {
-        await client.connect();
-        manager.syncCapabilities();
-        assert.strictEqual(manager.supportsListSessions, true);
-      });
-
-      test("should be false for agent without list capability", async () => {
-        const disabledSpawn = (
-          _command: string,
-          _args: string[],
-          _options: unknown
-        ): ChildProcess => {
-          return createMockProcess({
-            enableLoadSession: true,
-            enableListSessions: false,
-          }) as unknown as ChildProcess;
-        };
-
-        const disabledClient = new ACPClient({
-          agentConfig: {
-            id: "mock-no-list",
-            name: "Mock No List",
-            command: "mock",
-            args: [],
-          },
-          spawn: disabledSpawn,
-          skipAvailabilityCheck: true,
-        });
-        const disabledManager = new AgentSessionManager(disabledClient, () =>
-          inMemorySessionStore()
-        );
-
-        await disabledClient.connect();
-        disabledManager.syncCapabilities();
-        assert.strictEqual(disabledManager.supportsListSessions, false);
-
-        disabledClient.dispose();
-      });
-
-      test("should return empty array when list capability is not supported", async () => {
-        const disabledSpawn = (
-          _command: string,
-          _args: string[],
-          _options: unknown
-        ): ChildProcess => {
-          return createMockProcess({
-            enableLoadSession: true,
-            enableListSessions: false,
-          }) as unknown as ChildProcess;
-        };
-
-        const disabledClient = new ACPClient({
-          agentConfig: {
-            id: "mock-no-list",
-            name: "Mock No List",
-            command: "mock",
-            args: [],
-          },
-          spawn: disabledSpawn,
-          skipAvailabilityCheck: true,
-        });
-        const disabledManager = new AgentSessionManager(disabledClient, () =>
-          inMemorySessionStore()
-        );
-
-        await disabledClient.connect();
-        disabledManager.syncCapabilities();
-
-        const sessions = await disabledManager.listSessions("/test");
-        assert.deepStrictEqual(sessions, []);
-
-        disabledClient.dispose();
-      });
-    });
-
-    suite("local session cache", () => {
-      function createNoListManager(): {
-        client: ACPClient;
-        manager: AgentSessionManager;
-        store: SessionStore;
-      } {
-        const noListSpawn = (
-          _command: string,
-          _args: string[],
-          _options: unknown
-        ): ChildProcess => {
-          return createMockProcess({
-            enableLoadSession: true,
-            enableListSessions: false,
-          }) as unknown as ChildProcess;
-        };
-
-        const noListClient = new ACPClient({
-          agentConfig: {
-            id: "mock-no-list",
-            name: "Mock No List",
-            command: "mock",
-            args: [],
-          },
-          spawn: noListSpawn,
-          skipAvailabilityCheck: true,
-        });
-        const noListStore = inMemorySessionStore();
-        const noListManager = new AgentSessionManager(
-          noListClient,
-          () => noListStore
-        );
-
-        return {
-          client: noListClient,
-          manager: noListManager,
-          store: noListStore,
-        };
-      }
-
-      test("should list locally recorded sessions when agent lacks list capability", async () => {
-        const { client: noListClient, manager: noListManager } =
-          createNoListManager();
-
-        await noListClient.connect();
-        noListManager.syncCapabilities();
-
-        // Create two sessions in different working directories
-        await noListManager.newSession("/test");
-        await noListManager.newSession("/other");
-
-        const sessions = await noListManager.listSessions("/test");
-        assert.strictEqual(sessions.length, 1);
-        assert.strictEqual(sessions[0].cwd, "/test");
-
-        noListClient.dispose();
-      });
-
-      test("newSession should record session in local cache", async () => {
-        const { client: noListClient, manager: noListManager } =
-          createNoListManager();
-        await noListClient.connect();
-        noListManager.syncCapabilities();
-
-        const response = await noListManager.newSession("/test");
-        const sessions = await noListManager.listSessions("/test");
-        assert.strictEqual(sessions.length, 1);
-        assert.strictEqual(sessions[0].sessionId, response.sessionId);
-
-        noListClient.dispose();
-      });
-
-      test("should return agent-listed sessions directly without writing to local cache", async () => {
-        await client.connect();
-        manager.syncCapabilities();
-
-        await client.newSession("/test/dir");
-        await client.sendMessage("Hello");
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        const sessions = await manager.listSessions("/test/dir");
-        assert.ok(sessions.length >= 1);
-        assert.ok(sessions[0].sessionId.startsWith("mock-session-"));
-
-        // Local cache should remain empty for agent-listed sessions
-        const localSessions = await store.read();
-        assert.strictEqual(localSessions.length, 0);
-      });
-
-      test("should isolate sessions per agent", async () => {
-        const factory = () => inMemorySessionStore();
-
-        const noListSpawn = (
-          _command: string,
-          _args: string[],
-          _options: unknown
-        ): ChildProcess => {
-          return createMockProcess({
-            enableLoadSession: true,
-            enableListSessions: false,
-          }) as unknown as ChildProcess;
-        };
-
-        const noListClientA = new ACPClient({
-          agentConfig: {
-            id: "mock-no-list-a",
-            name: "Mock No List A",
-            command: "mock",
-            args: [],
-          },
-          spawn: noListSpawn,
-          skipAvailabilityCheck: true,
-        });
-        const noListClientB = new ACPClient({
-          agentConfig: {
-            id: "mock-no-list-b",
-            name: "Mock No List B",
-            command: "mock",
-            args: [],
-          },
-          spawn: noListSpawn,
-          skipAvailabilityCheck: true,
-        });
-
-        const managerA = new AgentSessionManager(noListClientA, factory);
-        const managerB = new AgentSessionManager(noListClientB, factory);
-
-        await noListClientA.connect();
-        managerA.syncCapabilities();
-        await noListClientB.connect();
-        managerB.syncCapabilities();
-
-        const responseA = await managerA.newSession("/test");
-        const responseB = await managerB.newSession("/test");
-
-        const sessionsA = await managerA.listSessions("/test");
-        assert.strictEqual(sessionsA.length, 1);
-        assert.strictEqual(sessionsA[0].sessionId, responseA.sessionId);
-
-        const sessionsB = await managerB.listSessions("/test");
-        assert.strictEqual(sessionsB.length, 1);
-        assert.strictEqual(sessionsB[0].sessionId, responseB.sessionId);
-
-        noListClientA.dispose();
-        noListClientB.dispose();
-      });
-    });
-
-    suite("syncCapabilities", () => {
-      test("should throw if not connected", () => {
-        // syncCapabilities reads from acpClient.getAgentCapabilities()
-        // which returns null when not connected, so it should set false
-        manager.syncCapabilities();
-        assert.strictEqual(manager.supportsLoadSession, false);
-      });
-
-      test("should correctly detect capabilities after connect", async () => {
-        await client.connect();
-        manager.syncCapabilities();
-        assert.strictEqual(manager.supportsLoadSession, true);
-      });
-    });
-
-    suite("listSessions", () => {
-      test("should throw if not synced", async () => {
-        await assert.rejects(async () => {
-          await manager.listSessions("/test");
-        }, /not yet synced/);
-      });
-
-      test("should return sessions from agent via listSessions", async () => {
-        await client.connect();
-        manager.syncCapabilities();
-
-        // Create two sessions via newSession + sendMessage
-        await client.newSession("/test/dir");
-        await client.sendMessage("Hello session 1");
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        await client.newSession("/test/dir");
-        await client.sendMessage("Hello session 2");
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        const sessions = await manager.listSessions("/test/dir");
-        assert.strictEqual(sessions.length, 2);
-        assert.ok(sessions[0].sessionId.startsWith("mock-session-"));
-        assert.ok(sessions[0].title);
-        assert.strictEqual(sessions[0].cwd, "/test/dir");
-      });
-
-      test("should trust agent-returned sessions without re-filtering by cwd", async () => {
-        await client.connect();
-        manager.syncCapabilities();
-
-        // Agent is responsible for cwd filtering per the ACP spec. Even when
-        // the returned session cwd does not string-match the requested cwd
-        // (e.g. different case on Windows), it must be passed through.
-        await client.newSession("/test/dir");
-        await client.sendMessage("Hello session 1");
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        const sessions = await manager.listSessions("/some/other/dir");
-        assert.strictEqual(sessions.length, 1);
-        assert.strictEqual(sessions[0].cwd, "/test/dir");
-      });
-
-      test("should use local cache when useAgentSessionList is disabled", async () => {
-        await client.connect();
-        manager.syncCapabilities();
-
-        const config = vscode.workspace.getConfiguration("vscode-acp-chat");
-        await config.update(
-          "useAgentSessionList",
-          false,
-          vscode.ConfigurationTarget.Global
-        );
-
-        try {
-          // Session is recorded locally by the manager even though the agent
-          // advertises session/list support.
-          const response = await manager.newSession("/test/dir");
-          const sessions = await manager.listSessions("/test/dir");
-          assert.strictEqual(sessions.length, 1);
-          assert.strictEqual(sessions[0].sessionId, response.sessionId);
-        } finally {
-          await config.update(
-            "useAgentSessionList",
-            true,
-            vscode.ConfigurationTarget.Global
-          );
+      stores = new Map();
+      manager = new LocalSessionManager((agentId) => {
+        let store = stores.get(agentId);
+        if (!store) {
+          store = inMemorySessionStore(agentId);
+          stores.set(agentId, store);
         }
-      });
-
-      test("should use agent sessions when useAgentSessionList is enabled", async () => {
-        await client.connect();
-        manager.syncCapabilities();
-
-        const config = vscode.workspace.getConfiguration("vscode-acp-chat");
-        await config.update(
-          "useAgentSessionList",
-          true,
-          vscode.ConfigurationTarget.Global
-        );
-
-        try {
-          // Agent-listed sessions are returned directly and are not written
-          // back to the local cache.
-          await client.newSession("/test/dir");
-          await client.sendMessage("Hello session 1");
-          await new Promise((resolve) => setTimeout(resolve, 100));
-
-          const sessions = await manager.listSessions("/test/dir");
-          assert.ok(sessions.length >= 1);
-          assert.ok(sessions[0].sessionId.startsWith("mock-session-"));
-
-          const localSessions = await store.read();
-          assert.strictEqual(localSessions.length, 0);
-        } finally {
-          await config.update(
-            "useAgentSessionList",
-            true,
-            vscode.ConfigurationTarget.Global
-          );
-        }
-      });
-
-      test("should return empty array when not connected", async () => {
-        await client.connect();
-        manager.syncCapabilities();
-
-        // Dispose to simulate disconnection
-        client.dispose();
-
-        // Should not throw, returns empty array
-        const sessions = await manager.listSessions("/test");
-        assert.deepStrictEqual(sessions, []);
+        return store;
       });
     });
 
-    suite("loadSession", () => {
-      test("should throw if agent doesn't support loadSession", async () => {
-        const disabledSpawn = (
-          _command: string,
-          _args: string[],
-          _options: unknown
-        ): ChildProcess => {
-          return createMockProcess({
-            enableLoadSession: false,
-          }) as unknown as ChildProcess;
-        };
+    test("supportsLoadSession and supportsDeleteSession are true", () => {
+      assert.strictEqual(manager.supportsLoadSession, true);
+      assert.strictEqual(manager.supportsDeleteSession, true);
+    });
 
-        const disabledClient = new ACPClient({
-          agentConfig: {
-            id: "mock-disabled",
-            name: "Mock Disabled",
-            command: "mock",
-            args: [],
-          },
-          spawn: disabledSpawn,
-          skipAvailabilityCheck: true,
-        });
-        const disabledManager = new AgentSessionManager(disabledClient, () =>
-          inMemorySessionStore()
-        );
+    test("recordSession creates a new session record", async () => {
+      await manager.recordSession(
+        "agent-1",
+        "session-1",
+        "/test/dir",
+        "Test Title"
+      );
+      const store = manager.getStore("agent-1");
+      const record = await store.readOne("session-1");
 
-        await disabledClient.connect();
-        disabledManager.syncCapabilities();
+      assert.ok(record);
+      assert.strictEqual(record.sessionId, "session-1");
+      assert.strictEqual(record.agentId, "agent-1");
+      assert.strictEqual(record.title, "Test Title");
+      assert.strictEqual(record.cwd, "/test/dir");
+    });
 
-        await assert.rejects(async () => {
-          await disabledManager.loadSession("session-1", "/test");
-        }, /does not support/);
+    test("recordSession updates an existing session record", async () => {
+      await manager.recordSession(
+        "agent-1",
+        "session-1",
+        "/test/dir",
+        "Initial Title"
+      );
+      await new Promise((r) => setTimeout(r, 10));
+      await manager.recordSession(
+        "agent-1",
+        "session-1",
+        "/new/dir",
+        "Updated Title"
+      );
 
-        disabledClient.dispose();
+      const store = manager.getStore("agent-1");
+      const record = await store.readOne("session-1");
+
+      assert.ok(record);
+      assert.strictEqual(record.title, "Updated Title");
+      assert.strictEqual(record.cwd, "/new/dir");
+    });
+
+    test("applySessionInfoUpdate updates title and updatedAt", async () => {
+      await manager.recordSession(
+        "agent-1",
+        "session-1",
+        "/test/dir",
+        "Original"
+      );
+      await manager.applySessionInfoUpdate("agent-1", "session-1", {
+        title: "New Info Title",
       });
 
-      test("should throw if not connected", async () => {
-        await client.connect();
-        manager.syncCapabilities();
+      const store = manager.getStore("agent-1");
+      const record = await store.readOne("session-1");
+      assert.ok(record);
+      assert.strictEqual(record.title, "New Info Title");
+    });
 
-        // Dispose to simulate disconnection
-        client.dispose();
+    test("listSessions lists and filters sessions for specific agent by cwd", async () => {
+      await manager.recordSession("agent-1", "s1", "/workspace/a", "A1");
+      await manager.recordSession("agent-1", "s2", "/workspace/b", "A2");
+      await manager.recordSession("agent-2", "s3", "/workspace/a", "B1");
 
-        await assert.rejects(async () => {
-          await manager.loadSession("session-1", "/test");
-        }, /Not connected/);
-      });
+      const agent1All = await manager.listSessions("agent-1");
+      assert.strictEqual(agent1All.length, 2);
 
-      test("should load session and return correct result", async () => {
-        await client.connect();
-        manager.syncCapabilities();
+      const agent1Filtered = await manager.listSessions(
+        "agent-1",
+        "/workspace/a"
+      );
+      assert.strictEqual(agent1Filtered.length, 1);
+      assert.strictEqual(agent1Filtered[0].sessionId, "s1");
+    });
 
-        // First create a session
-        const newSession = await client.newSession("/test/dir");
-        const sessionId = newSession.sessionId;
+    test("listAllSessions merges sessions across all agents and sorts by updatedAt", async () => {
+      await manager.recordSession("agent-1", "s1", "/workspace/a", "A1");
+      await new Promise((r) => setTimeout(r, 10));
+      await manager.recordSession("agent-2", "s2", "/workspace/a", "B1");
 
-        // Now load it
-        const result = await manager.loadSession(sessionId, "/test/dir");
+      const all = await manager.listAllSessions("/workspace/a");
+      assert.strictEqual(all.length, 2);
+      assert.strictEqual(all[0].sessionId, "s2"); // s2 was updated later
+      assert.strictEqual(all[1].sessionId, "s1");
+    });
 
-        assert.strictEqual(result.sessionId, sessionId);
-        assert.strictEqual(result.supportedByAgent, true);
-      });
+    test("findSession finds record across all agent stores", async () => {
+      await manager.recordSession("agent-1", "s1", "/workspace", "Session 1");
+      const found = await manager.findSession("s1");
+      assert.ok(found);
+      assert.strictEqual(found.sessionId, "s1");
+      assert.strictEqual(found.agentId, "agent-1");
+
+      const notFound = await manager.findSession("s-nonexistent");
+      assert.strictEqual(notFound, undefined);
+    });
+
+    test("deleteSession removes record from agent store", async () => {
+      await manager.recordSession("agent-1", "s1", "/workspace", "Session 1");
+      const before = await manager.listSessions("agent-1");
+      assert.strictEqual(before.length, 1);
+
+      await manager.deleteSession("agent-1", "s1");
+      const after = await manager.listSessions("agent-1");
+      assert.strictEqual(after.length, 0);
     });
   });
 
@@ -590,7 +207,7 @@ suite("SessionManager", () => {
       disabledClient.dispose();
     });
 
-    test("should update currentSessionId after loadSession", async () => {
+    test("should update metadata after loadSession", async () => {
       await client.connect();
       const newSession = await client.newSession("/test/dir");
       const originalSessionId = newSession.sessionId;
@@ -604,9 +221,9 @@ suite("SessionManager", () => {
         cwd: "/test/dir",
       });
 
-      // Verify the session ID was updated
+      // Verify the session metadata is present for that session
       assert.strictEqual(
-        client.getSessionMetadata()?.modes?.currentModeId,
+        client.getSessionMetadata(originalSessionId)?.modes?.currentModeId,
         "code"
       );
     });
@@ -635,16 +252,13 @@ suite("SessionManager", () => {
 
     test("should receive both user and agent messages during history load", async () => {
       await client.connect();
-      await client.newSession("/test/dir");
+      const newSession = await client.newSession("/test/dir");
+      const sessionId = newSession.sessionId;
 
       // Send a message to create history
-      await client.sendMessage("Test message");
+      await client.sendMessage("Test message", [], [], sessionId);
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // Get the current session ID
-      const sessionId = (
-        client as unknown as { currentSessionId: string | null }
-      ).currentSessionId;
       assert.ok(sessionId, "Should have a session ID");
 
       // Clear update tracking
@@ -900,149 +514,6 @@ suite("SessionManager", () => {
       assert.ok(Array.isArray(response.sessions));
     });
   });
-
-  suite("deleteSession", () => {
-    let client: ACPClient;
-    let manager: AgentSessionManager;
-    let store: SessionStore;
-    let mockSpawn: SpawnFunction;
-
-    setup(() => {
-      store = inMemorySessionStore();
-      mockSpawn = (
-        _command: string,
-        _args: string[],
-        _options: unknown
-      ): ChildProcess => {
-        return createMockProcess({
-          enableLoadSession: true,
-          enableListSessions: true,
-          enableDeleteSession: true,
-        }) as unknown as ChildProcess;
-      };
-
-      client = new ACPClient({
-        agentConfig: {
-          id: "mock-agent",
-          name: "Mock Agent",
-          command: "mock",
-          args: [],
-        },
-        spawn: mockSpawn,
-        skipAvailabilityCheck: true,
-      });
-      manager = new AgentSessionManager(client, () => store);
-    });
-
-    teardown(() => {
-      client.dispose();
-    });
-
-    test("should be false before syncCapabilities", () => {
-      assert.strictEqual(manager.supportsDeleteSession, false);
-    });
-
-    test("should be true after connect with delete-capable agent", async () => {
-      await client.connect();
-      manager.syncCapabilities();
-      assert.strictEqual(manager.supportsDeleteSession, true);
-    });
-
-    test("should be false for agent without delete capability", async () => {
-      const disabledSpawn = (
-        _command: string,
-        _args: string[],
-        _options: unknown
-      ): ChildProcess => {
-        return createMockProcess({
-          enableLoadSession: true,
-          enableDeleteSession: false,
-        }) as unknown as ChildProcess;
-      };
-
-      const disabledClient = new ACPClient({
-        agentConfig: {
-          id: "mock-no-delete",
-          name: "Mock No Delete",
-          command: "mock",
-          args: [],
-        },
-        spawn: disabledSpawn,
-        skipAvailabilityCheck: true,
-      });
-      const disabledManager = new AgentSessionManager(disabledClient, () =>
-        inMemorySessionStore()
-      );
-
-      await disabledClient.connect();
-      disabledManager.syncCapabilities();
-      assert.strictEqual(disabledManager.supportsDeleteSession, false);
-
-      disabledClient.dispose();
-    });
-
-    test("should throw when agent does not support delete", async () => {
-      const disabledSpawn = (
-        _command: string,
-        _args: string[],
-        _options: unknown
-      ): ChildProcess => {
-        return createMockProcess({
-          enableLoadSession: true,
-          enableDeleteSession: false,
-        }) as unknown as ChildProcess;
-      };
-
-      const disabledClient = new ACPClient({
-        agentConfig: {
-          id: "mock-no-delete",
-          name: "Mock No Delete",
-          command: "mock",
-          args: [],
-        },
-        spawn: disabledSpawn,
-        skipAvailabilityCheck: true,
-      });
-      const localStore = inMemorySessionStore();
-      const disabledManager = new AgentSessionManager(
-        disabledClient,
-        () => localStore
-      );
-
-      await disabledClient.connect();
-      disabledManager.syncCapabilities();
-
-      const response = await disabledManager.newSession("/test");
-      const before = await localStore.read();
-      assert.strictEqual(before.length, 1);
-
-      await assert.rejects(
-        () => disabledManager.deleteSession(response.sessionId),
-        /does not support the `session\/delete` capability/
-      );
-
-      // Session should remain in local store
-      const after = await localStore.read();
-      assert.strictEqual(after.length, 1);
-
-      disabledClient.dispose();
-    });
-
-    test("should delete session via agent and remove from local store", async () => {
-      await client.connect();
-      manager.syncCapabilities();
-
-      // Create a session via the manager (records locally)
-      const response = await manager.newSession("/test/dir");
-      const before = await store.read();
-      assert.strictEqual(before.length, 1);
-
-      // Delete should call agent and remove from local store
-      await manager.deleteSession(response.sessionId);
-      const after = await store.read();
-      assert.strictEqual(after.length, 0);
-    });
-  });
 });
 
 suite("globalStateSessionStore cleanup", () => {
@@ -1067,6 +538,7 @@ suite("globalStateSessionStore cleanup", () => {
     updatedAt: string
   ): StoredSessionRecord {
     return {
+      agentId: "test-agent",
       sessionId,
       title: `Session ${sessionId}`,
       cwd: "/test",

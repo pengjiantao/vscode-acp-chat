@@ -89,4 +89,8 @@ export class AuxiliaryPanelsComponent implements MessageHandler {
   clearDiff(): void {
     this.diffSummary?.clear();
   }
+
+  setDiffChanges(changes: NonNullable<ExtensionMessage["changes"]>): void {
+    this.diffSummary?.setChanges(changes);
+  }
 }

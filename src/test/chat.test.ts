@@ -30,10 +30,14 @@ interface MockACPClient {
   isConnected: () => boolean;
   connect: () => Promise<void>;
   newSession: (dir: string) => Promise<void>;
-  setMode: (modeId: string) => Promise<void>;
-  setModel: (modelId: string) => Promise<void>;
-  setConfigOption: (configId: string, value: string) => Promise<void>;
-  getSessionMetadata: () => unknown;
+  setMode: (modeId: string, sessionId?: string) => Promise<void>;
+  setModel: (modelId: string, sessionId?: string) => Promise<void>;
+  setConfigOption: (
+    configId: string,
+    value: string,
+    sessionId?: string
+  ) => Promise<void>;
+  getSessionMetadata: (sessionId?: string) => unknown;
   dispose: () => void;
 }
 
@@ -66,6 +70,7 @@ class TestACPClient implements MockACPClient {
   public lastSetModelId: string | null = null;
   public lastSetConfigOptionId: string | null = null;
   public lastSetConfigOptionValue: string | null = null;
+  public lastSessionId: string | null = null;
 
   setAgent(config: any): void {
     if (config && config.id) {
@@ -100,23 +105,30 @@ class TestACPClient implements MockACPClient {
   async connect(): Promise<void> {}
   async newSession(): Promise<void> {}
 
-  async setMode(modeId: string): Promise<void> {
+  async setMode(modeId: string, sessionId?: string): Promise<void> {
     this.setModeCallCount++;
     this.lastSetModeId = modeId;
+    this.lastSessionId = sessionId ?? null;
   }
 
-  async setModel(modelId: string): Promise<void> {
+  async setModel(modelId: string, sessionId?: string): Promise<void> {
     this.setModelCallCount++;
     this.lastSetModelId = modelId;
+    this.lastSessionId = sessionId ?? null;
   }
 
-  async setConfigOption(configId: string, value: string): Promise<void> {
+  async setConfigOption(
+    configId: string,
+    value: string,
+    sessionId?: string
+  ): Promise<void> {
     this.setConfigOptionCallCount++;
     this.lastSetConfigOptionId = configId;
     this.lastSetConfigOptionValue = value;
+    this.lastSessionId = sessionId ?? null;
   }
 
-  getSessionMetadata(): unknown {
+  getSessionMetadata(_sessionId?: string): unknown {
     return {
       modes: null,
       models: null,
@@ -187,7 +199,7 @@ suite("ChatViewProvider", () => {
 
   suite("Webview Theme Styles", () => {
     test("loads highlight styles from stylesheet instead of fixed dark inline theme", () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -261,7 +273,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new ACPClientWithModes();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -296,7 +308,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new ACPClientWithModels();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -331,7 +343,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new ACPClientWithModes();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -365,7 +377,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new ACPClientWithModels();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -378,7 +390,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should not restore if nothing is saved", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -414,7 +426,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new FailingACPClient();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -428,7 +440,7 @@ suite("ChatViewProvider", () => {
 
   suite("Mode/Model Storage on Change", () => {
     test("should persist mode to agent-scoped globalState when changed", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -442,7 +454,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should persist model to agent-scoped globalState when changed", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -456,7 +468,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should call ACP client setMode before persisting", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -475,7 +487,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should call ACP client setModel before persisting", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -502,7 +514,7 @@ suite("ChatViewProvider", () => {
 
       const failingClient = new FailingACPClient();
 
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         failingClient as any,
         memento as any
@@ -525,7 +537,7 @@ suite("ChatViewProvider", () => {
 
       const failingClient = new FailingACPClient();
 
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         failingClient as any,
         memento as any
@@ -540,7 +552,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should update agent preference with new values when changed multiple times", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -566,7 +578,7 @@ suite("ChatViewProvider", () => {
 
   suite("Agent-Scoped Preference Isolation", () => {
     test("should keep mode/model isolated per agent", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -644,7 +656,7 @@ suite("ChatViewProvider", () => {
       const client = new ACPClientWithBoth();
       client.setAgent({ id: "agent-b" });
 
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -660,7 +672,7 @@ suite("ChatViewProvider", () => {
 
   suite("StarredModels Toggle", () => {
     test("should add starred model via toggleModelStar message", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -692,7 +704,7 @@ suite("ChatViewProvider", () => {
         "test-agent": { starredModels: ["gpt-4", "claude-3"] },
       });
 
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -715,7 +727,7 @@ suite("ChatViewProvider", () => {
         "agent-b": { starredModels: ["claude-3"] },
       });
 
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -743,7 +755,7 @@ suite("ChatViewProvider", () => {
 
   suite("Turn Separation and History Restoration", () => {
     test("flushUserMessageBuffer sends streamEnd before userMessage", () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -772,7 +784,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("sends streamChunk and thoughtChunk to webview", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -803,7 +815,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("forwards messageId on stream chunks", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -836,7 +848,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("omits messageId when the update has none", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -859,7 +871,7 @@ suite("ChatViewProvider", () => {
 
   suite("Tool Call Updates", () => {
     test("treats a completed tool_call as a complete event", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -908,7 +920,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("treats a failed tool_call as a complete event", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -941,7 +953,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("uses rawOutput text field as terminal output", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -978,7 +990,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("uses rawOutput string directly as terminal output", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -1008,7 +1020,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("falls back to key:value format when no known output fields match", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -1042,7 +1054,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("uses codex formatted_output as terminal output", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -1090,7 +1102,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("renders final-only command completion with output", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -1130,7 +1142,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("preserves start content when completion only updates status", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -1181,7 +1193,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("synthesizes completion for pending live tools before stream end", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -1232,7 +1244,7 @@ suite("ChatViewProvider", () => {
 
   suite("Context Usage Indicator", () => {
     test("forwards usage_update to webview as contextUsage", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -1278,7 +1290,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("ignores malformed usage_update with size <= 0", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -1309,7 +1321,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("sendContextUsage emits clear message when no usage data", () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -1333,7 +1345,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("sendContextUsage replays last-known usage", () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         acpClient as any,
         memento as any
@@ -1396,7 +1408,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new ACPClientWithThought();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -1456,7 +1468,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new ACPClientWithThought();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -1500,7 +1512,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new ACPClientWithThought();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -1547,7 +1559,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new ACPClientWithLimitedOptions();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -1613,7 +1625,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new ACPClientWithThought();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -1642,7 +1654,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new ACPClientWithThought();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -1683,7 +1695,7 @@ suite("ChatViewProvider", () => {
       }
 
       const client = new ACPClientWithThought();
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         mockExtensionUri,
         client as any,
         memento as any
@@ -1786,7 +1798,7 @@ suite("ChatViewProvider", () => {
     }
 
     test("should handle openFile with message.href and parse range correctly", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any
@@ -1812,7 +1824,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should handle openFile with encoded file URI colon line suffix", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any
@@ -1836,7 +1848,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should handle openFile with relative message.href and resolve it", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any
@@ -1862,7 +1874,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should handle openFile with absolute path href and parse range correctly", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any
@@ -1885,7 +1897,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should handle openFile with absolute path href using colon line suffix", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any
@@ -1907,7 +1919,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should handle openFile with absolute path href using colon line range suffix", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any
@@ -1929,7 +1941,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should fallback to showTextDocument when file stat fails", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any
@@ -1953,7 +1965,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should show error message and not call showTextDocument when checkExists is true and file does not exist", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any
@@ -1973,7 +1985,7 @@ suite("ChatViewProvider", () => {
     });
 
     test("should open file and not show error message when checkExists is true and file exists", async () => {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any
@@ -2024,7 +2036,7 @@ suite("ChatViewProvider", () => {
     });
 
     function makeProvider(): ChatViewProvider {
-      return new ChatViewProvider(
+      return ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any
@@ -2114,7 +2126,7 @@ suite("ChatViewProvider", () => {
     const config = () => vscode.workspace.getConfiguration("vscode-acp-chat");
 
     function makeProvider(): ChatViewProvider {
-      return new ChatViewProvider(
+      return ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any
@@ -2234,7 +2246,7 @@ suite("ChatViewProvider", () => {
       provider: ChatViewProvider;
       messages: any[];
     } {
-      const provider = new ChatViewProvider(
+      const provider = ChatViewProvider.createForTest(
         vscode.Uri.file("/test"),
         new TestACPClient() as any,
         new TestMemento() as any

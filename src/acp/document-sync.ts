@@ -6,16 +6,17 @@ import type { ACPClient } from "./client";
 const SUPPORTED_SCHEMES = new Set(["file"]);
 
 /**
- * Manages sending ACP document sync notifications to the agent.
+ * Manages sending ACP document sync notifications to active agents.
  *
  * Listens to VSCode workspace/editor events and forwards them as
  * didOpen / didChange / didClose / didSave / didFocus notifications,
- * gated by the agent's NES document capabilities.
+ * gated by each agent's NES document capabilities.
  */
 export class DocumentSyncManager implements vscode.Disposable {
   private disposables: vscode.Disposable[] = [];
   private enabled = false;
   private syncKind: "full" | "incremental" | null = null;
+  private readonly clientProvider: () => ACPClient[];
 
   /** Debounce timer for didChange */
   private changeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -34,7 +35,13 @@ export class DocumentSyncManager implements vscode.Disposable {
     }
   > = new Map();
 
-  constructor(private acpClient: ACPClient) {
+  constructor(clientOrProvider: ACPClient | (() => ACPClient[])) {
+    if (typeof clientOrProvider === "function") {
+      this.clientProvider = clientOrProvider;
+    } else {
+      this.clientProvider = () => [clientOrProvider];
+    }
+
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration("vscode-acp-chat.enableDocumentSync")) {
@@ -42,6 +49,10 @@ export class DocumentSyncManager implements vscode.Disposable {
         }
       })
     );
+  }
+
+  private getClients(): ACPClient[] {
+    return this.clientProvider().filter((c) => c && c.isConnected());
   }
 
   /**
@@ -57,53 +68,35 @@ export class DocumentSyncManager implements vscode.Disposable {
       return;
     }
 
-    const caps = this.acpClient.getNesDocumentCapabilities();
-    const hasAnyCapability =
-      caps.didOpen ||
-      caps.didChange !== null ||
-      caps.didClose ||
-      caps.didSave ||
-      caps.didFocus;
+    const clients = this.getClients();
 
-    if (!hasAnyCapability) {
-      this.enabled = false;
-      return;
+    for (const client of clients) {
+      const caps = client.getNesDocumentCapabilities();
+      if (caps.didChange?.syncKind) {
+        this.syncKind = caps.didChange.syncKind;
+      }
     }
 
+    // Even if no clients are connected yet, enable listeners if config is on so new connections get events
     this.enabled = true;
-    this.syncKind = caps.didChange?.syncKind ?? null;
 
-    if (caps.didOpen) {
-      this.disposables.push(
-        vscode.workspace.onDidOpenTextDocument((doc) => this.onDidOpen(doc))
-      );
-    }
-
-    if (caps.didChange) {
-      this.disposables.push(
-        vscode.workspace.onDidChangeTextDocument((e) => this.onDidChange(e))
-      );
-    }
-
-    if (caps.didClose) {
-      this.disposables.push(
-        vscode.workspace.onDidCloseTextDocument((doc) => this.onDidClose(doc))
-      );
-    }
-
-    if (caps.didSave) {
-      this.disposables.push(
-        vscode.workspace.onDidSaveTextDocument((doc) => this.onDidSave(doc))
-      );
-    }
-
-    if (caps.didFocus) {
-      this.disposables.push(
-        vscode.window.onDidChangeActiveTextEditor((editor) =>
-          this.onDidFocus(editor)
-        )
-      );
-    }
+    this.disposables.push(
+      vscode.workspace.onDidOpenTextDocument((doc) => this.onDidOpen(doc))
+    );
+    this.disposables.push(
+      vscode.workspace.onDidChangeTextDocument((e) => this.onDidChange(e))
+    );
+    this.disposables.push(
+      vscode.workspace.onDidCloseTextDocument((doc) => this.onDidClose(doc))
+    );
+    this.disposables.push(
+      vscode.workspace.onDidSaveTextDocument((doc) => this.onDidSave(doc))
+    );
+    this.disposables.push(
+      vscode.window.onDidChangeActiveTextEditor((editor) =>
+        this.onDidFocus(editor)
+      )
+    );
   }
 
   dispose(): void {
@@ -130,14 +123,18 @@ export class DocumentSyncManager implements vscode.Disposable {
   private onDidOpen(doc: vscode.TextDocument): void {
     if (!this.enabled || !this.isSupportedDocument(doc)) return;
 
-    this.acpClient
-      .notifyDidOpenDocument({
-        uri: doc.uri.toString(),
-        text: doc.getText(),
-        languageId: doc.languageId,
-        version: doc.version,
-      })
-      .catch((err) => console.error("[DocumentSync] didOpen failed:", err));
+    for (const client of this.getClients()) {
+      if (client.getNesDocumentCapabilities().didOpen) {
+        client
+          .notifyDidOpenDocument({
+            uri: doc.uri.toString(),
+            text: doc.getText(),
+            languageId: doc.languageId,
+            version: doc.version,
+          })
+          .catch((err) => console.error("[DocumentSync] didOpen failed:", err));
+      }
+    }
   }
 
   private onDidChange(e: vscode.TextDocumentChangeEvent): void {
@@ -193,9 +190,33 @@ export class DocumentSyncManager implements vscode.Disposable {
   private flushChanges(): void {
     this.changeTimer = null;
     for (const [uri, { version, contentChanges }] of this.pendingChanges) {
-      this.acpClient
-        .notifyDidChangeDocument({ uri, contentChanges, version })
-        .catch((err) => console.error("[DocumentSync] didChange failed:", err));
+      for (const client of this.getClients()) {
+        const caps = client.getNesDocumentCapabilities();
+        if (caps.didChange) {
+          let changesToSend = contentChanges;
+          if (
+            caps.didChange.syncKind === "full" &&
+            contentChanges.length > 0 &&
+            contentChanges[0].range !== null
+          ) {
+            const doc = vscode.workspace.textDocuments.find(
+              (d) => d.uri.toString() === uri
+            );
+            if (doc) {
+              changesToSend = [{ range: null, text: doc.getText() }];
+            }
+          }
+          client
+            .notifyDidChangeDocument({
+              uri,
+              contentChanges: changesToSend,
+              version,
+            })
+            .catch((err) =>
+              console.error("[DocumentSync] didChange failed:", err)
+            );
+        }
+      }
     }
     this.pendingChanges.clear();
   }
@@ -203,17 +224,27 @@ export class DocumentSyncManager implements vscode.Disposable {
   private onDidClose(doc: vscode.TextDocument): void {
     if (!this.enabled || !this.isSupportedDocument(doc)) return;
 
-    this.acpClient
-      .notifyDidCloseDocument({ uri: doc.uri.toString() })
-      .catch((err) => console.error("[DocumentSync] didClose failed:", err));
+    for (const client of this.getClients()) {
+      if (client.getNesDocumentCapabilities().didClose) {
+        client
+          .notifyDidCloseDocument({ uri: doc.uri.toString() })
+          .catch((err) =>
+            console.error("[DocumentSync] didClose failed:", err)
+          );
+      }
+    }
   }
 
   private onDidSave(doc: vscode.TextDocument): void {
     if (!this.enabled || !this.isSupportedDocument(doc)) return;
 
-    this.acpClient
-      .notifyDidSaveDocument({ uri: doc.uri.toString() })
-      .catch((err) => console.error("[DocumentSync] didSave failed:", err));
+    for (const client of this.getClients()) {
+      if (client.getNesDocumentCapabilities().didSave) {
+        client
+          .notifyDidSaveDocument({ uri: doc.uri.toString() })
+          .catch((err) => console.error("[DocumentSync] didSave failed:", err));
+      }
+    }
   }
 
   private onDidFocus(editor: vscode.TextEditor | undefined): void {
@@ -228,22 +259,28 @@ export class DocumentSyncManager implements vscode.Disposable {
         ? visibleRanges[0]
         : new vscode.Range(0, 0, 0, 0);
 
-    this.acpClient
-      .notifyDidFocusDocument({
-        uri: doc.uri.toString(),
-        position: { line: position.line, character: position.character },
-        version: doc.version,
-        visibleRange: {
-          start: {
-            line: visibleRange.start.line,
-            character: visibleRange.start.character,
-          },
-          end: {
-            line: visibleRange.end.line,
-            character: visibleRange.end.character,
-          },
-        },
-      })
-      .catch((err) => console.error("[DocumentSync] didFocus failed:", err));
+    for (const client of this.getClients()) {
+      if (client.getNesDocumentCapabilities().didFocus) {
+        client
+          .notifyDidFocusDocument({
+            uri: doc.uri.toString(),
+            position: { line: position.line, character: position.character },
+            version: doc.version,
+            visibleRange: {
+              start: {
+                line: visibleRange.start.line,
+                character: visibleRange.start.character,
+              },
+              end: {
+                line: visibleRange.end.line,
+                character: visibleRange.end.character,
+              },
+            },
+          })
+          .catch((err) =>
+            console.error("[DocumentSync] didFocus failed:", err)
+          );
+      }
+    }
   }
 }
