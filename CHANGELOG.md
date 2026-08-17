@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.0.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.22.0...v2.0.0) (2026-08-17)
+
+### Features
+
+- support multi-agent sessions with AgentPool and TabBar ([9022dcf](https://github.com/pengjiantao/vscode-acp-chat/commit/9022dcf9c8d759d3ec1806e84ab04ab876883339))
+
+### Bug Fixes
+
+- **webview:** shrink table columns to fit narrow webview ([35fb1be](https://github.com/pengjiantao/vscode-acp-chat/commit/35fb1be96cf927383752c8688c450c0caaa4256a))
+
 ## [1.22.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.21.0...v1.22.0) (2026-08-12)
 
 ### Features
