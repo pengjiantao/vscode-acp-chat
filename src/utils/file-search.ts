@@ -39,9 +39,17 @@ function parseGitignore(content: string): string[] {
       return pattern;
     })
     .filter((pattern) => {
-      // drop pure file patterns; keep only patterns that may be directories
-      // (patterns containing / or lacking an extension are likely directories)
-      return !pattern.includes(".") || pattern.endsWith("/");
+      // Keep patterns that:
+      // 1. Start with . (hidden directories like .vscode-test, .cache, .beads)
+      // 2. End with / (explicitly directory patterns like build/)
+      // 3. Don't contain dots (plain directory names like node_modules, dist)
+      // Drop patterns with dots that don't start with . and don't end with /
+      // (these are file patterns like *.log, README.md)
+      return (
+        pattern.startsWith(".") ||
+        pattern.endsWith("/") ||
+        !pattern.includes(".")
+      );
     })
     .map((pattern) => pattern.replace(/\/$/, "")); // strip trailing slash
 }
@@ -203,6 +211,14 @@ async function searchDirectory(
         continue;
       }
 
+      // skip excluded directories entirely (don't add to results or recurse)
+      if (
+        type === vscode.FileType.Directory &&
+        options.excludeFolders.includes(name)
+      ) {
+        continue;
+      }
+
       const uri = vscode.Uri.joinPath(dirUri, name);
       // compute the relative path manually to ensure consistency
       const rootPath = workspaceRootUri.fsPath;
@@ -255,11 +271,8 @@ async function searchDirectory(
         }
       }
 
-      // recurse into folders that are not in the exclude list
-      if (
-        type === vscode.FileType.Directory &&
-        !options.excludeFolders.includes(name)
-      ) {
+      // recurse into subdirectories (excluded dirs already skipped above)
+      if (type === vscode.FileType.Directory) {
         const subDirUri = vscode.Uri.joinPath(dirUri, name);
         await searchDirectory(
           subDirUri,

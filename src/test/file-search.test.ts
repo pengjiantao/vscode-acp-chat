@@ -148,6 +148,22 @@ suite("File Search Utility Test Suite", () => {
     );
   });
 
+  test("应该使用 .gitignore 中的排除规则 (includeHidden: true)", async () => {
+    const results = await searchWorkspaceFiles("vscode-test", {
+      maxResults: 100,
+      includeHidden: true,
+    });
+    const vscodeTestResults = results.filter(
+      (r: SearchResult) =>
+        r.name === ".vscode-test" || r.path.includes(".vscode-test")
+    );
+    assert.strictEqual(
+      vscodeTestResults.length,
+      0,
+      "即使 includeHidden: true，也不应该包含 .gitignore 中排除的 .vscode-test"
+    );
+  });
+
   test("应该排除 node_modules 即使 .gitignore 不存在", async () => {
     // node_modules 是 COMMON_EXCLUDE_FOLDERS 的一部分
     const results = await searchWorkspaceFiles("module", { maxResults: 100 });
