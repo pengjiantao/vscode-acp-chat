@@ -767,6 +767,11 @@ export class ChatViewProvider
   }
 
   public async closeSession(agentId: string, sessionId: string): Promise<void> {
+    // Capture the closing tab's agent up-front so we can reuse it later if this
+    // close leaves the panel with no tabs.
+    const closingTab = this.openSessions.get(sessionId);
+    const closingAgentId = closingTab?.agentId ?? agentId ?? this.activeAgentId;
+
     if (this.generatingSessions.has(sessionId)) {
       await this.agentPool.cancelSession(agentId, sessionId);
       this.generatingSessions.delete(sessionId);
@@ -808,6 +813,11 @@ export class ChatViewProvider
       agentId,
     });
 
+    // If the closed tab was the active one, switch focus to a remaining tab
+    // (if any). The "auto-create" path below fires whenever the close leaves
+    // the panel with zero tabs, regardless of whether the closed tab was the
+    // active one — that way closing the last tab always leaves a usable
+    // session open.
     if (this.activeSessionId === sessionId) {
       const remaining = Array.from(this.openSessions.values());
       if (remaining.length > 0) {
@@ -823,6 +833,20 @@ export class ChatViewProvider
       } else {
         this.activeSessionId = null;
       }
+    }
+
+    // If the close left the panel with zero open tabs, automatically start a
+    // fresh session using the same agent as the closed tab so the panel never
+    // lands on an empty welcome view. Fire-and-forget: the close RPC above
+    // has already completed, and a failure here leaves the user on the
+    // welcome view (current behavior) rather than blocking the close.
+    if (this.openSessions.size === 0) {
+      void this.createNewSession(closingAgentId).catch((err) => {
+        console.error(
+          `[Chat] Failed to auto-create replacement session for agent "${closingAgentId}":`,
+          err
+        );
+      });
     }
   }
 
