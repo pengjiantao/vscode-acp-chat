@@ -271,18 +271,18 @@ export class TabBarComponent implements MessageHandler {
       `${session.agentName || session.agentId}: ${session.title || "New session"}`
     );
 
-    // Title
-    const title = doc.createElement("span");
-    title.className = "tab-title";
-    title.textContent = session.title || "New session";
-    tab.appendChild(title);
-
-    // Generating spinner
+    // Generating spinner (placed to the left of the session name)
     const gen = doc.createElement("span");
     gen.className =
       "tab-generating-indicator codicon codicon-loading codicon-modifier-spin";
     gen.style.display = session.isGenerating ? "inline-block" : "none";
     tab.appendChild(gen);
+
+    // Title
+    const title = doc.createElement("span");
+    title.className = "tab-title";
+    title.textContent = session.title || "New session";
+    tab.appendChild(title);
 
     // Close button
     const closeBtn = doc.createElement("button");

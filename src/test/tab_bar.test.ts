@@ -76,6 +76,35 @@ suite("TabBarComponent Test Suite", () => {
     );
   });
 
+  test("places generating indicator before title as first child of tab-item", () => {
+    const tabs: SessionTab[] = [
+      {
+        sessionId: "s1",
+        agentId: "gemini",
+        agentName: "Gemini",
+        title: "Tab 1",
+        isGenerating: true,
+      },
+    ];
+
+    const tabBar = new TabBarComponent(ctx, {});
+    tabBar.setSessions(tabs, "s1");
+
+    const tabEl = tabBar.containerEl.querySelector<HTMLElement>(".tab-item");
+    assert.ok(tabEl);
+
+    const children = Array.from(tabEl.children);
+    assert.strictEqual(children.length, 3);
+    assert.ok(children[0].classList.contains("tab-generating-indicator"));
+    assert.ok(children[1].classList.contains("tab-title"));
+    assert.ok(children[2].classList.contains("tab-close"));
+
+    assert.strictEqual(
+      tabEl.firstElementChild?.classList.contains("tab-generating-indicator"),
+      true
+    );
+  });
+
   test("clicking tab calls onTabSelect", () => {
     let selected = "";
     const tabs: SessionTab[] = [
