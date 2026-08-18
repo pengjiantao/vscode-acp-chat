@@ -151,6 +151,9 @@ export interface SessionTab {
   updatedAt?: number;
   isGenerating?: boolean;
   hasUnread?: boolean;
+  isLoading?: boolean;
+  loadingTitle?: string;
+  error?: string;
 }
 
 export interface AgentItem {
@@ -180,8 +183,13 @@ export interface ExtensionMessage {
   configId?: string;
   value?: string;
   sessionId?: string;
+  oldSessionId?: string;
+  newSessionId?: string;
   agentId?: string;
   agentName?: string;
+  isLoading?: boolean;
+  loadingTitle?: string;
+  error?: string;
   sessions?: SessionTab[];
   activeSessionId?: string | null;
   session?: SessionTab;

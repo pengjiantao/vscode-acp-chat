@@ -429,6 +429,57 @@ body {
   }
 }
 
+/* Session Loading Placeholder */
+.session-loading-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  gap: 12px;
+  color: var(--vscode-descriptionForeground);
+  animation: fadeIn 0.2s ease-out;
+  margin: auto 0;
+  width: 100%;
+  user-select: none;
+}
+
+.session-loading-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid rgba(128, 128, 128, 0.15);
+  border-top-color: var(
+    --vscode-progressBar-background,
+    var(--vscode-focusBorder, #007acc)
+  );
+  border-right-color: var(
+    --vscode-progressBar-background,
+    var(--vscode-focusBorder, #007acc)
+  );
+  border-radius: 50%;
+  animation: session-spin 0.75s linear infinite;
+  -webkit-animation: session-spin 0.75s linear infinite;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  display: block;
+}
+
+@keyframes session-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.session-loading-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vscode-foreground);
+  opacity: 0.85;
+}
+
 /* Tool Calls */
 .tool-details {
   margin-top: 16px;

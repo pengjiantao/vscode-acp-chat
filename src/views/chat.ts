@@ -21,6 +21,7 @@ import {
 import { DocumentSyncManager } from "../acp/document-sync";
 import { extractMentions } from "../utils/mention-serializer";
 import { AsyncSerialQueue, AsyncSerialProcessor } from "../utils/async-queue";
+import { withTimeout } from "../utils/async";
 import {
   type SessionNotification,
   type RequestPermissionRequest,
@@ -181,6 +182,8 @@ export class ChatViewProvider
   private documentSyncManager: DocumentSyncManager;
 
   private openSessions = new Map<string, SessionTab>();
+  private pendingSessionCreations = new Map<string, Promise<SessionTab>>();
+  private pendingSessionLoads = new Map<string, Promise<void>>();
   private activeSessionId: string | null = null;
   private activeAgentId: string = "default";
 
@@ -732,41 +735,141 @@ export class ChatViewProvider
   }
 
   public async createNewSession(agentId: string): Promise<SessionTab> {
-    const cwd = getWorkspaceRoot();
-    const client = await this.agentPool.getClient(agentId, cwd);
-    const response = await client.newSession(cwd);
-    const sessionId = response.sessionId;
+    const tempSessionId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const agent = getAgent(agentId);
+    const agentName = agent?.name || agentId;
 
-    this.agentPool.registerSession(agentId, sessionId);
-    await this.sessionManager.recordSession(agentId, sessionId, cwd);
-
-    const sessionTab: SessionTab = {
-      sessionId,
+    const tempSessionTab: SessionTab = {
+      sessionId: tempSessionId,
       agentId,
-      agentName: client.getAgentName(),
+      agentName,
       title: "New session",
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      isLoading: true,
+      loadingTitle: "Starting agent...",
     };
 
-    this.openSessions.set(sessionId, sessionTab);
-    this.activeSessionId = sessionId;
+    this.openSessions.set(tempSessionId, tempSessionTab);
+    this.activeSessionId = tempSessionId;
     this.activeAgentId = agentId;
     this.globalState.update(SELECTED_AGENT_KEY, agentId);
 
     this.postMessage({
       type: "sessionCreated",
-      session: sessionTab,
+      session: tempSessionTab,
     });
 
-    await this.restoreSessionPreferences(agentId);
-    this.sendSessionMetadata(agentId, sessionId);
-    this.documentSyncManager.syncCapabilities();
+    const createPromise = (async (): Promise<SessionTab> => {
+      const cwd = getWorkspaceRoot();
+      try {
+        const client = await withTimeout(
+          this.agentPool.getClient(agentId, cwd),
+          60000,
+          `Agent "${agentId}" connection timed out after 60s`
+        );
+        if (!this.openSessions.has(tempSessionId)) {
+          return tempSessionTab;
+        }
 
-    return sessionTab;
+        const response = await withTimeout(
+          client.newSession(cwd),
+          60000,
+          `Agent "${agentId}" newSession RPC timed out after 60s`
+        );
+        const sessionId = response.sessionId;
+
+        // If tab was closed while initializing, clean up and exit
+        if (!this.openSessions.has(tempSessionId)) {
+          const caps = client.getAgentCapabilities();
+          if (caps?.sessionCapabilities?.close) {
+            try {
+              await client.closeSession({ sessionId });
+            } catch {
+              // ignore
+            }
+          }
+          return tempSessionTab;
+        }
+
+        this.agentPool.registerSession(agentId, sessionId);
+        await this.sessionManager.recordSession(agentId, sessionId, cwd);
+
+        const realSessionTab: SessionTab = {
+          sessionId,
+          agentId,
+          agentName: client.getAgentName() || agentName,
+          title: "New session",
+          createdAt: tempSessionTab.createdAt,
+          updatedAt: Date.now(),
+          isLoading: false,
+        };
+
+        // Replace temp tab with real tab in openSessions preserving tab order
+        const updatedOpenSessions = new Map<string, SessionTab>();
+        for (const [sid, tab] of this.openSessions.entries()) {
+          if (sid === tempSessionId) {
+            updatedOpenSessions.set(sessionId, realSessionTab);
+          } else {
+            updatedOpenSessions.set(sid, tab);
+          }
+        }
+        this.openSessions = updatedOpenSessions;
+
+        if (this.activeSessionId === tempSessionId) {
+          this.activeSessionId = sessionId;
+        }
+
+        this.postMessage({
+          type: "sessionIdChanged",
+          oldSessionId: tempSessionId,
+          newSessionId: sessionId,
+          session: realSessionTab,
+        });
+
+        await this.restoreSessionPreferences(agentId);
+        this.sendSessionMetadata(agentId, sessionId);
+        this.documentSyncManager.syncCapabilities();
+
+        return realSessionTab;
+      } catch (error) {
+        if (!this.openSessions.has(tempSessionId)) {
+          return tempSessionTab;
+        }
+        console.error("[Chat] Failed to create new session:", error);
+        const errorMessage =
+          error instanceof Error ? error.message : JSON.stringify(error);
+        const tab = this.openSessions.get(tempSessionId);
+        if (tab) {
+          tab.isLoading = false;
+          tab.error = errorMessage;
+        }
+        this.postMessage({
+          type: "sessionLoadFailed",
+          sessionId: tempSessionId,
+          error: errorMessage,
+          agentId,
+        });
+        this.postMessage({
+          type: "error",
+          text: `Failed to create session: ${errorMessage}`,
+          agentId,
+          sessionId: tempSessionId,
+        });
+        throw error;
+      } finally {
+        this.pendingSessionCreations.delete(tempSessionId);
+      }
+    })();
+
+    this.pendingSessionCreations.set(tempSessionId, createPromise);
+    return createPromise;
   }
 
   public async closeSession(agentId: string, sessionId: string): Promise<void> {
+    this.pendingSessionCreations.delete(sessionId);
+    this.pendingSessionLoads.delete(sessionId);
+
     // Capture the closing tab's agent up-front so we can reuse it later if this
     // close leaves the panel with no tabs.
     const closingTab = this.openSessions.get(sessionId);
@@ -877,52 +980,127 @@ export class ChatViewProvider
       sessionTitle = record.title || sessionTitle;
     }
     targetAgentId = targetAgentId || getFirstAvailableAgent().id;
-
-    const cwd = getWorkspaceRoot();
-    const client = await this.agentPool.getClient(targetAgentId, cwd);
-    this.agentPool.registerSession(targetAgentId, sessionId);
+    const initialAgentName = getAgent(targetAgentId)?.name || targetAgentId;
 
     const sessionTab: SessionTab = {
       sessionId,
       agentId: targetAgentId,
-      agentName: client.getAgentName(),
+      agentName: initialAgentName,
       title: sessionTitle,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: record?.createdAt
+        ? new Date(record.createdAt).getTime()
+        : Date.now(),
+      updatedAt: record?.updatedAt
+        ? new Date(record.updatedAt).getTime()
+        : Date.now(),
+      isLoading: true,
+      loadingTitle: "Loading conversation...",
     };
 
     this.openSessions.set(sessionId, sessionTab);
     this.activeSessionId = sessionId;
     this.activeAgentId = targetAgentId;
 
+    // Immediately notify webview to render blank tab with loading placeholder
     this.postMessage({
       type: "sessionCreated",
       session: sessionTab,
     });
 
-    try {
-      await client.loadSession({ sessionId, cwd });
-      await this.sessionUpdateNotifier.waitForIdle();
-      this.flushUserMessageBuffer(sessionId);
-      this.postMessage({
-        type: "streamEnd",
-        stopReason: "history_load",
-        agentId: targetAgentId,
-        sessionId,
-      });
-      this.sendSessionMetadata(targetAgentId, sessionId);
-      this.documentSyncManager.syncCapabilities();
-    } catch (error) {
-      console.error("[Chat] Failed to load history session:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : JSON.stringify(error);
-      this.postMessage({
-        type: "error",
-        text: `Failed to load history: ${errorMessage}`,
-        agentId: targetAgentId,
-        sessionId,
-      });
-    }
+    const loadPromise = (async (): Promise<void> => {
+      const cwd = getWorkspaceRoot();
+      try {
+        const client = await withTimeout(
+          this.agentPool.getClient(targetAgentId, cwd),
+          60000,
+          `Agent "${targetAgentId}" connection timed out after 60s`
+        );
+        if (!this.openSessions.has(sessionId)) {
+          return;
+        }
+
+        this.agentPool.registerSession(targetAgentId, sessionId);
+
+        if (
+          client.getAgentName() &&
+          client.getAgentName() !== sessionTab.agentName
+        ) {
+          sessionTab.agentName = client.getAgentName();
+          if (this.openSessions.has(sessionId)) {
+            this.postMessage({
+              type: "sessionUpdated",
+              sessionId,
+              agentName: sessionTab.agentName,
+            });
+          }
+        }
+
+        await withTimeout(
+          client.loadSession({ sessionId, cwd }),
+          60000,
+          `Agent "${targetAgentId}" loadSession RPC timed out after 60s`
+        );
+        await this.sessionUpdateNotifier.waitForIdle();
+        this.flushUserMessageBuffer(sessionId);
+
+        // If tab was closed while loadSession was running, clean up agent session and exit
+        if (!this.openSessions.has(sessionId)) {
+          this.agentPool.unregisterSession(targetAgentId, sessionId);
+          const caps = client.getAgentCapabilities();
+          if (caps?.sessionCapabilities?.close) {
+            try {
+              await client.closeSession({ sessionId });
+            } catch {
+              // ignore
+            }
+          }
+          return;
+        }
+
+        sessionTab.isLoading = false;
+        this.postMessage({
+          type: "sessionLoaded",
+          sessionId,
+          agentId: targetAgentId,
+        });
+        this.postMessage({
+          type: "streamEnd",
+          stopReason: "history_load",
+          agentId: targetAgentId,
+          sessionId,
+        });
+        this.sendSessionMetadata(targetAgentId, sessionId);
+        this.documentSyncManager.syncCapabilities();
+      } catch (error) {
+        // If tab was closed while loading, clean up and do not post errors to webview
+        if (!this.openSessions.has(sessionId)) {
+          this.agentPool.unregisterSession(targetAgentId, sessionId);
+          return;
+        }
+
+        console.error("[Chat] Failed to load history session:", error);
+        const errorMessage =
+          error instanceof Error ? error.message : JSON.stringify(error);
+        sessionTab.isLoading = false;
+        this.postMessage({
+          type: "sessionLoadFailed",
+          sessionId,
+          error: errorMessage,
+          agentId: targetAgentId,
+        });
+        this.postMessage({
+          type: "error",
+          text: `Failed to load history: ${errorMessage}`,
+          agentId: targetAgentId,
+          sessionId,
+        });
+      } finally {
+        this.pendingSessionLoads.delete(sessionId);
+      }
+    })();
+
+    this.pendingSessionLoads.set(sessionId, loadPromise);
+    return loadPromise;
   }
 
   public async deleteHistorySession(
@@ -1222,11 +1400,27 @@ export class ChatViewProvider
     let activeSession = sessionId
       ? this.openSessions.get(sessionId)
       : undefined;
+    if (sessionId && this.pendingSessionCreations.has(sessionId)) {
+      try {
+        activeSession = await this.pendingSessionCreations.get(sessionId);
+        sessionId = activeSession?.sessionId || sessionId;
+      } catch {
+        return;
+      }
+    }
+    if (sessionId && this.pendingSessionLoads.has(sessionId)) {
+      try {
+        await this.pendingSessionLoads.get(sessionId);
+      } catch {
+        return;
+      }
+    }
     if (!activeSession || !sessionId) {
       activeSession = await this.createNewSession(agentId);
       sessionId = activeSession.sessionId;
     }
     const resolvedSessionId = sessionId;
+    if (!this.openSessions.has(resolvedSessionId)) return;
 
     if (this.generatingSessions.has(resolvedSessionId)) return;
     this.generatingSessions.add(resolvedSessionId);

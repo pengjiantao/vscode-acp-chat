@@ -26,6 +26,7 @@ export class InputPanelComponent implements MessageHandler {
   readonly autocomplete: AutocompleteComponent;
 
   private isGenerating = false;
+  private isLoading = false;
 
   constructor(
     private ctx: WebviewContext,
@@ -114,7 +115,7 @@ export class InputPanelComponent implements MessageHandler {
     }
 
     this.elements.sendBtn.disabled =
-      (!text && !hasMentions) || this.isGenerating;
+      (!text && !hasMentions) || this.isGenerating || this.isLoading;
   }
 
   setPlaceholder(agentName: string): void {
@@ -193,10 +194,20 @@ export class InputPanelComponent implements MessageHandler {
 
   getSessionContext?: () => { sessionId?: string; agentId?: string };
 
+  setLoading(isLoading: boolean): void {
+    this.isLoading = isLoading;
+    this.updateInputState();
+  }
+
+  getIsLoading(): boolean {
+    return this.isLoading;
+  }
+
   setGenerating(isGenerating: boolean): void {
     this.isGenerating = isGenerating;
     this.elements.sendBtn.style.display = isGenerating ? "none" : "flex";
     this.elements.stopBtn.style.display = isGenerating ? "flex" : "none";
+    this.updateInputState();
   }
 
   getIsGenerating(): boolean {
@@ -204,7 +215,7 @@ export class InputPanelComponent implements MessageHandler {
   }
 
   send(): void {
-    if (this.isGenerating) return;
+    if (this.isGenerating || this.isLoading) return;
 
     const msg = this.collectMessage();
     if (!msg) return;
@@ -414,7 +425,12 @@ export class InputPanelComponent implements MessageHandler {
         return;
       }
 
-      if (e.key === "Enter" && !e.shiftKey && !this.getIsGenerating()) {
+      if (
+        e.key === "Enter" &&
+        !e.shiftKey &&
+        !this.getIsGenerating() &&
+        !this.getIsLoading()
+      ) {
         e.preventDefault();
         this.send();
       } else if (e.key === "Escape") {

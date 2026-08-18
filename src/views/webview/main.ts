@@ -214,9 +214,11 @@ export class WebviewController implements MessageHandler {
 
       const isGen = this.messageList.getIsGenerating(sessionId);
       this.inputPanel.setGenerating(isGen);
+      this.inputPanel.setLoading(next.isLoading ?? false);
     } else {
       this.inputPanel.restoreInputState();
       this.inputPanel.setGenerating(false);
+      this.inputPanel.setLoading(false);
       this.auxiliaryPanels.hidePlan();
       this.auxiliaryPanels.clearDiff();
     }
@@ -281,6 +283,14 @@ export class WebviewController implements MessageHandler {
         this.inputPanel.setGenerating(isGenerating);
       }
     }
+    if (targetSessionId && changedKeys.includes("isLoading")) {
+      const isLoading =
+        this.sessionStore.get(targetSessionId)?.isLoading ?? false;
+      this.tabBar.updateSession(targetSessionId, { isLoading });
+      if (targetSessionId === this.activeSessionId) {
+        this.inputPanel.setLoading(isLoading);
+      }
+    }
     if (targetSessionId && changedKeys.includes("title")) {
       const title = this.sessionStore.get(targetSessionId)?.title;
       if (title) this.tabBar.updateSession(targetSessionId, { title });
@@ -299,8 +309,12 @@ export class WebviewController implements MessageHandler {
     const results: (boolean | void | Promise<boolean | void>)[] = [topResult];
     for (const handler of handlers) {
       try {
-        // MessageListComponent MUST receive the message so background sessions are continuously rendered
-        if (isBackground && handler !== this.messageList) {
+        // MessageListComponent and TabBarComponent MUST receive messages across all sessions
+        if (
+          isBackground &&
+          handler !== this.messageList &&
+          handler !== this.tabBar
+        ) {
           continue;
         }
         results.push(handler.handleMessage(msg));
@@ -358,14 +372,29 @@ export class WebviewController implements MessageHandler {
       case "availableAgents":
         return;
 
+      case "sessionIdChanged":
+        if (msg.oldSessionId && msg.newSessionId) {
+          if (this.activeSessionId === msg.oldSessionId) {
+            this.activeSessionId = msg.newSessionId;
+            this.sessionStore.setActiveSessionId(msg.newSessionId);
+            if (msg.session?.agentName) {
+              this.inputPanel.setPlaceholder(msg.session.agentName);
+            }
+            this.inputPanel.setLoading(msg.session?.isLoading ?? false);
+          }
+        }
+        return;
+
       case "error":
         if (msg.text) this.messageList.addMessage(msg.text, "error");
         this.inputPanel.setGenerating(false);
+        this.inputPanel.setLoading(false);
         this.inputPanel.focus();
         return;
 
       case "agentError":
         if (msg.text) this.messageList.addMessage(msg.text, "error");
+        this.inputPanel.setLoading(false);
         return;
 
       case "system":

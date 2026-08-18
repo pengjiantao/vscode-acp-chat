@@ -70,6 +70,9 @@ export class TabBarComponent implements MessageHandler {
         "sessionUpdated",
         "sessionClosed",
         "activeSessionChanged",
+        "sessionIdChanged",
+        "sessionLoaded",
+        "sessionLoadFailed",
       ],
       this
     );
@@ -88,6 +91,7 @@ export class TabBarComponent implements MessageHandler {
           agentName: s.agentName,
           title: s.title,
           isGenerating: s.isGenerating,
+          isLoading: s.isLoading,
         }));
         const targetActive = msg.activeSessionId || tabs[0]?.sessionId || null;
         this.setSessions(tabs, targetActive);
@@ -109,6 +113,7 @@ export class TabBarComponent implements MessageHandler {
               agentName: s.agentName,
               title: s.title,
               isGenerating: s.isGenerating,
+              isLoading: s.isLoading,
             }));
           this.setSessions(tabs, msg.session.sessionId);
           this.options.onTabSelect?.(
@@ -119,14 +124,76 @@ export class TabBarComponent implements MessageHandler {
         return;
       }
 
+      case "sessionIdChanged": {
+        if (msg.oldSessionId && msg.newSessionId) {
+          const tab = this.sessions.find(
+            (s) => s.sessionId === msg.oldSessionId
+          );
+          if (tab) {
+            tab.sessionId = msg.newSessionId;
+            if (msg.session) {
+              if (msg.session.agentId) tab.agentId = msg.session.agentId;
+              if (msg.session.agentName) tab.agentName = msg.session.agentName;
+              if (msg.session.title) tab.title = msg.session.title;
+              tab.isLoading = msg.session.isLoading ?? false;
+            } else {
+              tab.isLoading = false;
+            }
+          }
+          if (this.activeSessionId === msg.oldSessionId) {
+            this.activeSessionId = msg.newSessionId;
+          }
+          const tabEl = this.scrollArea.querySelector<HTMLElement>(
+            `.tab-item[data-session-id="${msg.oldSessionId}"]`
+          );
+          if (tabEl) {
+            tabEl.setAttribute("data-session-id", msg.newSessionId);
+            if (tab?.agentId) tabEl.setAttribute("data-agent-id", tab.agentId);
+            const titleEl = tabEl.querySelector<HTMLElement>(".tab-title");
+            if (titleEl && tab?.title) titleEl.textContent = tab.title;
+            tabEl.setAttribute(
+              "acp-title",
+              `${tab?.agentName || tab?.agentId || "Agent"}: ${tab?.title || "New session"}`
+            );
+            const genEl = tabEl.querySelector<HTMLElement>(
+              ".tab-generating-indicator"
+            );
+            if (genEl) {
+              genEl.style.display =
+                tab?.isLoading || tab?.isGenerating ? "inline-block" : "none";
+            }
+          }
+        }
+        return;
+      }
+
+      case "sessionLoaded": {
+        if (msg.sessionId) {
+          this.updateSession(msg.sessionId, { isLoading: false });
+        }
+        return;
+      }
+
+      case "sessionLoadFailed": {
+        if (msg.sessionId) {
+          this.updateSession(msg.sessionId, { isLoading: false });
+        }
+        return;
+      }
+
       case "sessionUpdated": {
         if (msg.sessionId) {
           const session = this.ctx.sessionStore.get(msg.sessionId);
           if (session && msg.title) {
             session.title = msg.title;
           }
+          if (session && msg.agentName) {
+            session.agentName = msg.agentName;
+          }
           this.updateSession(msg.sessionId, {
             title: msg.title,
+            agentName: msg.agentName,
+            isLoading: msg.isLoading,
           });
         }
         return;
@@ -143,6 +210,7 @@ export class TabBarComponent implements MessageHandler {
               agentName: s.agentName,
               title: s.title,
               isGenerating: s.isGenerating,
+              isLoading: s.isLoading,
             }));
           this.setSessions(tabs, this.activeSessionId);
           this.options.onSessionClosedNotification?.(msg.sessionId);
@@ -234,12 +302,22 @@ export class TabBarComponent implements MessageHandler {
           );
         }
       }
-      if (updates.isGenerating !== undefined) {
+      if (updates.agentName !== undefined) {
+        tabEl.setAttribute(
+          "acp-title",
+          `${session.agentName || session.agentId}: ${session.title || "New session"}`
+        );
+      }
+      if (
+        updates.isGenerating !== undefined ||
+        updates.isLoading !== undefined
+      ) {
         const genEl = tabEl.querySelector<HTMLElement>(
           ".tab-generating-indicator"
         );
         if (genEl) {
-          genEl.style.display = updates.isGenerating ? "inline-block" : "none";
+          genEl.style.display =
+            session.isLoading || session.isGenerating ? "inline-block" : "none";
         }
       }
     }
@@ -271,11 +349,12 @@ export class TabBarComponent implements MessageHandler {
       `${session.agentName || session.agentId}: ${session.title || "New session"}`
     );
 
-    // Generating spinner (placed to the left of the session name)
+    // Generating / Loading spinner (placed to the left of the session name)
     const gen = doc.createElement("span");
     gen.className =
       "tab-generating-indicator codicon codicon-loading codicon-modifier-spin";
-    gen.style.display = session.isGenerating ? "inline-block" : "none";
+    gen.style.display =
+      session.isLoading || session.isGenerating ? "inline-block" : "none";
     tab.appendChild(gen);
 
     // Title

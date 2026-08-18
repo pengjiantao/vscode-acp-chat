@@ -16,6 +16,9 @@ export interface SessionData {
   agentName: string;
   title: string;
   isGenerating: boolean;
+  isLoading?: boolean;
+  loadingTitle?: string;
+  error?: string;
   hasUnread: boolean;
   modes: SessionModeState | null;
   models: SessionModelState | null;
@@ -98,6 +101,9 @@ export class SessionStore {
         agentName: session.agentName,
         title: session.title,
         isGenerating: session.isGenerating ?? false,
+        isLoading: session.isLoading ?? false,
+        loadingTitle: session.loadingTitle,
+        error: session.error,
         hasUnread: false,
         modes: null,
         models: null,
@@ -114,6 +120,10 @@ export class SessionStore {
       if (session.title) data.title = session.title;
       if (session.isGenerating !== undefined)
         data.isGenerating = session.isGenerating;
+      if (session.isLoading !== undefined) data.isLoading = session.isLoading;
+      if (session.loadingTitle !== undefined)
+        data.loadingTitle = session.loadingTitle;
+      if (session.error !== undefined) data.error = session.error;
     }
     return data;
   }
@@ -146,6 +156,41 @@ export class SessionStore {
     targetSessionId: string | null;
     changedKeys: string[];
   } {
+    // Handle session migration before resolving targetSessionId
+    if (
+      msg.type === "sessionIdChanged" &&
+      msg.oldSessionId &&
+      msg.newSessionId
+    ) {
+      const existing = this.sessions.get(msg.oldSessionId);
+      if (existing) {
+        this.sessions.delete(msg.oldSessionId);
+        existing.sessionId = msg.newSessionId;
+        if (msg.session) {
+          if (msg.session.agentId) existing.agentId = msg.session.agentId;
+          if (msg.session.agentName) existing.agentName = msg.session.agentName;
+          if (msg.session.title) existing.title = msg.session.title;
+          existing.isLoading = msg.session.isLoading ?? false;
+        } else {
+          existing.isLoading = false;
+        }
+        this.sessions.set(msg.newSessionId, existing);
+      } else if (msg.session) {
+        this.getOrCreate(msg.session);
+      }
+      if (this.activeSessionId === msg.oldSessionId) {
+        this.activeSessionId = msg.newSessionId;
+      }
+      const data = this.sessions.get(msg.newSessionId);
+      if (data) {
+        this.notify(msg.newSessionId, data, ["sessionId", "isLoading"]);
+      }
+      return {
+        targetSessionId: msg.newSessionId,
+        changedKeys: ["sessionId", "isLoading"],
+      };
+    }
+
     const targetSessionId = msg.sessionId || this.activeSessionId || null;
     const changedKeys: string[] = [];
 
@@ -169,6 +214,8 @@ export class SessionStore {
         agentName: msg.agentName || msg.agentId || "Agent",
         title: msg.title || "New Chat",
         isGenerating: msg.type === "streamStart",
+        isLoading: msg.isLoading,
+        loadingTitle: msg.loadingTitle,
       });
       changedKeys.push("created");
     }
@@ -178,6 +225,17 @@ export class SessionStore {
     }
 
     switch (msg.type) {
+      case "sessionLoaded":
+        session.isLoading = false;
+        changedKeys.push("isLoading");
+        break;
+
+      case "sessionLoadFailed":
+        session.isLoading = false;
+        if (msg.error) session.error = msg.error;
+        changedKeys.push("isLoading", "error");
+        break;
+
       case "sessionMetadata":
         session.metadataMsg = msg;
         session.modes = msg.modes ?? null;
@@ -224,13 +282,31 @@ export class SessionStore {
         }
         break;
 
+      case "userMessage":
+      case "thoughtChunk":
+      case "streamChunk":
+      case "toolCallStart":
+        if (session.isLoading) {
+          session.isLoading = false;
+          changedKeys.push("isLoading");
+        }
+        break;
+
       case "streamStart":
         session.isGenerating = true;
+        if (session.isLoading) {
+          session.isLoading = false;
+          changedKeys.push("isLoading");
+        }
         changedKeys.push("isGenerating");
         break;
 
       case "streamEnd":
         session.isGenerating = false;
+        if (session.isLoading) {
+          session.isLoading = false;
+          changedKeys.push("isLoading");
+        }
         changedKeys.push("isGenerating");
         break;
 

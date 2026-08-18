@@ -48,6 +48,8 @@ export interface SessionMessageState {
   currentStreamId: string | null;
   elicitationBlocks: Map<string, ElicitationBlock>;
   isGenerating: boolean;
+  isLoading?: boolean;
+  loadingPlaceholderEl?: HTMLElement | null;
   availableCommands: AvailableCommand[];
 }
 
@@ -105,7 +107,7 @@ export class MessageListComponent implements MessageHandler {
       }
     );
 
-    // Register for all streaming and message-related messages.
+    // Register for all streaming, message, and session lifecycle messages.
     ctx.messageRouter.registerMany(
       [
         "userMessage",
@@ -118,6 +120,10 @@ export class MessageListComponent implements MessageHandler {
         "elicitationRequest",
         "elicitationComplete",
         "elicitationCleared",
+        "sessionCreated",
+        "sessionIdChanged",
+        "sessionLoaded",
+        "sessionLoadFailed",
       ],
       this
     );
@@ -188,15 +194,103 @@ export class MessageListComponent implements MessageHandler {
     this.updateViewState();
   }
 
+  showLoading(sessionId: string, title = "Starting agent..."): void {
+    const session = this.getOrCreateSessionState(sessionId);
+    session.isLoading = true;
+    if (!session.loadingPlaceholderEl) {
+      const doc = this.ctx.doc;
+      const placeholder = doc.createElement("div");
+      placeholder.className = "session-loading-placeholder";
+      placeholder.setAttribute("role", "status");
+      placeholder.setAttribute("aria-live", "polite");
+
+      const spinner = doc.createElement("div");
+      spinner.className = "session-loading-spinner";
+      placeholder.appendChild(spinner);
+
+      const text = doc.createElement("div");
+      text.className = "session-loading-text";
+      text.textContent = title;
+      placeholder.appendChild(text);
+
+      session.loadingPlaceholderEl = placeholder;
+      session.containerEl.appendChild(placeholder);
+    } else {
+      const text = session.loadingPlaceholderEl.querySelector<HTMLElement>(
+        ".session-loading-text"
+      );
+      if (text) text.textContent = title;
+    }
+    if (session.sessionId === (this.activeSessionId || "default")) {
+      this.updateViewState();
+    }
+  }
+
+  hideLoading(sessionId: string): void {
+    const session = this.sessionStates.get(sessionId);
+    if (!session) return;
+    session.isLoading = false;
+    if (session.loadingPlaceholderEl) {
+      session.loadingPlaceholderEl.remove();
+      session.loadingPlaceholderEl = null;
+    }
+    if (session.sessionId === (this.activeSessionId || "default")) {
+      this.updateViewState();
+    }
+  }
+
   // -------------------------------------------------------------------
   // MessageHandler
   // -------------------------------------------------------------------
 
   handleMessage(msg: ExtensionMessage): boolean | void {
+    if (msg.type === "sessionIdChanged") {
+      if (msg.oldSessionId && msg.newSessionId) {
+        const state = this.sessionStates.get(msg.oldSessionId);
+        if (state) {
+          state.sessionId = msg.newSessionId;
+          state.containerEl.setAttribute("data-session-id", msg.newSessionId);
+          this.sessionStates.delete(msg.oldSessionId);
+          const existing = this.sessionStates.get(msg.newSessionId);
+          if (existing && existing !== state) {
+            existing.containerEl.remove();
+          }
+          this.sessionStates.set(msg.newSessionId, state);
+        }
+        if (this.activeSessionId === msg.oldSessionId) {
+          this.activeSessionId = msg.newSessionId;
+        }
+        this.hideLoading(msg.newSessionId);
+      }
+      return;
+    }
+
+    if (msg.type === "sessionCreated") {
+      if (msg.session?.isLoading) {
+        this.showLoading(
+          msg.session.sessionId,
+          msg.session.loadingTitle || "Starting agent..."
+        );
+      }
+      return;
+    }
+
     const sessionId = msg.sessionId || this.activeSessionId || "default";
     const session = this.getOrCreateSessionState(sessionId);
 
     switch (msg.type) {
+      case "sessionLoaded":
+        this.hideLoading(msg.sessionId || this.activeSessionId || "default");
+        return;
+      case "sessionLoadFailed": {
+        const failId = msg.sessionId || this.activeSessionId || "default";
+        this.hideLoading(failId);
+        if (msg.error) {
+          const failSession = this.getOrCreateSessionState(failId);
+          this.addMessageToSession(failSession, msg.error, "error");
+        }
+        return;
+      }
       case "userMessage":
         return this.handleUserMessage(session, msg);
       case "streamStart":
@@ -230,6 +324,9 @@ export class MessageListComponent implements MessageHandler {
   ): void {
     // Always reset assistant state before a new turn
     this.resetStreams(session);
+    if (session.isLoading) {
+      this.hideLoading(session.sessionId);
+    }
 
     if (msg.text || (msg.images && msg.images.length > 0)) {
       this.addMessageToSession(session, msg.text || "", "user", msg.mentions);
@@ -238,6 +335,9 @@ export class MessageListComponent implements MessageHandler {
 
   private handleStreamStart(session: SessionMessageState): void {
     this.resetStreams(session);
+    if (session.isLoading) {
+      this.hideLoading(session.sessionId);
+    }
     this.setGenerating(session, true);
   }
 
@@ -246,6 +346,9 @@ export class MessageListComponent implements MessageHandler {
     msg: ExtensionMessage
   ): void {
     if (!msg.text) return;
+    if (session.isLoading) {
+      this.hideLoading(session.sessionId);
+    }
     const stream = this.ensureStream(session, msg.messageId ?? null);
     const block = stream.blockManager.ensureBlock(
       "text",
@@ -272,6 +375,9 @@ export class MessageListComponent implements MessageHandler {
     msg: ExtensionMessage
   ): void {
     if (!msg.text) return;
+    if (session.isLoading) {
+      this.hideLoading(session.sessionId);
+    }
     const stream = this.ensureStream(session, msg.messageId ?? null);
     const block = stream.blockManager.ensureBlock(
       "thought",
@@ -289,6 +395,9 @@ export class MessageListComponent implements MessageHandler {
     msg: ExtensionMessage
   ): void {
     if (!msg.toolCallId || !msg.name) return;
+    if (session.isLoading) {
+      this.hideLoading(session.sessionId);
+    }
     const stream =
       this.getToolBlockStream(session, msg.toolCallId) ??
       this.ensureStream(session, session.currentStreamId);
@@ -666,6 +775,9 @@ export class MessageListComponent implements MessageHandler {
     type: MessageType = "user",
     mentions?: Mention[]
   ): HTMLElement {
+    if (session.isLoading) {
+      this.hideLoading(session.sessionId);
+    }
     const { doc } = this.ctx;
     const messageEl = doc.createElement("div");
     messageEl.className = "message " + type;
@@ -715,11 +827,17 @@ export class MessageListComponent implements MessageHandler {
 
   updateViewState(): void {
     const active = this.sessionStates.get(this.activeSessionId || "default");
+    const hasLoading = Boolean(active?.isLoading);
     const hasMessages = Boolean(
-      active && active.containerEl.children.length > 0
+      active &&
+      Array.from(active.containerEl.children).some(
+        (el) =>
+          !(el as HTMLElement).classList.contains("session-loading-placeholder")
+      )
     );
-    this.elements.welcomeView.style.display = !hasMessages ? "flex" : "none";
-    this.elements.containerEl.style.display = hasMessages ? "flex" : "none";
+    const showContainer = hasLoading || hasMessages;
+    this.elements.welcomeView.style.display = !showContainer ? "flex" : "none";
+    this.elements.containerEl.style.display = showContainer ? "flex" : "none";
   }
 
   clear(sessionId?: string): void {
@@ -729,6 +847,11 @@ export class MessageListComponent implements MessageHandler {
         this.resetStreams(state);
         state.elicitationBlocks.clear();
         state.isGenerating = false;
+        state.isLoading = false;
+        if (state.loadingPlaceholderEl) {
+          state.loadingPlaceholderEl.remove();
+          state.loadingPlaceholderEl = null;
+        }
       }
       this.sessionStates.clear();
       this.hideTypingIndicator();
@@ -741,6 +864,11 @@ export class MessageListComponent implements MessageHandler {
       this.resetStreams(state);
       state.elicitationBlocks.clear();
       state.isGenerating = false;
+      state.isLoading = false;
+      if (state.loadingPlaceholderEl) {
+        state.loadingPlaceholderEl.remove();
+        state.loadingPlaceholderEl = null;
+      }
     }
     if (sessionId === (this.activeSessionId || "default")) {
       this.hideTypingIndicator();

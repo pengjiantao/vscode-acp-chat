@@ -172,16 +172,28 @@ suite("closeSession auto-creates a replacement when last tab is closed", () => {
     );
     assert.strictEqual((provider as any).activeAgentId, "claude-code");
 
-    // A sessionCreated message was posted to the webview.
+    // A sessionCreated message was posted immediately with loading state.
     const createdMessages = mockView.webview.messages.filter(
       (m: any) => m.type === "sessionCreated"
     );
     assert.strictEqual(createdMessages.length, 1);
-    assert.strictEqual(
-      createdMessages[0].session.sessionId,
-      "replacement-session"
+    assert.ok(
+      createdMessages[0].session.sessionId.startsWith("pending-"),
+      "expected pending temporary session ID"
     );
     assert.strictEqual(createdMessages[0].session.agentId, "claude-code");
+    assert.strictEqual(createdMessages[0].session.isLoading, true);
+
+    // And a sessionIdChanged message was posted when replacement session resolved.
+    const changedMessages = mockView.webview.messages.filter(
+      (m: any) => m.type === "sessionIdChanged"
+    );
+    assert.strictEqual(changedMessages.length, 1);
+    assert.strictEqual(changedMessages[0].newSessionId, "replacement-session");
+    assert.strictEqual(
+      changedMessages[0].session.sessionId,
+      "replacement-session"
+    );
   });
 
   test("auto-create uses the closed tab's agentId even when it differs from activeAgentId", async () => {
