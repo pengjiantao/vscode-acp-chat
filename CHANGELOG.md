@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.1.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v2.0.0...v2.1.0) (2026-08-18)
+
+### Features
+
+- **chat:** auto-create new session after closing the last tab ([ad2b3b2](https://github.com/pengjiantao/vscode-acp-chat/commit/ad2b3b2256d77215db7f629b7861ef03f517a3ef))
+- **chat:** support immediate loading feedback for sessions ([a220afc](https://github.com/pengjiantao/vscode-acp-chat/commit/a220afcf278c55b85b5eeb064be3701a4e460f26))
+- **chat:** use first user message as session tab title fallback ([115052e](https://github.com/pengjiantao/vscode-acp-chat/commit/115052e24eed90607d779c70be5b5b9b86a0db63))
+- **tab-bar:** place generating spinner to the left of session title ([b3850eb](https://github.com/pengjiantao/vscode-acp-chat/commit/b3850eb9a46d6c61a356ba2aaf15dd519171c0fd))
+
+### Bug Fixes
+
+- **tab-bar:** add top border separator to session tabs ([2f66b83](https://github.com/pengjiantao/vscode-acp-chat/commit/2f66b83c0e15f5c8a08ce62b59f46eb3ca0090d0))
+
 ## [2.0.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v1.22.0...v2.0.0) (2026-08-17)
 
 ### Features
