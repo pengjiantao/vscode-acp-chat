@@ -795,11 +795,17 @@ export class ChatViewProvider
         this.agentPool.registerSession(agentId, sessionId);
         await this.sessionManager.recordSession(agentId, sessionId, cwd);
 
+        // Read back the stored record to get the default title, ensuring
+        // consistency with the session store even if the agent never sends
+        // a session_info_update event.
+        const storedRecord = await this.sessionManager.findSession(sessionId);
+        const sessionTitle = storedRecord?.title || `Session ${sessionId}`;
+
         const realSessionTab: SessionTab = {
           sessionId,
           agentId,
           agentName: client.getAgentName() || agentName,
-          title: "New session",
+          title: sessionTitle,
           createdAt: tempSessionTab.createdAt,
           updatedAt: Date.now(),
           isLoading: false,
@@ -1421,6 +1427,34 @@ export class ChatViewProvider
     }
     const resolvedSessionId = sessionId;
     if (!this.openSessions.has(resolvedSessionId)) return;
+
+    // --- First-message title fallback ---
+    // If the tab still has the default title, use the first user message
+    // as the session name. Agents that send session_info_update will
+    // overwrite this later.
+    const isFirstMessage = activeSession.title.startsWith("Session ");
+    if (isFirstMessage && text.trim().length > 0) {
+      const newTitle =
+        text.trim().length > 30
+          ? text.trim().substring(0, 30) + "..."
+          : text.trim();
+
+      activeSession.title = newTitle;
+
+      await this.sessionManager.recordSession(
+        agentId,
+        resolvedSessionId,
+        cwd,
+        newTitle
+      );
+
+      this.postMessage({
+        type: "sessionUpdated",
+        agentId,
+        sessionId: resolvedSessionId,
+        title: newTitle,
+      });
+    }
 
     if (this.generatingSessions.has(resolvedSessionId)) return;
     this.generatingSessions.add(resolvedSessionId);
