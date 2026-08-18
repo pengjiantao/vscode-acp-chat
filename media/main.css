@@ -3308,6 +3308,11 @@ kbd {
     --vscode-editorGroupHeader-tabsBackground,
     var(--vscode-sideBar-background)
   );
+  border-top: 1px solid
+    var(
+      --vscode-editorGroupHeader-tabsBorder,
+      var(--vscode-panel-border, rgba(128, 128, 128, 0.2))
+    );
   border-bottom: 1px solid
     var(
       --vscode-editorGroupHeader-tabsBorder,
