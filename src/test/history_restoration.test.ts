@@ -81,14 +81,15 @@ function createHistoryLoadClient() {
       didSave: false,
       didFocus: false,
     }),
-    getSessionMetadata: () => ({
+    getSessionMetadata: (_sessionId: string) => ({
       modes: null,
       models: null,
       genericConfigOptions: [],
       commands: null,
       lastUsageUpdate: null,
     }),
-    clearLastUsageUpdate: () => {},
+    getLastUsageUpdate: (_sessionId: string) => null,
+    clearLastUsageUpdate: (_sessionId: string) => {},
     setOnStateChange: () => () => {},
     setOnSessionUpdate: (cb: any) => {
       sessionUpdateListeners.push(cb);

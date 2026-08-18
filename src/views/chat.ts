@@ -833,7 +833,7 @@ export class ChatViewProvider
           session: realSessionTab,
         });
 
-        await this.restoreSessionPreferences(agentId);
+        await this.restoreSessionPreferences(agentId, sessionId);
         this.sendSessionMetadata(agentId, sessionId);
         this.documentSyncManager.syncCapabilities();
 
@@ -1519,7 +1519,7 @@ export class ChatViewProvider
         : undefined) ||
       this.activeAgentId;
     const client = this.getClient(targetAgentId);
-    const metadata = client?.getSessionMetadata(targetSessionId ?? undefined);
+    const metadata = client?.getSessionMetadata(targetSessionId!);
 
     const prefs = this.getAgentPreferences(targetAgentId);
     const starredModels = prefs.starredModels || [];
@@ -1536,38 +1536,31 @@ export class ChatViewProvider
     });
   }
 
-  public sendContextUsage(agentId?: string, sessionId?: string): void {
-    const targetSessionId = sessionId || this.activeSessionId;
-    const targetAgentId =
-      agentId ||
-      (targetSessionId
-        ? this.openSessions.get(targetSessionId)?.agentId
-        : undefined) ||
-      this.activeAgentId;
-    const client = this.getClient(targetAgentId);
-    const metadata = client?.getSessionMetadata?.(targetSessionId ?? undefined);
+  public sendContextUsage(agentId: string, sessionId: string): void {
+    const client = this.getClient(agentId);
+    const metadata = client?.getSessionMetadata(sessionId);
     const usage =
-      metadata?.lastUsageUpdate ||
-      client?.getLastUsageUpdate?.(targetSessionId ?? undefined);
+      metadata?.lastUsageUpdate || client?.getLastUsageUpdate(sessionId);
 
     this.postMessage({
       type: "contextUsage",
-      agentId: targetAgentId,
-      sessionId: targetSessionId ?? undefined,
+      agentId: agentId,
+      sessionId: sessionId ?? undefined,
       used: usage ? usage.used : null,
       size: usage ? usage.size : null,
       cost: usage ? usage.cost : null,
     });
   }
 
-  public async restoreSessionPreferences(agentId?: string): Promise<void> {
+  public async restoreSessionPreferences(
+    agentId: string,
+    sessionId: string
+  ): Promise<void> {
     const client = this.getClient(agentId);
     if (!client) return;
 
-    const targetAgentId =
-      agentId || this.acpClient?.getAgentId?.() || this.activeAgentId;
-    const pref = this.getAgentPreferences(targetAgentId);
-    const metadata = client.getSessionMetadata();
+    const pref = this.getAgentPreferences(agentId);
+    const metadata = client.getSessionMetadata(sessionId);
 
     // Restore mode
     if (pref.modeId && metadata?.modes) {
@@ -1575,7 +1568,7 @@ export class ChatViewProvider
         (m) => m.id === pref.modeId
       );
       if (hasMode) {
-        await client.setMode(pref.modeId);
+        await client.setMode(pref.modeId, sessionId);
       }
     }
 
@@ -1585,7 +1578,7 @@ export class ChatViewProvider
         (m) => m.modelId === pref.modelId
       );
       if (hasModel) {
-        await client.setModel(pref.modelId);
+        await client.setModel(pref.modelId, sessionId);
       }
     }
 
@@ -1594,19 +1587,22 @@ export class ChatViewProvider
       for (const opt of metadata.genericConfigOptions) {
         const val = pref.configOptionValues[opt.id];
         if (val && opt.options.some((o) => o.value === val)) {
-          await client.setConfigOption(opt.id, val);
+          await client.setConfigOption(opt.id, val, sessionId);
         }
       }
     }
 
     if (pref.modelId) {
-      await this.restorePerModelConfigOptions(pref.modelId, targetAgentId);
+      await this.restorePerModelConfigOptions(pref.modelId, agentId, sessionId);
     }
   }
 
-  private getThoughtLevelConfigOptionIds(agentId?: string): Set<string> {
+  private getThoughtLevelConfigOptionIds(
+    agentId: string,
+    sessionId: string
+  ): Set<string> {
     const client = this.getClient(agentId);
-    const metadata = client?.getSessionMetadata();
+    const metadata = client?.getSessionMetadata(sessionId);
     const ids = new Set<string>();
     if (metadata?.genericConfigOptions) {
       for (const opt of metadata.genericConfigOptions) {
@@ -1620,21 +1616,20 @@ export class ChatViewProvider
 
   public async restorePerModelConfigOptions(
     modelId: string,
-    agentId?: string
+    agentId: string,
+    sessionId: string
   ): Promise<void> {
     const client = this.getClient(agentId);
     if (!client) return;
 
-    const targetAgentId =
-      agentId || this.acpClient?.getAgentId?.() || this.activeAgentId;
-    const pref = this.getAgentPreferences(targetAgentId);
-    const metadata = client.getSessionMetadata();
+    const pref = this.getAgentPreferences(agentId);
+    const metadata = client.getSessionMetadata(sessionId);
     const saved = pref.modelConfigOptionValues?.[modelId];
     if (saved && metadata?.genericConfigOptions) {
       for (const opt of metadata.genericConfigOptions) {
         const val = saved[opt.id];
         if (val && opt.options.some((o) => o.value === val)) {
-          await client.setConfigOption(opt.id, val);
+          await client.setConfigOption(opt.id, val, sessionId);
         }
       }
     }
@@ -1693,7 +1688,11 @@ export class ChatViewProvider
           ...pref,
           modelId,
         }));
-        await this.restorePerModelConfigOptions(modelId, agentId);
+        await this.restorePerModelConfigOptions(
+          modelId,
+          agentId,
+          targetSessionId!
+        );
         this.sendSessionMetadata(agentId, targetSessionId ?? undefined);
       } catch (error) {
         console.error("[Chat] Failed to set model:", error);
@@ -1727,7 +1726,10 @@ export class ChatViewProvider
           value,
           targetSessionId ?? undefined
         );
-        const thoughtLevelIds = this.getThoughtLevelConfigOptionIds(agentId);
+        const thoughtLevelIds = this.getThoughtLevelConfigOptionIds(
+          agentId,
+          targetSessionId!
+        );
         await this.updateAgentPreference(agentId, (pref) => {
           const updated: AgentPreference = {
             ...pref,

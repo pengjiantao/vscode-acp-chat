@@ -56,7 +56,7 @@ suite("ACPClient", () => {
 
   suite("session metadata", () => {
     test("should return null when no session exists", () => {
-      assert.strictEqual(client.getSessionMetadata(), null);
+      assert.strictEqual(client.getSessionMetadata("nonexistent"), null);
     });
   });
 
@@ -65,7 +65,7 @@ suite("ACPClient", () => {
       client.dispose();
       assert.strictEqual(client.getState(), "disconnected");
       assert.strictEqual(client.isConnected(), false);
-      assert.strictEqual(client.getSessionMetadata(), null);
+      assert.strictEqual(client.getSessionMetadata("nonexistent"), null);
     });
   });
 });
@@ -318,7 +318,7 @@ suite("ACPClient with Mock Server", () => {
       assert.ok(response.sessionId);
       assert.ok(response.sessionId.startsWith("mock-session-"));
 
-      const metadata = client.getSessionMetadata();
+      const metadata = client.getSessionMetadata(response.sessionId);
       assert.ok(metadata);
       assert.ok(metadata.modes);
       assert.strictEqual(metadata.modes?.currentModeId, "code");
@@ -442,11 +442,11 @@ suite("ACPClient with Mock Server", () => {
 
     test("should receive available commands update", async () => {
       await client.connect();
-      await client.newSession("/test/dir");
+      const response = await client.newSession("/test/dir");
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      const metadata = client.getSessionMetadata();
+      const metadata = client.getSessionMetadata(response.sessionId);
       assert.ok(metadata);
       assert.ok(metadata.commands);
       assert.strictEqual(metadata.commands?.length, 3);
@@ -612,11 +612,11 @@ suite("ACPClient with Mock Server", () => {
   suite("setMode", () => {
     test("should change mode", async () => {
       await client.connect();
-      await client.newSession("/test/dir");
+      const response = await client.newSession("/test/dir");
 
       await client.setMode("architect");
 
-      const metadata = client.getSessionMetadata();
+      const metadata = client.getSessionMetadata(response.sessionId);
       assert.strictEqual(metadata?.modes?.currentModeId, "architect");
     });
 
@@ -632,11 +632,11 @@ suite("ACPClient with Mock Server", () => {
   suite("setModel", () => {
     test("should change model", async () => {
       await client.connect();
-      await client.newSession("/test/dir");
+      const response = await client.newSession("/test/dir");
 
       await client.setModel("claude-3-opus");
 
-      const metadata = client.getSessionMetadata();
+      const metadata = client.getSessionMetadata(response.sessionId);
       assert.strictEqual(metadata?.models?.currentModelId, "claude-3-opus");
     });
 
@@ -671,7 +671,7 @@ suite("ACPClient with Mock Server", () => {
 
       assert.strictEqual(client.getState(), "disconnected");
       assert.strictEqual(client.isConnected(), false);
-      assert.strictEqual(client.getSessionMetadata(), null);
+      assert.strictEqual(client.getSessionMetadata("nonexistent"), null);
     });
   });
 
@@ -923,7 +923,7 @@ suite("ACPClient with configOptions format", () => {
     assert.ok(response.configOptions);
     assert.strictEqual(response.modes, undefined);
 
-    const metadata = client.getSessionMetadata();
+    const metadata = client.getSessionMetadata(response.sessionId);
     assert.ok(metadata);
     assert.ok(metadata.models);
     assert.ok(metadata.modes);
@@ -938,11 +938,11 @@ suite("ACPClient with configOptions format", () => {
 
   test("setModel should use setSessionConfigOption and update metadata", async () => {
     await client.connect();
-    await client.newSession("/test/dir");
+    const response = await client.newSession("/test/dir");
 
     await client.setModel("anthropic/claude-3-opus");
 
-    const metadata = client.getSessionMetadata();
+    const metadata = client.getSessionMetadata(response.sessionId);
     assert.ok(metadata);
     assert.ok(metadata.models);
     assert.strictEqual(
@@ -953,11 +953,11 @@ suite("ACPClient with configOptions format", () => {
 
   test("setMode should use setSessionConfigOption and update metadata", async () => {
     await client.connect();
-    await client.newSession("/test/dir");
+    const response = await client.newSession("/test/dir");
 
     await client.setMode("architect");
 
-    const metadata = client.getSessionMetadata();
+    const metadata = client.getSessionMetadata(response.sessionId);
     assert.ok(metadata);
     assert.ok(metadata.modes);
     assert.strictEqual(metadata.modes.currentModeId, "architect");
@@ -965,9 +965,9 @@ suite("ACPClient with configOptions format", () => {
 
   test("newSession should surface thought_level as a generic config option", async () => {
     await client.connect();
-    await client.newSession("/test/dir");
+    const response = await client.newSession("/test/dir");
 
-    const metadata = client.getSessionMetadata();
+    const metadata = client.getSessionMetadata(response.sessionId);
     assert.ok(metadata);
     assert.ok(Array.isArray(metadata.genericConfigOptions));
     const thought = metadata.genericConfigOptions.find(
@@ -981,11 +981,11 @@ suite("ACPClient with configOptions format", () => {
 
   test("setConfigOption should update generic config option state", async () => {
     await client.connect();
-    await client.newSession("/test/dir");
+    const response = await client.newSession("/test/dir");
 
     await client.setConfigOption("thought_level", "high");
 
-    const metadata = client.getSessionMetadata();
+    const metadata = client.getSessionMetadata(response.sessionId);
     assert.ok(metadata);
     const thought = metadata.genericConfigOptions.find(
       (o) => o.id === "thought_level"

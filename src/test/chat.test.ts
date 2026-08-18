@@ -37,7 +37,7 @@ interface MockACPClient {
     value: string,
     sessionId?: string
   ) => Promise<void>;
-  getSessionMetadata: (sessionId?: string) => unknown;
+  getSessionMetadata: (sessionId: string) => unknown;
   dispose: () => void;
 }
 
@@ -128,13 +128,17 @@ class TestACPClient implements MockACPClient {
     this.lastSessionId = sessionId ?? null;
   }
 
-  getSessionMetadata(_sessionId?: string): unknown {
+  getSessionMetadata(_sessionId: string): unknown {
     return {
       modes: null,
       models: null,
       genericConfigOptions: [],
       commands: null,
     };
+  }
+
+  getLastUsageUpdate(_sessionId: string): null {
+    return null;
   }
 
   dispose(): void {}
@@ -257,7 +261,7 @@ suite("ChatViewProvider", () => {
       });
 
       class ACPClientWithModes extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: {
               availableModes: [
@@ -292,7 +296,7 @@ suite("ChatViewProvider", () => {
       });
 
       class ACPClientWithModels extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: null,
             models: {
@@ -327,7 +331,7 @@ suite("ChatViewProvider", () => {
       });
 
       class ACPClientWithModes extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: {
               availableModes: [
@@ -361,7 +365,7 @@ suite("ChatViewProvider", () => {
       });
 
       class ACPClientWithModels extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: null,
             models: {
@@ -409,7 +413,7 @@ suite("ChatViewProvider", () => {
       });
 
       class FailingACPClient extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: {
               availableModes: [{ id: "test-mode", name: "Test Mode" }],
@@ -632,7 +636,7 @@ suite("ChatViewProvider", () => {
       });
 
       class ACPClientWithBoth extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: {
               availableModes: [
@@ -1266,7 +1270,8 @@ suite("ChatViewProvider", () => {
       (acpClient as any).setLastUsageUpdate = (payload: any) => {
         sessionMeta.lastUsageUpdate = payload;
       };
-      (acpClient as any).getSessionMetadata = () => sessionMeta;
+      (acpClient as any).getSessionMetadata = (_sessionId: string) =>
+        sessionMeta;
 
       await (provider as any).handleSessionUpdate({
         sessionId: "test",
@@ -1328,7 +1333,7 @@ suite("ChatViewProvider", () => {
       );
       const messages: any[] = [];
       (provider as any).postMessage = (msg: any) => messages.push(msg);
-      (acpClient as any).getSessionMetadata = () => ({
+      (acpClient as any).getSessionMetadata = (_sessionId: string) => ({
         modes: null,
         models: null,
         commands: null,
@@ -1352,7 +1357,7 @@ suite("ChatViewProvider", () => {
       );
       const messages: any[] = [];
       (provider as any).postMessage = (msg: any) => messages.push(msg);
-      (acpClient as any).getSessionMetadata = () => ({
+      (acpClient as any).getSessionMetadata = (_sessionId: string) => ({
         modes: null,
         models: null,
         commands: null,
@@ -1394,7 +1399,7 @@ suite("ChatViewProvider", () => {
 
     test("should save thought_level per model when config option changes", async () => {
       class ACPClientWithThought extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: null,
             models: {
@@ -1431,7 +1436,7 @@ suite("ChatViewProvider", () => {
       class ACPClientWithThought extends TestACPClient {
         private currentThoughtLevel = "medium";
 
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: null,
             models: {
@@ -1495,7 +1500,7 @@ suite("ChatViewProvider", () => {
 
     test("should not switch thought_level if no preference saved for target model", async () => {
       class ACPClientWithThought extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: null,
             models: {
@@ -1531,7 +1536,7 @@ suite("ChatViewProvider", () => {
 
     test("should validate saved thought_level against available options", async () => {
       class ACPClientWithLimitedOptions extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: null,
             models: {
@@ -1598,7 +1603,7 @@ suite("ChatViewProvider", () => {
       });
 
       class ACPClientWithThought extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: null,
             models: {
@@ -1640,7 +1645,7 @@ suite("ChatViewProvider", () => {
 
     test("should isolate per-model thought_level preferences across agents", async () => {
       class ACPClientWithThought extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: null,
             models: {
@@ -1684,7 +1689,7 @@ suite("ChatViewProvider", () => {
 
     test("should not save per-model thought_level when no model is active", async () => {
       class ACPClientWithThought extends TestACPClient {
-        getSessionMetadata() {
+        getSessionMetadata(_sessionId: string) {
           return {
             modes: null,
             models: null,
@@ -2478,14 +2483,15 @@ suite("ChatViewProvider", () => {
           didSave: false,
           didFocus: false,
         }),
-        getSessionMetadata: () => ({
+        getSessionMetadata: (_sessionId: string) => ({
           modes: null,
           models: null,
           genericConfigOptions: [],
           commands: null,
           lastUsageUpdate: null,
         }),
-        clearLastUsageUpdate: () => {},
+        getLastUsageUpdate: (_sessionId: string) => null,
+        clearLastUsageUpdate: (_sessionId: string) => {},
         setOnStateChange: () => () => {},
         setOnSessionUpdate: () => () => {},
         setOnStderr: () => () => {},

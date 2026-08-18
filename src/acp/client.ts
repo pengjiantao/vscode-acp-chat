@@ -1119,21 +1119,15 @@ export class ACPClient {
     );
   }
 
-  getSessionMetadata(sessionId?: string): SessionMetadata | null {
-    if (sessionId) {
-      return this.sessionMetadataMap.get(sessionId) ?? null;
-    }
-    if (this.sessionMetadataMap.size === 1) {
-      return this.sessionMetadataMap.values().next().value ?? null;
-    }
-    return null;
+  getSessionMetadata(sessionId: string): SessionMetadata | null {
+    return this.sessionMetadataMap.get(sessionId) ?? null;
   }
 
-  getLastUsageUpdate(sessionId?: string): ContextUsageUpdate | null {
+  getLastUsageUpdate(sessionId: string): ContextUsageUpdate | null {
     return this.getSessionMetadata(sessionId)?.lastUsageUpdate ?? null;
   }
 
-  setLastUsageUpdate(payload: ContextUsageUpdate, sessionId?: string): void {
+  setLastUsageUpdate(payload: ContextUsageUpdate, sessionId: string): void {
     const meta = this.getSessionMetadata(sessionId);
     if (!meta) return;
     meta.lastUsageUpdate = {
@@ -1143,7 +1137,7 @@ export class ACPClient {
     };
   }
 
-  clearLastUsageUpdate(sessionId?: string): void {
+  clearLastUsageUpdate(sessionId: string): void {
     const meta = this.getSessionMetadata(sessionId);
     if (meta) {
       meta.lastUsageUpdate = null;
@@ -1156,7 +1150,7 @@ export class ACPClient {
    */
   updateSessionMetadataFromConfigOptions(
     configOptions: Array<SessionConfigOption>,
-    sessionId?: string
+    sessionId: string
   ): void {
     const meta = this.getSessionMetadata(sessionId);
     if (!meta) return;
