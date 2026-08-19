@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [2.1.1](https://github.com/pengjiantao/vscode-acp-chat/compare/v2.1.0...v2.1.1) (2026-08-19)
+
+### Bug Fixes
+
+- **acp:** require sessionId in getSessionMetadata and restore preferences for all sessions ([422fda3](https://github.com/pengjiantao/vscode-acp-chat/commit/422fda3c0006e0f231ff75ab28d857ecee9b1392))
+- **load-history:** pre-select active session in history quick pick ([f3c6ee0](https://github.com/pengjiantao/vscode-acp-chat/commit/f3c6ee0f8f7d447af854cd1c3cc63e68a0d8c51d))
+- **quick-pick:** move agent name before session title in history and open sessions menus ([21ace69](https://github.com/pengjiantao/vscode-acp-chat/commit/21ace69ed0e31d3d83110d3167b1065821ea174b))
+- **quick-pick:** pre-select active tab's agent in new session picker ([2df8d85](https://github.com/pengjiantao/vscode-acp-chat/commit/2df8d85a49416edfb340dc340c3421936cad342f))
+- **search:** respect .gitignore rules for dot-prefixed directories ([91b0ce4](https://github.com/pengjiantao/vscode-acp-chat/commit/91b0ce4295dc5e8798be6c52c4c64a312578907b))
+
 ## [2.1.0](https://github.com/pengjiantao/vscode-acp-chat/compare/v2.0.0...v2.1.0) (2026-08-18)
 
 ### Features
