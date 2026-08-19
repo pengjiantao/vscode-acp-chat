@@ -2157,8 +2157,8 @@ export class ChatViewProvider
       return Array.from(this.openSessions.values()).map((s) => {
         const isCurrent = s.sessionId === this.activeSessionId;
         return {
-          label: `${isCurrent ? "$(check) " : ""}${s.title || "New session"}`,
-          description: `[${s.agentName || s.agentId}]`,
+          label: `${isCurrent ? "$(check) " : ""}[${s.agentName || s.agentId}] ${s.title || "New session"}`,
+          description: "",
           detail: s.sessionId,
           sessionId: s.sessionId,
           agentId: s.agentId,

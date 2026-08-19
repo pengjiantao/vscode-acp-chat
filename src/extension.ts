@@ -117,8 +117,8 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         const items = sessions.map((s) => ({
-          label: s.title,
-          description: `[${s.agentName || s.agentId}] ${s.sessionId}`,
+          label: `[${s.agentName || s.agentId}] ${s.title}`,
+          description: s.sessionId,
           detail: `${vscode.workspace.asRelativePath(s.cwd)} · ${new Date(s.updatedAt).toLocaleString()}`,
           sessionId: s.sessionId,
           agentId: s.agentId,
@@ -205,8 +205,8 @@ export function activate(context: vscode.ExtensionContext) {
           }
 
           const items = sessions.map((s) => ({
-            label: s.title,
-            description: `[${s.agentName || s.agentId}] ${s.sessionId}`,
+            label: `[${s.agentName || s.agentId}] ${s.title}`,
+            description: s.sessionId,
             detail: `${vscode.workspace.asRelativePath(s.cwd)} · ${new Date(s.updatedAt).toLocaleString()}`,
             sessionId: s.sessionId,
             agentId: s.agentId,
