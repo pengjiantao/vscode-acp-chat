@@ -1140,6 +1140,16 @@ export class ChatViewProvider
     return this.openSessions.get(sessionId);
   }
 
+  /** Returns the session ID of the currently active tab, or null if no tab is active. */
+  public getActiveSessionId(): string | null {
+    return this.activeSessionId;
+  }
+
+  /** Returns the agent ID associated with the currently active tab. */
+  public getActiveAgentId(): string {
+    return this.activeAgentId;
+  }
+
   public getSupportsLoadSession(): boolean {
     return this.sessionManager.supportsLoadSession;
   }
