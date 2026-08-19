@@ -2130,6 +2130,13 @@ export class ChatViewProvider
     quickPick.placeholder = "Select an AI agent to start a new session";
     quickPick.title = "VSCode ACP: New Session";
 
+    const currentAgentItem = items.find(
+      (item) => item.id === this.activeAgentId
+    );
+    if (currentAgentItem) {
+      quickPick.activeItems = [currentAgentItem];
+    }
+
     quickPick.onDidAccept(async () => {
       const selected = quickPick.selectedItems[0];
       quickPick.dispose();
